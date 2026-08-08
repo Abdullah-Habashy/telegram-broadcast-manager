@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <title>إنشاء حساب — Broadcast Manager</title>
+  <%- include('partials/layout-head') %>
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="dot"></span>
+        <span>Broadcast Manager</span>
+      </div>
+      <h1>إنشاء حساب جديد</h1>
+      <p class="subtitle">أول حساب هيكون أساس لوحة التحكم المشتركة</p>
+
+      <% if (error) { %>
+        <div class="alert"><%= error %></div>
+      <% } %>
+
+      <form method="POST" action="/register">
+        <div class="field">
+          <label for="name">الاسم</label>
+          <input type="text" id="name" name="name" required autofocus />
+        </div>
+        <div class="field">
+          <label for="email">البريد الإلكتروني</label>
+          <input type="email" id="email" name="email" required />
+        </div>
+        <div class="field">
+          <label for="password">كلمة المرور</label>
+          <input type="password" id="password" name="password" required minlength="8" />
+        </div>
+        <button type="submit" class="btn btn-primary">إنشاء الحساب</button>
+      </form>
+
+      <div class="auth-switch">
+        عندك حساب بالفعل؟ <a href="/login">تسجيل الدخول</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

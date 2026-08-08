@@ -1,0 +1,1865 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <title>لوحة التحكم — Broadcast Manager</title>
+  <%- include('partials/layout-head') %>
+</head>
+<body class="role-<%= userRole %>">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="auth-brand">
+        <span class="dot"></span>
+        <span>Broadcast Manager</span>
+      </div>
+
+      <% if (userRole === 'admin') { %>
+        <div class="nav-item active" data-tab="overview"><span class="ind"></span> نظرة عامة</div>
+      <% } %>
+      <div class="nav-item <%= userRole === 'agent' ? 'active' : '' %>" data-tab="tickets"><span class="ind"></span> صندوق الدعم</div>
+      <% if (userRole === 'admin') { %>
+        <div class="nav-item" data-tab="contacts"><span class="ind"></span> جهات الاتصال والإرسال</div>
+        <div class="nav-item" data-tab="tafra-students"><span class="ind"></span> طلاب المنصة</div>
+        <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
+        <div class="nav-item" data-tab="settings"><span class="ind"></span> الإعدادات</div>
+      <% } %>
+
+      <div class="sidebar-footer">
+        <div class="user-name">👋 <%= userName %></div>
+        <form method="POST" action="/logout">
+          <button type="submit" class="btn btn-ghost btn-sm" style="width:100%">تسجيل الخروج</button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- ===== نظرة عامة ===== -->
+      <section class="tab-panel" id="tab-overview" style="<%= userRole === 'agent' ? 'display:none' : '' %>">
+        <div class="page-header">
+          <h1>نظرة عامة</h1>
+          <p>ملخص سريع لحالة البوت وجهات الاتصال</p>
+        </div>
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card"><div class="label">إجمالي جهات الاتصال</div><div class="value">—</div></div>
+          <div class="stat-card"><div class="label">متفاعلين آخر أسبوع</div><div class="value">—</div></div>
+          <div class="stat-card"><div class="label">رسائل مُرسلة</div><div class="value">—</div></div>
+          <div class="stat-card"><div class="label">معدل الرد التقريبي</div><div class="value">—</div></div>
+        </div>
+        <div class="card">
+          <h2>الخطوات الأولى</h2>
+          <p class="card-desc">علشان البوت يشتغل، لازم الآتي بالترتيب:</p>
+          <ol style="margin:0; padding-inline-start: 20px; color: var(--text-muted); font-size: 13.5px; line-height: 2;">
+            <li>روح <b>الإعدادات</b> وسجّل توكن البوت (من BotFather)</li>
+            <li>تأكد إن <code>PUBLIC_URL</code> متحدد في ملف <code>.env</code> عشان الـ Webhook يشتغل</li>
+            <li>ابعت <code>/start</code> للبوت من حسابك على تليجرام للتجربة</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ===== صندوق الدعم ===== -->
+      <section class="tab-panel" id="tab-tickets" style="<%= userRole === 'admin' ? 'display:none' : '' %>">
+        <div class="page-header">
+          <h1>صندوق الدعم</h1>
+          <p>استقبال رسائل الطلاب، توزيعها على الموظفين، والرد من مكان واحد</p>
+        </div>
+
+        <div class="ticket-toolbar card">
+          <input type="search" id="ticket-search" class="compact-input" placeholder="بحث بالاسم، اليوزر، الهاتف أو Chat ID">
+          <% if (userRole === 'agent') { %>
+            <button type="button" class="btn btn-ghost btn-sm agent-filter-toggle" id="agent-filter-toggle" title="إظهار الفلاتر" aria-label="إظهار الفلاتر">⚲</button>
+          <% } %>
+          <div class="ticket-advanced-filters" id="ticket-advanced-filters">
+          <select id="ticket-status-filter" class="compact-select">
+            <option value="">كل الحالات</option>
+            <option value="new">جديدة</option>
+            <option value="in_progress">قيد المتابعة</option>
+            <option value="waiting_student">بانتظار الطالب</option>
+            <option value="resolved">مكتملة</option>
+            <option value="closed">مغلقة</option>
+          </select>
+          <select id="ticket-subtitle-filter" class="compact-select">
+            <option value="">كل العناوين الفرعية</option>
+          </select>
+          <select id="ticket-priority-filter" class="compact-select">
+            <option value="">كل الأولويات</option>
+            <option value="urgent">عاجلة</option>
+            <option value="normal">عادية</option>
+            <option value="low">منخفضة</option>
+          </select>
+          <select id="ticket-category-filter" class="compact-select">
+            <option value="">كل التصنيفات</option>
+            <option value="general">عام</option>
+            <option value="registration">تسجيل</option>
+            <option value="fees">مصروفات</option>
+            <option value="results">نتائج</option>
+            <option value="platform">المنصة</option>
+            <option value="complaint">شكوى</option>
+            <option value="technical">تقني</option>
+          </select>
+          <select id="ticket-assignee-filter" class="compact-select"><option value="">كل الموظفين</option></select>
+          <select id="ticket-follow-up-filter" class="compact-select">
+            <option value="">كل مواعيد المتابعة</option>
+            <option value="due">حان موعد التواصل</option>
+            <option value="today">متابعات اليوم</option>
+            <option value="upcoming">مواعيد قادمة</option>
+            <option value="none">بدون موعد متابعة</option>
+          </select>
+          <select id="ticket-sent-filter" class="compact-select">
+            <option value="">آخر إرسال: أي وقت</option>
+            <option value="1">آخر إرسال أقدم من يوم</option>
+            <option value="3">آخر إرسال أقدم من 3 أيام</option>
+            <option value="7">آخر إرسال أقدم من أسبوع</option>
+          </select>
+          <select id="ticket-received-filter" class="compact-select">
+            <option value="">آخر استقبال: أي وقت</option>
+            <option value="1">آخر استقبال أقدم من يوم</option>
+            <option value="3">آخر استقبال أقدم من 3 أيام</option>
+            <option value="7">آخر استقبال أقدم من أسبوع</option>
+          </select>
+          <select id="ticket-idea-filter" class="compact-select">
+            <option value="">كل الأفكار</option>
+            <option value="0">لم يُحدَّد بعد</option>
+          </select>
+          <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-unread-filter"> غير المقروء فقط</label>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="refresh-tickets-btn">تحديث</button>
+          <% if (userRole === 'agent') { %>
+            <form method="POST" action="/logout" class="agent-logout-form">
+              <button type="submit" class="btn btn-ghost btn-sm" title="تسجيل الخروج" aria-label="تسجيل الخروج">⇥</button>
+            </form>
+          <% } %>
+        </div>
+
+        <div class="ticket-workspace">
+          <div class="ticket-list-panel card">
+            <div class="row-between"><b id="ticket-count">التذاكر</b><span id="ticket-page-label" class="ticket-muted"></span></div>
+            <div id="ticket-list"><div class="empty-state">بيتحمّل...</div></div>
+            <div class="ticket-pagination">
+              <button class="btn btn-ghost btn-sm" id="tickets-prev">السابق</button>
+              <button class="btn btn-ghost btn-sm" id="tickets-next">التالي</button>
+            </div>
+          </div>
+
+          <div class="ticket-conversation-panel card" id="ticket-conversation-panel">
+            <div class="empty-state">اختر تذكرة لعرض المحادثة والرد</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== جهات الاتصال ===== -->
+      <section class="tab-panel" id="tab-contacts" style="display:none">
+        <div class="page-header">
+          <h1>جهات الاتصال والإرسال الجماعي</h1>
+          <p>فلترة الجمهور وتحديده ثم إنشاء الرسالة من مكان واحد</p>
+        </div>
+
+        <div class="card">
+          <details class="audience-filters" open>
+            <summary>فلاتر جمهور الإرسال</summary>
+            <div class="audience-filter-grid">
+              <select id="contact-status-filter" class="compact-select">
+                <option value="">كل الحالات</option>
+                <option value="new">جديدة</option><option value="in_progress">قيد المتابعة</option>
+                <option value="waiting_student">بانتظار الطالب</option><option value="resolved">مكتملة</option>
+                <option value="closed">مغلقة</option>
+              </select>
+              <select id="contact-subtitle-filter" class="compact-select"><option value="">كل العناوين الفرعية</option></select>
+              <select id="contact-priority-filter" class="compact-select">
+                <option value="">كل الأولويات</option><option value="urgent">عاجلة</option>
+                <option value="normal">عادية</option><option value="low">منخفضة</option>
+              </select>
+              <select id="contact-category-filter" class="compact-select">
+                <option value="">كل التصنيفات</option><option value="general">عام</option>
+                <option value="registration">تسجيل</option><option value="fees">مصروفات</option>
+                <option value="results">نتائج</option><option value="platform">المنصة</option>
+                <option value="complaint">شكوى</option><option value="technical">تقني</option>
+              </select>
+              <select id="contact-assignee-filter" class="compact-select"><option value="">كل الموظفين</option></select>
+              <select id="contact-follow-up-filter" class="compact-select">
+                <option value="">كل مواعيد المتابعة</option><option value="due">حان موعد التواصل</option>
+                <option value="today">متابعات اليوم</option><option value="upcoming">مواعيد قادمة</option>
+                <option value="none">بدون موعد متابعة</option>
+              </select>
+              <select id="filter-sent" class="compact-select">
+                <option value="">آخر إرسال: أي وقت</option>
+                <option value="1">آخر إرسال أقدم من يوم</option>
+                <option value="3">آخر إرسال أقدم من 3 أيام</option>
+                <option value="7">آخر إرسال أقدم من أسبوع</option>
+                <option value="never">لم نرسل له مطلقًا</option>
+              </select>
+              <select id="filter-received" class="compact-select">
+                <option value="">آخر استقبال: أي وقت</option>
+                <option value="1">آخر استقبال أقدم من يوم</option>
+                <option value="3">آخر استقبال أقدم من 3 أيام</option>
+                <option value="7">آخر استقبال أقدم من أسبوع</option>
+                <option value="never">لم يرسل لنا مطلقًا</option>
+              </select>
+              <label class="row ticket-unread-filter"><input type="checkbox" id="contact-unread-filter"> غير المقروء فقط</label>
+            </div>
+          </details>
+          <div class="row-between audience-actions">
+            <div class="row">
+              <button type="button" class="btn btn-ghost btn-sm" id="select-filtered-contacts-btn">تحديد كل النتائج المفلترة</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="clear-selected-contacts-btn">إلغاء التحديد</button>
+            </div>
+            <div class="row">
+              <span id="selected-contacts-count" class="badge badge-muted">المحدد: 0</span>
+              <button type="button" class="btn btn-primary btn-sm" id="message-selected-btn" style="width:auto" disabled>مراسلة المحددين</button>
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+                استيراد CSV
+                <input type="file" id="csv-input" accept=".csv" style="display:none" />
+              </label>
+              <a href="/api/contacts/export" class="btn btn-ghost btn-sm">تصدير CSV</a>
+            </div>
+          </div>
+          <div id="contacts-table-wrap">
+            <div class="empty-state">بيتحمّل...</div>
+          </div>
+        </div>
+
+      <!-- ===== إرسال جماعي ===== -->
+        <div class="page-header merged-section-header" id="broadcast-compose">
+          <h1>إنشاء رسالة جماعية</h1>
+          <p>ابعت رسالة لكل جهات الاتصال أو لمجموعة مفلترة، فورًا أو في وقت محدد</p>
+        </div>
+
+        <div class="card">
+          <h2>رسالة جديدة</h2>
+          <div class="field">
+            <label>المحتوى</label>
+            <textarea id="broadcast-content" placeholder="اكتب نص الرسالة هنا..."></textarea>
+          </div>
+          <div class="field">
+            <label>صورة (اختياري — JPG أو PNG، بحد أقصى 10MB)</label>
+            <div class="image-picker-row">
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+                اختيار صورة
+                <input type="file" id="broadcast-image" accept="image/jpeg,image/png" style="display:none">
+              </label>
+              <span id="broadcast-image-name" class="image-file-name">لم يتم اختيار صورة</span>
+              <button type="button" id="clear-broadcast-image" class="btn btn-danger-ghost btn-sm" style="display:none">إزالة</button>
+            </div>
+          </div>
+          <div class="row" style="gap:16px">
+            <div class="field" style="flex:1; min-width:180px">
+              <label>إرسال لـ</label>
+              <select id="broadcast-tag"><option value="">كل جهات الاتصال</option></select>
+              <div id="selected-audience-hint" class="selection-hint" style="display:none"></div>
+            </div>
+            <div class="field" style="flex:1; min-width:180px">
+              <label>جدولة (اختياري)</label>
+              <input type="datetime-local" id="broadcast-schedule" />
+            </div>
+          </div>
+          <button class="btn btn-primary" id="send-broadcast-btn" style="width:auto; padding-inline:24px">إرسال</button>
+        </div>
+
+        <div class="card">
+          <h2>سجل عمليات الإرسال</h2>
+          <div id="broadcasts-table-wrap">
+            <div class="empty-state">بيتحمّل...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== القوالب ===== -->
+      <section class="tab-panel" id="tab-templates" style="display:none">
+        <div class="page-header">
+          <h1>القوالب</h1>
+          <p>رسائل جاهزة تقدر تعيد استخدامها في أي إرسال جماعي</p>
+        </div>
+        <div class="card">
+          <h2>قالب جديد</h2>
+          <div class="row" style="gap:16px">
+            <div class="field" style="flex:1"><label>اسم القالب</label><input type="text" id="template-name" /></div>
+          </div>
+          <div class="field"><label>المحتوى</label><textarea id="template-content"></textarea></div>
+          <button class="btn btn-primary" id="add-template-btn" style="width:auto; padding-inline:24px">إضافة القالب</button>
+        </div>
+        <div class="card">
+          <h2>القوالب الحالية</h2>
+          <div id="templates-list"><div class="empty-state">بيتحمّل...</div></div>
+        </div>
+      </section>
+
+      <!-- ===== طلاب منصة طفرة ===== -->
+      <section class="tab-panel" id="tab-tafra-students" style="display:none">
+        <div class="page-header">
+          <h1>طلاب منصة طفرة</h1>
+          <p>بيانات الطلاب المحفوظة محليًا من آخر تحديث للمنصة</p>
+        </div>
+        <div class="card tafra-student-filters">
+          <input type="search" id="tafra-student-search" placeholder="بحث بالاسم أو الهاتف أو الكود أو رقم المحادثة">
+          <select id="tafra-level-filter"><option value="">كل الصفوف</option></select>
+          <select id="tafra-education-type-filter">
+            <option value="">كل أنواع التعليم</option>
+            <option value="general">عام</option>
+            <option value="azhar">أزهري</option>
+          </select>
+          <select id="tafra-telegram-filter">
+            <option value="">الكل حسب تيليجرام</option>
+            <option value="linked">مرتبط بتيليجرام</option>
+            <option value="unlinked">غير مرتبط</option>
+          </select>
+          <select id="tafra-status-filter"><option value="">كل الحالات</option></select>
+          <select id="tafra-bootcamp-filter"><option value="">كل الأبواب والكورسات</option></select>
+          <select id="tafra-idea-filter">
+            <option value="">كل الأفكار</option>
+            <option value="0">لم يُحدَّد بعد</option>
+          </select>
+          <input type="date" id="tafra-enrolled-from" title="تاريخ الاشتراك من">
+          <input type="date" id="tafra-enrolled-to" title="تاريخ الاشتراك إلى">
+          <button type="button" class="btn btn-ghost" id="clear-tafra-filters">مسح الفلاتر</button>
+        </div>
+        <div class="card" style="padding-block:12px">
+          <div class="row-between" style="gap:12px; flex-wrap:wrap">
+            <span id="tafra-enrollment-sync-status" class="card-desc">لم يتم تحديث اشتراكات الأبواب بعد.</span>
+            <div class="row" style="gap:8px; flex-wrap:wrap">
+              <button type="button" class="btn btn-ghost btn-sm" id="sync-tafra-bootcamp-names">تحديث أسماء الأبواب</button>
+              <button type="button" class="btn btn-primary btn-sm" id="sync-tafra-enrollments">تحديث اشتراكات الأبواب</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row-between" style="margin-bottom:12px">
+            <b id="tafra-student-count">الطلاب</b>
+            <span id="tafra-student-page-label" class="ticket-muted"></span>
+          </div>
+          <div id="tafra-students-table"><div class="empty-state">جارٍ التحميل...</div></div>
+          <div class="ticket-pagination">
+            <button type="button" class="btn btn-ghost btn-sm" id="tafra-students-prev">السابق</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="tafra-students-next">التالي</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== الإعدادات ===== -->
+      <section class="tab-panel" id="tab-settings" style="display:none">
+        <div class="page-header">
+          <h1>الإعدادات</h1>
+          <p>توكن البوت والرد التلقائي</p>
+        </div>
+
+        <div class="card">
+          <h2>ربط منصة طفرة</h2>
+          <p class="card-desc">قراءة بيانات الطلاب إلى قاعدة بيانات المشروع فقط. لا يضيف هذا الربط أو يعدّل أو يحذف أي بيانات على المنصة.</p>
+          <div id="tafra-connection-status" class="badge badge-muted" style="margin-bottom:14px">جارٍ التحقق...</div>
+          <div class="bot-profile-create">
+            <input type="text" id="tafra-identifier" autocomplete="username" placeholder="رقم الهاتف أو البريد الإلكتروني">
+            <input type="password" id="tafra-password" autocomplete="new-password" placeholder="كلمة مرور حساب المنصة">
+            <button type="button" class="btn btn-primary" id="save-tafra-credentials" style="width:auto">فحص وحفظ الربط</button>
+          </div>
+          <div id="tafra-sync-details" class="card-desc" style="margin-top:14px">لم تتم مزامنة الطلاب بعد.</div>
+          <button type="button" class="btn btn-primary" id="sync-tafra-students" style="width:auto; margin-top:12px">تحديث بيانات الطلاب الآن</button>
+        </div>
+
+        <div class="card">
+          <h2>إدارة وتبديل البوتات</h2>
+          <p class="card-desc">احفظ أكثر من بوت ثم بدّل بينها بضغطة واحدة. يتم فحص التوكن قبل الحفظ، وتظل كل التوكنات مشفّرة.</p>
+          <div id="token-status" class="badge badge-muted" style="margin-bottom:14px">بيتحقق...</div>
+          <div id="bot-profiles-list" class="bot-profiles-list"><div class="empty-state">بيتحمّل...</div></div>
+          <div class="bot-profile-create">
+            <input type="text" id="bot-profile-label" maxlength="100" placeholder="اسم داخل اللوحة، مثال: بوت الطلاب الجديد">
+            <input type="password" id="bot-token-input" placeholder="توكن البوت من BotFather">
+            <button class="btn btn-primary" id="add-bot-profile-btn" style="width:auto; padding-inline:24px">فحص وحفظ البوت</button>
+          </div>
+          <p class="card-desc" style="margin-top:10px">عند تفعيل بوت، ينتقل Webhook إليه ويتوقف المشروع عن استقبال رسائل البوت السابق. قاعدة البيانات لا تتغير.</p>
+        </div>
+
+        <div class="card">
+          <h2>الرد التلقائي</h2>
+          <p class="card-desc">لو مفعّل، البوت هيرد تلقائيًا على أي رسالة نصية واردة</p>
+          <label class="row" style="gap:8px; margin-bottom:14px; cursor:pointer">
+            <input type="checkbox" id="auto-reply-enabled" style="width:auto" />
+            <span>تفعيل الرد التلقائي</span>
+          </label>
+          <div class="field"><label>نص الرد</label><textarea id="auto-reply-message"></textarea></div>
+          <button class="btn btn-primary" id="save-auto-reply-btn" style="width:auto; padding-inline:24px">حفظ</button>
+        </div>
+
+        <div class="card">
+          <h2>تحويل الرسائل إلى حساب تيليجرام</h2>
+          <p class="card-desc">من الحساب المطلوب، افتح البوت واضغط Start ثم أرسل أمر الربط الظاهر أدناه.</p>
+          <div id="forward-target-status" class="badge badge-muted" style="margin-bottom:14px">بيتحقق...</div>
+          <div class="link-command-box">
+            <code id="forward-link-command">بيتحمّل...</code>
+            <button type="button" class="btn btn-ghost btn-sm" id="copy-forward-command">نسخ الأمر</button>
+          </div>
+          <label class="row" style="gap:8px; margin-top:14px; cursor:pointer">
+            <input type="checkbox" id="forwarding-enabled" style="width:auto">
+            <span>تفعيل تحويل الرسائل الواردة</span>
+          </label>
+          <button class="btn btn-primary" id="save-forwarding-btn" style="width:auto; padding-inline:24px; margin-top:10px">حفظ</button>
+        </div>
+
+        <div class="card">
+          <h2>رسالة المتابعة التلقائية</h2>
+          <p class="card-desc">تُرسل تلقائيًا عندما يحين موعد التواصل المحدد داخل التذكرة، ثم يُغلق الموعد تلقائيًا.</p>
+          <label class="row" style="gap:8px; margin-bottom:14px; cursor:pointer">
+            <input type="checkbox" id="follow-up-auto-enabled" style="width:auto">
+            <span>تفعيل الإرسال التلقائي عند حلول الموعد</span>
+          </label>
+          <div class="field">
+            <label>نص رسالة المتابعة</label>
+            <textarea id="follow-up-auto-message" maxlength="4096" placeholder="اكتب الرسالة التي ستصل للعميل..."></textarea>
+          </div>
+          <button class="btn btn-primary" id="save-follow-up-auto-btn" style="width:auto; padding-inline:24px">حفظ الرسالة</button>
+        </div>
+
+        <div class="card">
+          <h2>تعريف الموظف للطالب</h2>
+          <p class="card-desc">تُرسل قبل أول رد للموظف خلال اليوم. إذا تغيّر الموظف تُرسل مجددًا باسمه.</p>
+          <label class="row" style="gap:8px; margin-bottom:14px; cursor:pointer">
+            <input type="checkbox" id="agent-intro-enabled" style="width:auto">
+            <span>تفعيل رسالة تعريف الموظف</span>
+          </label>
+          <div class="field">
+            <label>نص التعريف — استخدم <code>{name}</code> مكان اسم الموظف</label>
+            <textarea id="agent-intro-message" maxlength="4096"></textarea>
+          </div>
+          <button class="btn btn-primary" id="save-agent-intro-btn" style="width:auto; padding-inline:24px">حفظ التعريف</button>
+        </div>
+
+        <div class="card">
+          <h2>إدارة حسابات الفريق</h2>
+          <p class="card-desc">أنشئ حسابًا مستقلًا لكل مدير أو موظف دعم. موظف الدعم يرى صندوق التذاكر فقط.</p>
+          <div class="staff-create-form">
+            <input type="text" id="staff-name" placeholder="الاسم">
+            <input type="email" id="staff-email" placeholder="البريد الإلكتروني">
+            <input type="password" id="staff-password" placeholder="كلمة المرور (8 أحرف على الأقل)">
+            <select id="staff-role"><option value="agent">موظف دعم</option><option value="admin">مدير</option></select>
+            <button type="button" class="btn btn-primary" id="create-staff-btn" style="width:auto">إنشاء الحساب</button>
+          </div>
+          <div id="staff-users-list"><div class="empty-state">بيتحمّل...</div></div>
+        </div>
+
+        <div class="card">
+          <h2>إعدادات تتبع الأفكار</h2>
+          <p class="card-desc">حدد العدد الأقصى للأفكار في المنهج. يمكن للموظفين تسجيل رقم الفكرة التي وصل إليها كل طالب.</p>
+          <div class="field" style="max-width:240px">
+            <label>عدد الأفكار في المنهج (الحد الأقصى)</label>
+            <input type="number" id="max-idea-number" min="1" max="999" value="20">
+          </div>
+          <button class="btn btn-primary" id="save-idea-settings-btn" style="width:auto; padding-inline:24px">حفظ</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const currentUserRole = '<%= userRole %>';
+    const selectedContactIds = new Set();
+    let currentFilteredContactIds = [];
+    let ticketsMeta = null;
+    let currentTicketId = null;
+    let ticketsPage = 1;
+    let ticketsTotalPages = 1;
+    let ticketSearchTimer = null;
+    let tafraStudentsPage = 1;
+    let tafraStudentsPages = 1;
+    let tafraStudentSearchTimer = null;
+    let tafraFiltersLoaded = false;
+
+    // ---------- أدوات مساعدة عامة ----------
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2800);
+    }
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'حصل خطأ');
+      return data;
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+    }
+
+    function fmtDay(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('ar-EG', { dateStyle: 'medium' });
+    }
+
+    function toDateTimeLocal(iso) {
+      if (!iso) return '';
+      const date = new Date(iso);
+      const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+      return localDate.toISOString().slice(0, 16);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, (character) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[character]));
+    }
+
+    function firstEmployeeName(fullName) {
+      return String(fullName || '').trim().split(/\s+/)[0] || '';
+    }
+
+    function employeeBadgeClass(userId) {
+      return `employee-color-${Math.abs(Number(userId) || 0) % 6}`;
+    }
+
+    // ---------- التنقل بين التابات ----------
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach((item) => {
+      item.addEventListener('click', () => {
+        navItems.forEach((i) => i.classList.remove('active'));
+        item.classList.add('active');
+        document.querySelectorAll('.tab-panel').forEach((p) => (p.style.display = 'none'));
+        document.getElementById('tab-' + item.dataset.tab).style.display = 'block';
+        loadTabData(item.dataset.tab);
+      });
+    });
+
+    function loadTabData(tab) {
+      if (tab === 'overview') loadStats();
+      if (tab === 'tickets') initTickets();
+      if (tab === 'contacts') initContactsAndBroadcasts();
+      if (tab === 'tafra-students') initTafraStudents();
+      if (tab === 'templates') loadTemplates();
+      if (tab === 'settings') loadSettings();
+    }
+
+    // ---------- طلاب منصة طفرة ----------
+    async function loadTafraStudentFilters() {
+      if (tafraFiltersLoaded) return;
+      const filters = await api('/api/tafra/student-filters');
+      const levelSelect = document.getElementById('tafra-level-filter');
+      const statusSelect = document.getElementById('tafra-status-filter');
+      const bootcampSelect = document.getElementById('tafra-bootcamp-filter');
+      levelSelect.innerHTML = '<option value="">كل الصفوف</option>' +
+        filters.levels.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+      const statusNames = { active: 'نشط', inactive: 'غير نشط', suspended: 'موقوف' };
+      statusSelect.innerHTML = '<option value="">كل الحالات</option>' +
+        filters.statuses.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(statusNames[value] || value)}</option>`).join('');
+      bootcampSelect.innerHTML = '<option value="">كل الأبواب والكورسات</option>' +
+        filters.bootcamps.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
+      const ideaSelect = document.getElementById('tafra-idea-filter');
+      const maxIdea = filters.max_idea_number || 20;
+      ideaSelect.innerHTML = '<option value="">كل الأفكار</option><option value="0">لم يُحدَّد بعد</option>' +
+        Array.from({ length: maxIdea }, (_, i) => i + 1)
+          .map((n) => `<option value="${n}">فكرة ${n}</option>`).join('');
+      renderTafraEnrollmentSync(filters.enrollment_sync);
+      tafraFiltersLoaded = true;
+    }
+
+    function renderTafraEnrollmentSync(sync) {
+      const status = document.getElementById('tafra-enrollment-sync-status');
+      const button = document.getElementById('sync-tafra-enrollments');
+      button.disabled = sync?.status === 'running';
+      if (sync?.status === 'running') {
+        status.textContent = `جارٍ تحديث الاشتراكات: الباب ${sync.current_bootcamp || 0} من ${sync.total_bootcamps || '...'} — ${sync.synced_enrollments || 0} سجل`;
+      } else if (sync?.status === 'completed') {
+        status.textContent = `آخر تحديث للاشتراكات: ${fmtDate(sync.completed_at)} — ${sync.synced_enrollments || 0} سجل`;
+      } else if (sync?.status === 'failed') {
+        status.textContent = `توقف آخر تحديث للاشتراكات: ${sync.error_message || 'تعذر الاتصال بالمنصة'}`;
+      } else {
+        status.textContent = 'يلزم تحديث اشتراكات الأبواب مرة واحدة لتشغيل الفلتر.';
+      }
+    }
+
+    function tafraStudentQuery() {
+      const params = new URLSearchParams({ page: tafraStudentsPage, limit: 50 });
+      const fields = {
+        search: 'tafra-student-search', level: 'tafra-level-filter',
+        education_type: 'tafra-education-type-filter', telegram: 'tafra-telegram-filter',
+        status: 'tafra-status-filter', bootcamp: 'tafra-bootcamp-filter',
+        idea_number: 'tafra-idea-filter',
+        enrolled_from: 'tafra-enrolled-from', enrolled_to: 'tafra-enrolled-to'
+      };
+      Object.entries(fields).forEach(([key, id]) => {
+        const value = document.getElementById(id).value.trim();
+        if (value) params.set(key, value);
+      });
+      return params.toString();
+    }
+
+    async function loadTafraStudents() {
+      const wrap = document.getElementById('tafra-students-table');
+      wrap.innerHTML = '<div class="empty-state">جارٍ تحميل الطلاب...</div>';
+      try {
+        const result = await api('/api/tafra/students?' + tafraStudentQuery());
+        tafraStudentsPages = result.meta.pages;
+        document.getElementById('tafra-student-count').textContent = `الطلاب: ${result.meta.total}`;
+        document.getElementById('tafra-student-page-label').textContent = `صفحة ${result.meta.page} من ${result.meta.pages}`;
+        document.getElementById('tafra-students-prev').disabled = result.meta.page <= 1;
+        document.getElementById('tafra-students-next').disabled = result.meta.page >= result.meta.pages;
+        if (!result.students.length) {
+          wrap.innerHTML = '<div class="empty-state">لا يوجد طلاب مطابقون للفلاتر</div>';
+          return;
+        }
+        wrap.innerHTML = `<div class="tafra-students-table-wrap"><table>
+          <thead><tr><th>الطالب</th><th>الهاتف</th><th>هاتف ولي الأمر</th><th>الصف</th><th>التعليم</th><th>الحالة</th><th>الفكرة الحالية</th><th>تيليجرام</th></tr></thead>
+          <tbody>${result.students.map((student) => `<tr>
+            <td><div class="tafra-student-name">${escapeHtml(student.name || 'بدون اسم')}</div><div class="tafra-student-sub">رقم الطالب: ${escapeHtml(student.tafra_student_id)} — الكود: ${escapeHtml(student.student_code || '—')}</div></td>
+            <td>${escapeHtml(student.phone || '—')}</td>
+            <td>${escapeHtml(student.parent_phone || '—')}</td>
+            <td>${escapeHtml(student.educational_level || 'غير محدد')}</td>
+            <td>${student.education_type === 'azhar' ? '<span class="badge badge-warning">أزهري</span>' : '<span class="badge badge-muted">عام</span>'}</td>
+            <td>${student.status === 'active' ? '<span class="badge badge-success">نشط</span>' : `<span class="badge badge-muted">${escapeHtml(student.status || 'غير محدد')}</span>`}</td>
+            <td>${student.current_idea_number ? `<span class="idea-badge">💡 فكرة ${student.current_idea_number}</span>` : '<span class="badge badge-muted">—</span>'}</td>
+            <td>${student.telegram_chat_id ? `<span class="badge badge-success">مرتبط</span><div class="tafra-student-sub">${escapeHtml(student.telegram_username ? '@' + student.telegram_username : student.telegram_chat_id)}</div>` : '<span class="badge badge-muted">غير مرتبط</span>'}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>`;
+      } catch (error) {
+        wrap.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function initTafraStudents() {
+      try {
+        await loadTafraStudentFilters();
+        await loadTafraStudents();
+      } catch (error) { showToast(error.message); }
+    }
+
+    ['tafra-level-filter', 'tafra-education-type-filter', 'tafra-telegram-filter', 'tafra-status-filter', 'tafra-bootcamp-filter', 'tafra-idea-filter', 'tafra-enrolled-from', 'tafra-enrolled-to'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', () => {
+        tafraStudentsPage = 1;
+        loadTafraStudents();
+      });
+    });
+    document.getElementById('tafra-student-search').addEventListener('input', () => {
+      clearTimeout(tafraStudentSearchTimer);
+      tafraStudentSearchTimer = setTimeout(() => { tafraStudentsPage = 1; loadTafraStudents(); }, 350);
+    });
+    document.getElementById('clear-tafra-filters').addEventListener('click', () => {
+      ['tafra-student-search', 'tafra-level-filter', 'tafra-education-type-filter', 'tafra-telegram-filter', 'tafra-status-filter', 'tafra-bootcamp-filter', 'tafra-idea-filter', 'tafra-enrolled-from', 'tafra-enrolled-to']
+        .forEach((id) => { document.getElementById(id).value = ''; });
+      tafraStudentsPage = 1;
+      loadTafraStudents();
+    });
+    document.getElementById('tafra-students-prev').addEventListener('click', () => {
+      if (tafraStudentsPage > 1) { tafraStudentsPage -= 1; loadTafraStudents(); }
+    });
+    document.getElementById('tafra-students-next').addEventListener('click', () => {
+      if (tafraStudentsPage < tafraStudentsPages) { tafraStudentsPage += 1; loadTafraStudents(); }
+    });
+
+    document.getElementById('sync-tafra-enrollments').addEventListener('click', async () => {
+      if (!window.confirm('بدء قراءة اشتراكات الطلاب في الأبواب والكورسات؟ لن يتم تعديل منصة طفرة.')) return;
+      const button = document.getElementById('sync-tafra-enrollments');
+      button.disabled = true;
+      try {
+        const result = await api('/api/tafra/sync-enrollments', { method: 'POST' });
+        showToast(result.message);
+        const poll = async () => {
+          tafraFiltersLoaded = false;
+          const filters = await api('/api/tafra/student-filters');
+          renderTafraEnrollmentSync(filters.enrollment_sync);
+          if (filters.enrollment_sync?.status === 'running') setTimeout(poll, 3000);
+          else {
+            tafraFiltersLoaded = false;
+            await loadTafraStudentFilters();
+            await loadTafraStudents();
+          }
+        };
+        setTimeout(poll, 1500);
+      } catch (error) {
+        showToast(error.message);
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById('sync-tafra-bootcamp-names').addEventListener('click', async () => {
+      const button = document.getElementById('sync-tafra-bootcamp-names');
+      button.disabled = true;
+      try {
+        const result = await api('/api/tafra/sync-bootcamps', { method: 'POST' });
+        showToast(result.message);
+        tafraFiltersLoaded = false;
+        await loadTafraStudentFilters();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // ---------- نظرة عامة ----------
+    async function loadStats() {
+      try {
+        const s = await api('/api/stats');
+        const grid = document.getElementById('stats-grid');
+        grid.innerHTML = `
+          <div class="stat-card"><div class="label">إجمالي جهات الاتصال</div><div class="value">${s.total_contacts}</div></div>
+          <div class="stat-card"><div class="label">متفاعلين آخر أسبوع</div><div class="value">${s.active_last_week}</div></div>
+          <div class="stat-card"><div class="label">رسائل مُرسلة</div><div class="value">${s.total_messages_sent}</div></div>
+          <div class="stat-card"><div class="label">معدل الرد التقريبي</div><div class="value">${s.response_rate}%</div></div>
+        `;
+      } catch (e) { showToast(e.message); }
+    }
+
+    // ---------- صندوق الدعم ----------
+    const ticketLabels = {
+      status: {
+        new: 'جديدة', in_progress: 'قيد المتابعة', waiting_student: 'بانتظار الطالب',
+        resolved: 'مكتملة', closed: 'مغلقة'
+      },
+      priority: { low: 'منخفضة', normal: 'عادية', urgent: 'عاجلة' },
+      category: {
+        general: 'عام', registration: 'تسجيل', fees: 'مصروفات', results: 'نتائج',
+        platform: 'المنصة', complaint: 'شكوى', technical: 'تقني'
+      }
+    };
+
+    async function ensureTicketsMeta() {
+      if (!ticketsMeta) ticketsMeta = await api('/api/tickets/meta');
+      return ticketsMeta;
+    }
+
+    async function initTickets() {
+      initLiveEvents();
+      try {
+        await ensureTicketsMeta();
+        const assigneeFilter = document.getElementById('ticket-assignee-filter');
+        assigneeFilter.innerHTML = '<option value="">كل الموظفين</option><option value="unassigned">غير معيّنة</option>' +
+          ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+        const subtitleFilter = document.getElementById('ticket-subtitle-filter');
+        subtitleFilter.innerHTML = '<option value="">كل العناوين الفرعية</option>' +
+          ticketsMeta.subtitles.map((subtitle) => `<option value="${subtitle.id}">${escapeHtml(subtitle.name)}</option>`).join('');
+        const maxIdea = ticketsMeta.max_idea_number || 20;
+        const ideaFilter = document.getElementById('ticket-idea-filter');
+        if (ideaFilter) {
+          ideaFilter.innerHTML = '<option value="">كل الأفكار</option><option value="0">لم يُحدَّد بعد</option>' +
+            Array.from({ length: maxIdea }, (_, i) => i + 1)
+              .map((n) => `<option value="${n}">فكرة ${n}</option>`).join('');
+        }
+      } catch (error) {
+        return showToast(error.message);
+      }
+      loadTickets();
+    }
+
+    function ticketQueryString() {
+      const query = new URLSearchParams({ page: String(ticketsPage) });
+      const values = {
+        q: document.getElementById('ticket-search').value.trim(),
+        status: document.getElementById('ticket-status-filter').value,
+        subtitle_id: document.getElementById('ticket-subtitle-filter').value,
+        priority: document.getElementById('ticket-priority-filter').value,
+        category: document.getElementById('ticket-category-filter').value,
+        assigned_to: document.getElementById('ticket-assignee-filter').value,
+        follow_up: document.getElementById('ticket-follow-up-filter').value,
+        sent_older_than: document.getElementById('ticket-sent-filter').value,
+        received_older_than: document.getElementById('ticket-received-filter').value,
+        idea_number: document.getElementById('ticket-idea-filter') ? document.getElementById('ticket-idea-filter').value : '',
+      };
+      Object.entries(values).forEach(([key, value]) => { if (value) query.set(key, value); });
+      if (document.getElementById('ticket-unread-filter').checked) query.set('unread', 'true');
+      return query.toString();
+    }
+
+    async function loadTickets(silent = false) {
+      const list = document.getElementById('ticket-list');
+      if (!silent) {
+        list.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      }
+      try {
+        const data = await api('/api/tickets?' + ticketQueryString());
+        ticketsTotalPages = data.pages;
+        document.getElementById('ticket-count').textContent = `التذاكر (${data.total})`;
+        document.getElementById('ticket-page-label').textContent = `صفحة ${data.page} من ${data.pages}`;
+        document.getElementById('tickets-prev').disabled = data.page <= 1;
+        document.getElementById('tickets-next').disabled = data.page >= data.pages;
+
+        if (!data.tickets.length) {
+          list.innerHTML = '<div class="empty-state">لا توجد تذاكر مطابقة</div>';
+          return;
+        }
+
+        list.innerHTML = data.tickets.map((ticket) => {
+          const name = [ticket.first_name, ticket.last_name].filter(Boolean).join(' ') || ticket.telegram_username || ticket.chat_id;
+          const preview = ticket.last_message_preview || 'لا توجد رسالة';
+          const followUpDue = ticket.next_follow_up_at && new Date(ticket.next_follow_up_at) <= new Date()
+            && !['resolved', 'closed'].includes(ticket.status);
+          const ideaBadge = ticket.current_idea_number
+            ? `<span class="idea-badge" title="رقم الفكرة الحالية">💡${ticket.current_idea_number}</span>`
+            : '';
+          const hasUnread = Boolean(ticket.unread_count && ticket.unread_count > 0);
+          return `
+            <button type="button" class="ticket-list-item ${Number(ticket.id) === Number(currentTicketId) ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}" data-ticket-id="${ticket.id}">
+              <div class="ticket-list-title">
+                <span class="ticket-name-with-subtitle">
+                  <span>${escapeHtml(name)}</span>
+                  <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
+                  ${ideaBadge}
+                  ${ticket.assigned_name ? `<span class="ticket-employee-badge ${employeeBadgeClass(ticket.assigned_to)}" title="الموظف المسؤول: ${escapeHtml(ticket.assigned_name)}">${escapeHtml(firstEmployeeName(ticket.assigned_name))}</span>` : ''}
+                </span>
+                ${ticket.unread_count ? `<span class="unread-count" title="${ticket.unread_count} رسائل غير مقروءة">${ticket.unread_count}</span>` : ''}
+              </div>
+              <div class="ticket-preview">${ticket.last_message_direction === 'outgoing' ? '↩ ' : ''}${escapeHtml(preview)}</div>
+              <div class="ticket-list-meta">
+                <span>${ticketLabels.status[ticket.status] || ticket.status}</span>
+                <span>${ticketLabels.priority[ticket.priority] || ticket.priority}</span>
+                <span>${fmtDate(ticket.last_message_at)}</span>
+              </div>
+              ${ticket.next_follow_up_at ? `<div class="follow-up-badge ${followUpDue ? 'due' : ''}">📅 ${followUpDue ? 'حان الموعد: ' : 'المتابعة: '}${fmtDate(ticket.next_follow_up_at)}</div>` : ''}
+            </button>`;
+        }).join('');
+        list.querySelectorAll('[data-ticket-id]').forEach((button) => {
+          button.addEventListener('click', () => loadTicket(Number(button.dataset.ticketId)));
+        });
+      } catch (error) {
+        if (!silent) list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function buildOptions(values, current, labels, emptyLabel) {
+      const empty = emptyLabel ? `<option value="">${emptyLabel}</option>` : '';
+      return empty + values.map((value) =>
+        `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(labels[value] || value)}</option>`
+      ).join('');
+    }
+
+    async function loadTicket(ticketId) {
+      currentTicketId = ticketId;
+      document.querySelector('.ticket-workspace').classList.add('ticket-open');
+      document.getElementById('tab-tickets').classList.add('ticket-open-view');
+      const panel = document.getElementById('ticket-conversation-panel');
+      panel.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const data = await api('/api/tickets/' + ticketId);
+        const ticket = data.ticket;
+        const name = [ticket.first_name, ticket.last_name].filter(Boolean).join(' ') || ticket.telegram_username || ticket.chat_id;
+        const assignedUser = ticketsMeta.users.find((user) => Number(user.id) === Number(ticket.assigned_to));
+        const usersOptions = '<option value="">غير معيّنة</option>' + ticketsMeta.users.map((user) =>
+          `<option value="${user.id}" ${Number(user.id) === Number(ticket.assigned_to) ? 'selected' : ''}>${escapeHtml(user.name)}</option>`
+        ).join('');
+        const subtitlesOptions = ticketsMeta.subtitles.map((subtitle) =>
+          `<option value="${subtitle.id}" ${Number(subtitle.id) === Number(ticket.subtitle_id) ? 'selected' : ''}>${escapeHtml(subtitle.name)}</option>`
+        ).join('') + '<option value="__add__">＋ إضافة عنوان فرعي جديد</option>';
+
+        panel.innerHTML = `
+          <div class="ticket-conversation-header">
+            <button type="button" class="btn btn-ghost btn-sm mobile-ticket-back icon-only-mobile" id="mobile-ticket-back" title="رجوع للتذاكر" aria-label="رجوع للتذاكر">←</button>
+            <div>
+              <h2 class="ticket-heading-name">
+                ${escapeHtml(name)}
+                <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
+                ${assignedUser ? `<span class="ticket-employee-badge ${employeeBadgeClass(assignedUser.id)}" title="الموظف المسؤول: ${escapeHtml(assignedUser.name)}">${escapeHtml(firstEmployeeName(assignedUser.name))}</span>` : ''}
+                ${ticket.current_idea_number ? `<span class="idea-badge-lg" title="رقم الفكرة الحالية">💡 فكرة ${ticket.current_idea_number}</span>` : ''}
+              </h2>
+              <div class="ticket-muted">${ticket.telegram_username ? '@' + escapeHtml(ticket.telegram_username) + ' · ' : ''}Chat ID: ${ticket.chat_id}</div>
+            </div>
+          </div>
+          <div class="mobile-ticket-option-buttons">
+            <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-status-toggle" title="الحالة وبيانات التذكرة" aria-label="إظهار الحالة وبيانات التذكرة" aria-expanded="false">◉</button>
+            <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-follow-up-toggle" title="موعد المتابعة" aria-label="إظهار موعد المتابعة" aria-expanded="false">📅</button>
+          </div>
+          <div class="ticket-mobile-details admin-ticket-details" id="ticket-mobile-details">
+            <div class="ticket-controls">
+            <label>الحالة<select data-ticket-field="status">${buildOptions(ticketsMeta.statuses, ticket.status, ticketLabels.status)}</select></label>
+            <label>العنوان الفرعي<select data-ticket-field="subtitle_id">${subtitlesOptions}</select></label>
+            <label>الأولوية<select data-ticket-field="priority">${buildOptions(ticketsMeta.priorities, ticket.priority, ticketLabels.priority)}</select></label>
+            <label>التصنيف<select data-ticket-field="category">${buildOptions(ticketsMeta.categories, ticket.category, ticketLabels.category)}</select></label>
+            <label>الموظف<select data-ticket-field="assigned_to">${usersOptions}</select></label>
+            </div>
+            <div class="ticket-follow-up-box">
+            <label>
+              <span>موعد التواصل القادم</span>
+              <input type="datetime-local" id="ticket-follow-up-at" value="${toDateTimeLocal(ticket.next_follow_up_at)}">
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="save-ticket-follow-up" style="width:auto">حفظ الموعد</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="clear-ticket-follow-up" ${ticket.next_follow_up_at ? '' : 'disabled'}>تم التواصل / إلغاء الموعد</button>
+            <div class="quick-follow-up-buttons">
+              <span>اختيار سريع:</span>
+              ${[1, 2, 3, 4, 5, 6, 7].map((days) => `
+                <button type="button" class="btn btn-ghost btn-sm quick-follow-up-btn" data-days="${days}">
+                  <span class="quick-mobile-label">+${days}</span>
+                  <span class="quick-desktop-label">بعد ${days === 1 ? 'يوم' : days === 2 ? 'يومين' : days + ' أيام'}</span>
+                </button>`).join('')}
+            </div>
+            </div>
+          </div>
+          <div class="ticket-messages" id="ticket-messages">
+            ${data.messages.length ? data.messages.map((message) => `
+              <div class="ticket-message ${message.direction}">
+                ${message.image_path ? `<img class="ticket-message-image" src="/${escapeHtml(message.image_path)}" alt="صورة مرفقة">` : ''}
+                ${message.content ? `<div class="ticket-message-content">${escapeHtml(message.content)}</div>` : ''}
+                <div class="ticket-message-meta">${message.direction === 'outgoing' ? escapeHtml(message.sender_name || 'فريق الدعم') + ' · ' : ''}${fmtDate(message.occurred_at)}</div>
+              </div>`).join('') : '<div class="empty-state">لا توجد رسائل</div>'}
+          </div>
+          <div class="ticket-reply-box">
+            <div class="ticket-reply-main">
+              <textarea id="ticket-reply-content" placeholder="اكتب ردك للطالب..."></textarea>
+            </div>
+            <div class="ticket-reply-actions">
+              <label class="btn btn-ghost icon-action-btn" title="إرفاق صورة" aria-label="إرفاق صورة">
+                📎
+                <input type="file" id="ticket-reply-image" accept="image/jpeg,image/png" style="display:none">
+              </label>
+              <span id="ticket-reply-image-name" class="reply-image-indicator" style="display:none" title=""></span>
+              <button type="button" class="btn btn-danger-ghost icon-action-btn" id="clear-ticket-reply-image" style="display:none" title="إزالة الصورة" aria-label="إزالة الصورة">✕</button>
+              <div class="idea-picker-wrap" id="idea-picker-wrap">
+                <button type="button" class="btn btn-ghost icon-action-btn idea-picker-toggle" id="idea-picker-toggle"
+                  title="تسجيل رقم الفكرة" aria-label="تسجيل رقم الفكرة"
+                  aria-expanded="false">
+                  💡${ticket.current_idea_number ? `<sup class="idea-current-sup">${ticket.current_idea_number}</sup>` : ''}
+                </button>
+                <div class="idea-picker-dropdown" id="idea-picker-dropdown" style="display:none">
+                  <div class="idea-picker-header">فكرة الطالب الحالية</div>
+                  <div class="idea-picker-grid" id="idea-picker-grid"></div>
+                  ${ticket.current_idea_number ? '<button type="button" class="btn btn-ghost btn-sm idea-clear-btn" id="idea-clear-btn">إلغاء التحديد</button>' : ''}
+                </div>
+              </div>
+              <button class="btn btn-primary ticket-send-button" id="send-ticket-reply" style="width:auto" title="إرسال الرد">
+                ➤ <span class="desktop-button-label">إرسال</span>
+              </button>
+            </div>
+          </div>`;
+
+        // تعيين مفاتيح الرسائل الحالية لمنع التكرار عند التحديث التلقائي المباشر
+        renderedMessageKeys = new Set((data.messages || []).map((m) => m.message_key || (m.direction + '-' + m.occurred_at)));
+
+        panel.querySelectorAll('[data-ticket-field]').forEach((select) => {
+          select.addEventListener('change', async () => {
+            const field = select.dataset.ticketField;
+            let value = field === 'assigned_to' ? (select.value || null) : select.value;
+            try {
+              if (field === 'subtitle_id' && value === '__add__') {
+                const name = window.prompt('اكتب العنوان الفرعي الجديد:');
+                if (!name?.trim()) {
+                  select.value = String(ticket.subtitle_id);
+                  return;
+                }
+                const subtitle = await api('/api/tickets/subtitles', {
+                  method: 'POST', body: JSON.stringify({ name: name.trim() })
+                });
+                if (!ticketsMeta.subtitles.some((item) => Number(item.id) === Number(subtitle.id))) {
+                  ticketsMeta.subtitles.push(subtitle);
+                  ticketsMeta.subtitles.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+                  const filter = document.getElementById('ticket-subtitle-filter');
+                  filter.innerHTML = '<option value="">كل العناوين الفرعية</option>' +
+                    ticketsMeta.subtitles.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
+                }
+                select.innerHTML = ticketsMeta.subtitles.map((item) =>
+                  `<option value="${item.id}">${escapeHtml(item.name)}</option>`
+                ).join('') + '<option value="__add__">＋ إضافة عنوان فرعي جديد</option>';
+                select.value = String(subtitle.id);
+                value = subtitle.id;
+              }
+              await api('/api/tickets/' + ticketId, { method: 'PATCH', body: JSON.stringify({ [field]: value }) });
+              showToast('تم تحديث التذكرة');
+              if (field === 'subtitle_id' || field === 'assigned_to') loadTicket(ticketId);
+              else loadTickets();
+            } catch (error) { showToast(error.message); }
+          });
+        });
+        document.getElementById('send-ticket-reply').addEventListener('click', sendTicketReply);
+        document.getElementById('mobile-ticket-back').addEventListener('click', closeMobileTicket);
+        const mobileDetails = document.getElementById('ticket-mobile-details');
+        const mobileStatusToggle = document.getElementById('mobile-ticket-status-toggle');
+        const mobileFollowUpToggle = document.getElementById('mobile-ticket-follow-up-toggle');
+        function toggleMobileTicketSection(section, clickedButton, otherButton) {
+          const sectionClass = section === 'status' ? 'show-ticket-controls' : 'show-follow-up';
+          const isOpen = mobileDetails.classList.contains('open') && mobileDetails.classList.contains(sectionClass);
+          mobileDetails.classList.remove('open', 'show-ticket-controls', 'show-follow-up');
+          clickedButton.classList.remove('active');
+          otherButton.classList.remove('active');
+          clickedButton.setAttribute('aria-expanded', 'false');
+          otherButton.setAttribute('aria-expanded', 'false');
+          if (!isOpen) {
+            mobileDetails.classList.add('open', sectionClass);
+            clickedButton.classList.add('active');
+            clickedButton.setAttribute('aria-expanded', 'true');
+          }
+        }
+        mobileStatusToggle.addEventListener('click', () =>
+          toggleMobileTicketSection('status', mobileStatusToggle, mobileFollowUpToggle));
+        mobileFollowUpToggle.addEventListener('click', () =>
+          toggleMobileTicketSection('follow-up', mobileFollowUpToggle, mobileStatusToggle));
+        document.getElementById('save-ticket-follow-up').addEventListener('click', async () => {
+          const value = document.getElementById('ticket-follow-up-at').value;
+          if (!value) return showToast('حدد تاريخ ووقت المتابعة');
+          try {
+            await api('/api/tickets/' + ticketId, {
+              method: 'PATCH', body: JSON.stringify({ next_follow_up_at: new Date(value).toISOString() })
+            });
+            showToast('تم حفظ موعد التواصل القادم');
+            loadTicket(ticketId);
+          } catch (error) { showToast(error.message); }
+        });
+        document.getElementById('clear-ticket-follow-up').addEventListener('click', async () => {
+          try {
+            await api('/api/tickets/' + ticketId, {
+              method: 'PATCH', body: JSON.stringify({ next_follow_up_at: null })
+            });
+            showToast('تم إنهاء موعد المتابعة');
+            loadTicket(ticketId);
+          } catch (error) { showToast(error.message); }
+        });
+        panel.querySelectorAll('.quick-follow-up-btn').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const days = Number(button.dataset.days);
+            const followUpDate = new Date();
+            followUpDate.setDate(followUpDate.getDate() + days);
+            button.disabled = true;
+            try {
+              await api('/api/tickets/' + ticketId, {
+                method: 'PATCH', body: JSON.stringify({ next_follow_up_at: followUpDate.toISOString() })
+              });
+              showToast(`تم تحديد المتابعة بعد ${days === 1 ? 'يوم' : days === 2 ? 'يومين' : days + ' أيام'}`);
+              loadTicket(ticketId);
+            } catch (error) {
+              showToast(error.message);
+              button.disabled = false;
+            }
+          });
+        });
+        const replyImage = document.getElementById('ticket-reply-image');
+        const replyImageName = document.getElementById('ticket-reply-image-name');
+        const clearReplyImage = document.getElementById('clear-ticket-reply-image');
+        replyImage.addEventListener('change', () => {
+          const file = replyImage.files[0];
+          replyImageName.textContent = file ? '📷' : '';
+          replyImageName.title = file ? file.name : '';
+          replyImageName.style.display = file ? 'inline-flex' : 'none';
+          clearReplyImage.style.display = file ? 'inline-flex' : 'none';
+        });
+        clearReplyImage.addEventListener('click', () => {
+          replyImage.value = '';
+          replyImageName.textContent = '';
+          replyImageName.style.display = 'none';
+          clearReplyImage.style.display = 'none';
+        });
+
+        // —— بيكر رقم الفكرة ——
+        const ideaPickerToggle = document.getElementById('idea-picker-toggle');
+        const ideaPickerDropdown = document.getElementById('idea-picker-dropdown');
+        const ideaPickerGrid = document.getElementById('idea-picker-grid');
+
+        if (ideaPickerToggle && ideaPickerDropdown && ideaPickerGrid) {
+          const maxIdea = ticketsMeta.max_idea_number || 20;
+          let currentIdea = ticket.current_idea_number || null;
+
+          function buildIdeaGrid() {
+            ideaPickerGrid.innerHTML = Array.from({ length: maxIdea }, (_, i) => {
+              const n = i + 1;
+              return `<button type="button" class="idea-grid-btn${currentIdea === n ? ' active' : ''}" data-idea="${n}">${n}</button>`;
+            }).join('');
+            ideaPickerGrid.querySelectorAll('.idea-grid-btn').forEach((btn) => {
+              btn.addEventListener('click', async () => {
+                const idea = Number(btn.dataset.idea);
+                btn.disabled = true;
+                try {
+                  await api(`/api/tickets/${ticketId}/idea`, {
+                    method: 'PATCH', body: JSON.stringify({ idea_number: idea })
+                  });
+                  currentIdea = idea;
+                  showToast(`تم تسجيل الفكرة ${idea}`);
+                  ideaPickerDropdown.style.display = 'none';
+                  ideaPickerToggle.setAttribute('aria-expanded', 'false');
+                  loadTicket(ticketId);
+                } catch (err) {
+                  showToast(err.message);
+                  btn.disabled = false;
+                }
+              });
+            });
+          }
+          buildIdeaGrid();
+
+          ideaPickerToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = ideaPickerDropdown.style.display !== 'none';
+            ideaPickerDropdown.style.display = isOpen ? 'none' : 'block';
+            ideaPickerToggle.setAttribute('aria-expanded', String(!isOpen));
+          });
+
+          const ideaClearBtn = document.getElementById('idea-clear-btn');
+          if (ideaClearBtn) {
+            ideaClearBtn.addEventListener('click', async () => {
+              ideaClearBtn.disabled = true;
+              try {
+                await api(`/api/tickets/${ticketId}/idea`, {
+                  method: 'PATCH', body: JSON.stringify({ idea_number: null })
+                });
+                showToast('تم إلغاء تحديد الفكرة');
+                loadTicket(ticketId);
+              } catch (err) {
+                showToast(err.message);
+                ideaClearBtn.disabled = false;
+              }
+            });
+          }
+
+          document.addEventListener('click', function closeIdeaPicker(e) {
+            if (!document.getElementById('idea-picker-wrap')?.contains(e.target)) {
+              if (ideaPickerDropdown) ideaPickerDropdown.style.display = 'none';
+              document.removeEventListener('click', closeIdeaPicker);
+            }
+          });
+        }
+
+        // —— سجل تقدم الأفكار ——
+        try {
+          const ideaLog = await api(`/api/tickets/${ticketId}/idea-log`);
+          if (ideaLog.length) {
+            const messages = document.getElementById('ticket-messages');
+            const logHtml = `<div class="idea-log-section">
+              <div class="idea-log-title">💡 سجل الأفكار</div>
+              ${ideaLog.map((entry) => `
+                <div class="idea-log-entry">
+                  <span class="idea-log-num">فكرة ${entry.idea_number}</span>
+                  — ${escapeHtml(entry.changed_by_name || 'موظف')} — ${fmtDate(entry.changed_at)}
+                </div>`).join('')}
+            </div>`;
+            messages.insertAdjacentHTML('beforeend', logHtml);
+          }
+        } catch (_) { /* تجاهل بصمت لو فشل تحميل السجل */ }
+
+        const messages = document.getElementById('ticket-messages');
+        messages.scrollTop = messages.scrollHeight;
+        loadTickets();
+      } catch (error) {
+        panel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function sendTicketReply() {
+      const textarea = document.getElementById('ticket-reply-content');
+      const content = textarea.value.trim();
+      const image = document.getElementById('ticket-reply-image').files[0];
+      if (!content && !image) return showToast('اكتب نصًا أو أرفق صورة');
+      if (image && content.length > 1024) return showToast('النص مع الصورة يجب ألا يتجاوز 1024 حرفًا');
+      const button = document.getElementById('send-ticket-reply');
+      button.disabled = true;
+      try {
+        const formData = new FormData();
+        formData.append('content', content);
+        if (image) formData.append('image', image);
+        const response = await fetch(`/api/tickets/${currentTicketId}/reply`, { method: 'POST', body: formData });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'فشل إرسال الرد');
+        await loadTicket(currentTicketId);
+        showToast('تم إرسال الرد للطالب');
+      } catch (error) {
+        showToast(error.message);
+        button.disabled = false;
+      }
+    }
+
+    function closeMobileTicket() {
+      document.querySelector('.ticket-workspace').classList.remove('ticket-open');
+      document.getElementById('tab-tickets').classList.remove('ticket-open-view');
+      currentTicketId = null;
+      loadTickets();
+    }
+
+    ['ticket-status-filter', 'ticket-subtitle-filter', 'ticket-priority-filter', 'ticket-category-filter', 'ticket-assignee-filter', 'ticket-follow-up-filter', 'ticket-sent-filter', 'ticket-received-filter', 'ticket-unread-filter', 'ticket-idea-filter']
+      .forEach((id) => document.getElementById(id).addEventListener('change', () => {
+        ticketsPage = 1;
+        updateAgentFilterIndicator();
+        loadTickets();
+      }));
+    const agentFilterToggle = document.getElementById('agent-filter-toggle');
+    if (agentFilterToggle) {
+      agentFilterToggle.addEventListener('click', () => {
+        const filters = document.getElementById('ticket-advanced-filters');
+        const isOpen = filters.classList.toggle('open');
+        agentFilterToggle.classList.toggle('active', isOpen);
+        agentFilterToggle.title = isOpen ? 'إخفاء الفلاتر' : 'إظهار الفلاتر';
+        agentFilterToggle.setAttribute('aria-label', agentFilterToggle.title);
+      });
+    }
+
+    function updateAgentFilterIndicator() {
+      if (!agentFilterToggle) return;
+      const hasFilter = [
+        'ticket-status-filter', 'ticket-subtitle-filter', 'ticket-priority-filter', 'ticket-category-filter',
+        'ticket-assignee-filter', 'ticket-follow-up-filter', 'ticket-sent-filter',
+        'ticket-received-filter', 'ticket-idea-filter'
+      ].some((id) => document.getElementById(id).value)
+        || document.getElementById('ticket-unread-filter').checked;
+      agentFilterToggle.classList.toggle('has-filter', hasFilter);
+    }
+    document.getElementById('ticket-search').addEventListener('input', () => {
+      clearTimeout(ticketSearchTimer);
+      ticketSearchTimer = setTimeout(() => { ticketsPage = 1; loadTickets(); }, 350);
+    });
+    document.getElementById('refresh-tickets-btn').addEventListener('click', loadTickets);
+    document.getElementById('tickets-prev').addEventListener('click', () => { if (ticketsPage > 1) { ticketsPage--; loadTickets(); } });
+    document.getElementById('tickets-next').addEventListener('click', () => { if (ticketsPage < ticketsTotalPages) { ticketsPage++; loadTickets(); } });
+
+    // ---------- جهات الاتصال ----------
+    async function initContactsAndBroadcasts() {
+      try {
+        await ensureTicketsMeta();
+        document.getElementById('contact-assignee-filter').innerHTML =
+          '<option value="">كل الموظفين</option><option value="unassigned">غير معيّنة</option>' +
+          ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+        document.getElementById('contact-subtitle-filter').innerHTML =
+          '<option value="">كل العناوين الفرعية</option>' +
+          ticketsMeta.subtitles.map((subtitle) => `<option value="${subtitle.id}">${escapeHtml(subtitle.name)}</option>`).join('');
+        await Promise.all([loadContacts(), loadTagsIntoSelect(), loadBroadcasts()]);
+      } catch (error) { showToast(error.message); }
+    }
+
+    function updateSelectedContactsUi() {
+      const count = selectedContactIds.size;
+      document.getElementById('selected-contacts-count').textContent = `المحدد: ${count}`;
+      document.getElementById('message-selected-btn').disabled = count === 0;
+
+      const selectedOption = document.querySelector('#broadcast-tag option[value="__selected__"]');
+      if (selectedOption) selectedOption.textContent = `الجهات المحددة (${count})`;
+
+      const hint = document.getElementById('selected-audience-hint');
+      if (document.getElementById('broadcast-tag').value === '__selected__') {
+        hint.style.display = 'block';
+        hint.textContent = count ? `سيتم الإرسال إلى ${count} جهة محددة` : 'لم تحدد أي جهة اتصال بعد';
+      } else {
+        hint.style.display = 'none';
+      }
+    }
+
+    async function loadContacts() {
+      const wrap = document.getElementById('contacts-table-wrap');
+      try {
+        const query = new URLSearchParams();
+        const filterValues = {
+          status: document.getElementById('contact-status-filter').value,
+          subtitle_id: document.getElementById('contact-subtitle-filter').value,
+          priority: document.getElementById('contact-priority-filter').value,
+          category: document.getElementById('contact-category-filter').value,
+          assigned_to: document.getElementById('contact-assignee-filter').value,
+          follow_up: document.getElementById('contact-follow-up-filter').value,
+          sent_older_than: document.getElementById('filter-sent').value,
+          received_older_than: document.getElementById('filter-received').value,
+        };
+        Object.entries(filterValues).forEach(([key, value]) => { if (value) query.set(key, value); });
+        if (document.getElementById('contact-unread-filter').checked) query.set('unread', 'true');
+        const contacts = await api('/api/contacts' + (query.size ? `?${query}` : ''));
+        currentFilteredContactIds = contacts.map((contact) => Number(contact.id));
+        if (contacts.length === 0) {
+          currentFilteredContactIds = [];
+          wrap.innerHTML = '<div class="empty-state">لسه مفيش جهات اتصال — هتظهر هنا أول ما حد يعمل /start على البوت</div>';
+          return;
+        }
+        wrap.innerHTML = `
+          <table>
+            <thead><tr><th class="select-cell"><input type="checkbox" id="select-all-contacts" aria-label="تحديد الكل"></th><th>الاسم</th><th>العنوان الفرعي</th><th>الحالة</th><th>الموظف</th><th>آخر رسالة أرسلناها</th><th>آخر رسالة استلمناها</th><th>تصنيفات</th></tr></thead>
+            <tbody>
+              ${contacts.map((c) => `
+                <tr>
+                  <td class="select-cell"><input type="checkbox" class="contact-selector" value="${c.id}" ${selectedContactIds.has(c.id) ? 'checked' : ''} aria-label="تحديد جهة الاتصال"></td>
+                  <td>${escapeHtml([c.first_name, c.last_name].filter(Boolean).join(' ') || c.telegram_username || String(c.chat_id))}</td>
+                  <td>${c.subtitle_name ? `<span class="ticket-subtitle-badge">${escapeHtml(c.subtitle_name)}</span>` : '—'}</td>
+                  <td>${c.ticket_status ? escapeHtml(ticketLabels.status[c.ticket_status] || c.ticket_status) : '—'}</td>
+                  <td>${escapeHtml(c.assigned_name || '—')}</td>
+                  <td>${fmtDay(c.last_sent_at)}</td>
+                  <td>${fmtDay(c.last_received_at)}</td>
+                  <td>${c.tags.map((t) => `<span class="tag-pill">${escapeHtml(t.name)}</span>`).join(' ') || '—'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+        wrap.querySelectorAll('.contact-selector').forEach((checkbox) => {
+          checkbox.addEventListener('change', () => {
+            const id = Number(checkbox.value);
+            checkbox.checked ? selectedContactIds.add(id) : selectedContactIds.delete(id);
+            updateSelectedContactsUi();
+          });
+        });
+        document.getElementById('select-all-contacts').addEventListener('change', (event) => {
+          wrap.querySelectorAll('.contact-selector').forEach((checkbox) => {
+            checkbox.checked = event.target.checked;
+            const id = Number(checkbox.value);
+            checkbox.checked ? selectedContactIds.add(id) : selectedContactIds.delete(id);
+          });
+          updateSelectedContactsUi();
+        });
+        updateSelectedContactsUi();
+      } catch (e) { wrap.innerHTML = `<div class="empty-state">${e.message}</div>`; }
+    }
+    [
+      'contact-status-filter', 'contact-subtitle-filter', 'contact-priority-filter',
+      'contact-category-filter', 'contact-assignee-filter', 'contact-follow-up-filter',
+      'filter-sent', 'filter-received', 'contact-unread-filter'
+    ].forEach((id) => document.getElementById(id).addEventListener('change', loadContacts));
+
+    document.getElementById('select-filtered-contacts-btn').addEventListener('click', () => {
+      currentFilteredContactIds.forEach((id) => selectedContactIds.add(id));
+      document.querySelectorAll('.contact-selector').forEach((checkbox) => { checkbox.checked = true; });
+      updateSelectedContactsUi();
+      showToast(`تم تحديد ${currentFilteredContactIds.length} نتيجة مفلترة`);
+    });
+    document.getElementById('clear-selected-contacts-btn').addEventListener('click', () => {
+      selectedContactIds.clear();
+      document.querySelectorAll('.contact-selector').forEach((checkbox) => { checkbox.checked = false; });
+      updateSelectedContactsUi();
+    });
+
+    document.getElementById('message-selected-btn').addEventListener('click', () => {
+      if (selectedContactIds.size === 0) return;
+      document.getElementById('broadcast-tag').value = '__selected__';
+      updateSelectedContactsUi();
+      document.getElementById('broadcast-compose').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('broadcast-content').focus();
+    });
+
+    document.getElementById('csv-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch('/api/contacts/import', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast(`تم استيراد ${data.imported} جهة اتصال${data.skipped ? ` (${data.skipped} اتجاهلت)` : ''}`);
+        loadContacts();
+      } catch (err) { showToast(err.message); }
+      e.target.value = '';
+    });
+
+    // ---------- القوالب والتصنيفات (مشتركة) ----------
+    async function loadTagsIntoSelect() {
+      try {
+        const tags = await api('/api/tags');
+        const select = document.getElementById('broadcast-tag');
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">كل جهات الاتصال</option>' +
+          `<option value="__selected__">الجهات المحددة (${selectedContactIds.size})</option>` +
+          tags.map((t) => `<option value="${t.id}">${t.name}</option>`).join('');
+        if ([...select.options].some((option) => option.value === currentValue)) select.value = currentValue;
+        updateSelectedContactsUi();
+      } catch (e) { /* تجاهل بصمت لو مفيش تصنيفات لسه */ }
+    }
+
+    async function loadTemplates() {
+      const list = document.getElementById('templates-list');
+      try {
+        const templates = await api('/api/templates');
+        if (templates.length === 0) {
+          list.innerHTML = '<div class="empty-state">لسه مفيش قوالب</div>';
+          return;
+        }
+        list.innerHTML = templates.map((t) => `
+          <div class="row-between" style="padding:10px 0; border-bottom:1px solid var(--border)">
+            <div><b>${t.name}</b><div style="color:var(--text-muted); font-size:13px">${t.content}</div></div>
+            <button class="btn btn-danger-ghost btn-sm" onclick="deleteTemplate(${t.id})">حذف</button>
+          </div>
+        `).join('');
+      } catch (e) { list.innerHTML = `<div class="empty-state">${e.message}</div>`; }
+    }
+
+    document.getElementById('add-template-btn').addEventListener('click', async () => {
+      const name = document.getElementById('template-name').value.trim();
+      const content = document.getElementById('template-content').value.trim();
+      if (!name || !content) return showToast('املأ اسم القالب والمحتوى');
+      try {
+        await api('/api/templates', { method: 'POST', body: JSON.stringify({ name, content }) });
+        document.getElementById('template-name').value = '';
+        document.getElementById('template-content').value = '';
+        showToast('تم إضافة القالب');
+        loadTemplates();
+      } catch (e) { showToast(e.message); }
+    });
+
+    async function deleteTemplate(id) {
+      try {
+        await api('/api/templates/' + id, { method: 'DELETE' });
+        loadTemplates();
+      } catch (e) { showToast(e.message); }
+    }
+
+    // ---------- الإرسال الجماعي ----------
+    document.getElementById('broadcast-tag').addEventListener('change', updateSelectedContactsUi);
+
+    const broadcastImageInput = document.getElementById('broadcast-image');
+    const broadcastImageName = document.getElementById('broadcast-image-name');
+    const clearBroadcastImage = document.getElementById('clear-broadcast-image');
+
+    broadcastImageInput.addEventListener('change', () => {
+      const file = broadcastImageInput.files[0];
+      broadcastImageName.textContent = file ? file.name : 'لم يتم اختيار صورة';
+      clearBroadcastImage.style.display = file ? 'inline-flex' : 'none';
+    });
+
+    clearBroadcastImage.addEventListener('click', () => {
+      broadcastImageInput.value = '';
+      broadcastImageName.textContent = 'لم يتم اختيار صورة';
+      clearBroadcastImage.style.display = 'none';
+    });
+
+    async function loadBroadcasts() {
+      const wrap = document.getElementById('broadcasts-table-wrap');
+      try {
+        const broadcasts = await api('/api/broadcasts');
+        if (broadcasts.length === 0) {
+          wrap.innerHTML = '<div class="empty-state">لسه مفيش عمليات إرسال</div>';
+          return;
+        }
+        const statusBadge = (s) => ({
+          pending: '<span class="badge badge-warning">قيد الانتظار</span>',
+          sending: '<span class="badge badge-warning">بيتبعت الآن</span>',
+          completed: '<span class="badge badge-success">تم</span>',
+          failed: '<span class="badge badge-danger">فشل</span>',
+        }[s] || s);
+        wrap.innerHTML = `
+          <table>
+            <thead><tr><th>الرسالة</th><th>الحالة</th><th>نجح</th><th>فشل</th><th>التاريخ</th></tr></thead>
+            <tbody>
+              ${broadcasts.map((b) => `
+                <tr>
+                  <td>${(b.message_content || '').slice(0, 40)}${b.message_content.length > 40 ? '…' : ''}</td>
+                  <td>${statusBadge(b.status)}</td>
+                  <td>${b.sent_count}</td>
+                  <td>${b.failed_count}</td>
+                  <td>${fmtDate(b.scheduled_for || b.created_at)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (e) { wrap.innerHTML = `<div class="empty-state">${e.message}</div>`; }
+    }
+
+    document.getElementById('send-broadcast-btn').addEventListener('click', async () => {
+      const message_content = document.getElementById('broadcast-content').value.trim();
+      const audienceValue = document.getElementById('broadcast-tag').value;
+      const filter_tag_id = audienceValue && audienceValue !== '__selected__' ? audienceValue : null;
+      const selected_contact_ids = audienceValue === '__selected__' ? Array.from(selectedContactIds) : undefined;
+      const scheduleVal = document.getElementById('broadcast-schedule').value;
+      const scheduled_for = scheduleVal ? new Date(scheduleVal).toISOString() : null;
+      const image = broadcastImageInput.files[0];
+
+      if (!message_content) return showToast('اكتب محتوى الرسالة الأول');
+      if (image && message_content.length > 1024) return showToast('النص مع الصورة يجب ألا يتجاوز 1024 حرفًا');
+      if (audienceValue === '__selected__' && selected_contact_ids.length === 0) {
+        return showToast('اختار جهة اتصال واحدة على الأقل من صفحة جهات الاتصال');
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('message_content', message_content);
+        if (filter_tag_id) formData.append('filter_tag_id', filter_tag_id);
+        if (selected_contact_ids) formData.append('selected_contact_ids', JSON.stringify(selected_contact_ids));
+        if (scheduled_for) formData.append('scheduled_for', scheduled_for);
+        if (image) formData.append('image', image);
+
+        const response = await fetch('/api/broadcasts', { method: 'POST', body: formData });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'حصل خطأ أثناء الإرسال');
+        showToast(scheduled_for ? 'تم جدولة الرسالة' : 'جاري الإرسال الآن');
+        document.getElementById('broadcast-content').value = '';
+        document.getElementById('broadcast-schedule').value = '';
+        clearBroadcastImage.click();
+        loadBroadcasts();
+      } catch (e) { showToast(e.message); }
+    });
+
+    // ---------- الإعدادات ----------
+    async function loadSettings() {
+      try {
+        const s = await api('/api/settings');
+        const statusEl = document.getElementById('token-status');
+        const activeBot = (s.bot_profiles || []).find((profile) => profile.is_active);
+        if (activeBot) {
+          statusEl.textContent = `✓ البوت المفعّل: ${activeBot.bot_username ? '@' + activeBot.bot_username : activeBot.label}`;
+          statusEl.className = 'badge badge-success';
+        } else {
+          statusEl.textContent = 'مفيش توكن متسجل لسه';
+          statusEl.className = 'badge badge-muted';
+        }
+        renderBotProfiles(s.bot_profiles || []);
+        document.getElementById('auto-reply-enabled').checked = s.auto_reply_enabled === 'true';
+        document.getElementById('auto-reply-message').value = s.auto_reply_message || '';
+        document.getElementById('forwarding-enabled').checked = s.forwarding_enabled === 'true';
+        document.getElementById('follow-up-auto-enabled').checked = s.follow_up_auto_enabled === 'true';
+        document.getElementById('follow-up-auto-message').value = s.follow_up_auto_message || '';
+        document.getElementById('agent-intro-enabled').checked = s.agent_intro_enabled === 'true';
+        document.getElementById('agent-intro-message').value = s.agent_intro_message || '';
+        const maxIdeaInput = document.getElementById('max-idea-number');
+        if (maxIdeaInput) maxIdeaInput.value = s.max_idea_number || '20';
+        document.getElementById('forward-link-command').textContent = `/setforward ${s.forward_setup_code}`;
+        const forwardStatus = document.getElementById('forward-target-status');
+        if (s.forward_chat_id) {
+          forwardStatus.textContent = `الحساب المرتبط: ${s.forward_chat_name || s.forward_chat_id}`;
+          forwardStatus.className = 'badge badge-success';
+        } else {
+          forwardStatus.textContent = 'لم يتم ربط حساب بعد';
+          forwardStatus.className = 'badge badge-muted';
+        }
+        loadAdminUsers();
+        loadTafraStatus();
+      } catch (e) { showToast(e.message); }
+    }
+
+    async function loadTafraStatus() {
+      const statusElement = document.getElementById('tafra-connection-status');
+      const detailsElement = document.getElementById('tafra-sync-details');
+      const syncButton = document.getElementById('sync-tafra-students');
+      try {
+        const result = await api('/api/tafra/status');
+        statusElement.textContent = result.configured ? '✓ بيانات الربط محفوظة — وضع القراءة فقط' : 'لم تُحفظ بيانات الربط بعد';
+        statusElement.className = result.configured ? 'badge badge-success' : 'badge badge-muted';
+        syncButton.disabled = !result.configured || result.sync?.status === 'running';
+        const sync = result.sync || {};
+        if (sync.status === 'running') {
+          detailsElement.textContent = `جارٍ التحديث: الصفحة ${sync.current_page || 0} من ${sync.total_pages || '...'} — تم جلب ${sync.synced_students || 0} طالب`;
+        } else if (sync.status === 'completed') {
+          detailsElement.textContent = `آخر تحديث ناجح: ${fmtDate(sync.completed_at)} — الطلاب: ${sync.synced_students || 0} — المرتبطون بتيليجرام: ${sync.telegram_students || 0}`;
+        } else if (sync.status === 'failed') {
+          detailsElement.textContent = `فشل آخر تحديث: ${sync.error_message || 'سبب غير معروف'}`;
+        } else {
+          detailsElement.textContent = 'لم تتم مزامنة الطلاب بعد.';
+        }
+      } catch (error) {
+        statusElement.textContent = 'تعذر قراءة حالة الربط';
+        statusElement.className = 'badge badge-danger';
+        detailsElement.textContent = error.message;
+      }
+    }
+
+    document.getElementById('save-tafra-credentials').addEventListener('click', async () => {
+      const button = document.getElementById('save-tafra-credentials');
+      const identifier = document.getElementById('tafra-identifier').value.trim();
+      const password = document.getElementById('tafra-password').value;
+      if (!identifier || !password) return showToast('أدخل رقم الهاتف أو البريد وكلمة المرور');
+      button.disabled = true;
+      try {
+        const result = await api('/api/tafra/credentials', {
+          method: 'POST', body: JSON.stringify({ identifier, password })
+        });
+        document.getElementById('tafra-password').value = '';
+        showToast(result.message || 'تم حفظ الربط');
+        await loadTafraStatus();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById('sync-tafra-students').addEventListener('click', async () => {
+      const button = document.getElementById('sync-tafra-students');
+      if (!window.confirm('بدء قراءة وتحديث جميع الطلاب داخل قاعدة بيانات المشروع؟ لن يتم تعديل منصة طفرة.')) return;
+      button.disabled = true;
+      button.textContent = 'جارٍ تحديث الطلاب...';
+      try {
+        const result = await api('/api/tafra/sync', { method: 'POST' });
+        showToast(result.message || 'بدأ تحديث الطلاب في الخلفية');
+        const waitForCompletion = async () => {
+          await loadTafraStatus();
+          const status = await api('/api/tafra/status');
+          if (status.sync?.status === 'running') {
+            setTimeout(waitForCompletion, 3000);
+          } else if (status.sync?.status === 'completed') {
+            showToast(`اكتمل تحديث ${status.sync.synced_students} طالب`);
+          } else if (status.sync?.status === 'failed') {
+            showToast('فشل تحديث الطلاب، راجع حالة الربط');
+          }
+        };
+        setTimeout(waitForCompletion, 1500);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.textContent = 'تحديث بيانات الطلاب الآن';
+        await loadTafraStatus();
+      }
+    });
+
+    function renderBotProfiles(profiles) {
+      const list = document.getElementById('bot-profiles-list');
+      if (!profiles.length) {
+        list.innerHTML = '<div class="empty-state">لا توجد بوتات محفوظة حتى الآن</div>';
+        return;
+      }
+      list.innerHTML = profiles.map((profile) => `
+        <div class="bot-profile-row ${profile.is_active ? 'active' : ''}">
+          <div class="bot-profile-info">
+            <b>${escapeHtml(profile.label)}</b>
+            <span>${profile.bot_username ? '@' + escapeHtml(profile.bot_username) : 'بيانات البوت تُحدّث عند أول تفعيل'}</span>
+          </div>
+          <div class="row bot-profile-actions">
+            ${profile.is_active
+              ? '<span class="badge badge-success">مفعّل الآن</span>'
+              : `<button type="button" class="btn btn-primary btn-sm activate-bot-profile" data-profile-id="${profile.id}" data-profile-name="${escapeHtml(profile.bot_username || profile.label)}">⇄ تفعيل</button>
+                 <button type="button" class="btn btn-danger-ghost btn-sm delete-bot-profile" data-profile-id="${profile.id}">حذف</button>`}
+          </div>
+        </div>`).join('');
+
+      list.querySelectorAll('.activate-bot-profile').forEach((button) => {
+        button.addEventListener('click', async () => {
+          if (!window.confirm(`تحويل المشروع إلى ${button.dataset.profileName}؟ سيتم نقل Webhook وإيقاف استقبال البوت الحالي.`)) return;
+          button.disabled = true;
+          try {
+            const result = await api(`/api/settings/bots/${button.dataset.profileId}/activate`, { method: 'POST' });
+            showToast(result.message || 'تم تبديل البوت');
+            loadSettings();
+          } catch (error) {
+            showToast(error.message);
+            button.disabled = false;
+          }
+        });
+      });
+      list.querySelectorAll('.delete-bot-profile').forEach((button) => {
+        button.addEventListener('click', async () => {
+          if (!window.confirm('حذف هذا البوت من القائمة؟ لن يتم حذف أي بيانات طلاب.')) return;
+          try {
+            await api(`/api/settings/bots/${button.dataset.profileId}`, { method: 'DELETE' });
+            showToast('تم حذف البوت المحفوظ');
+            loadSettings();
+          } catch (error) { showToast(error.message); }
+        });
+      });
+    }
+
+    document.getElementById('add-bot-profile-btn').addEventListener('click', async () => {
+      const bot_token = document.getElementById('bot-token-input').value.trim();
+      const label = document.getElementById('bot-profile-label').value.trim();
+      if (!bot_token) return showToast('الصق توكن البوت الأول');
+      try {
+        const res = await api('/api/settings/bots', { method: 'POST', body: JSON.stringify({ bot_token, label }) });
+        showToast(res.message || 'تم الحفظ');
+        document.getElementById('bot-token-input').value = '';
+        document.getElementById('bot-profile-label').value = '';
+        loadSettings();
+      } catch (e) { showToast(e.message); }
+    });
+
+    document.getElementById('save-auto-reply-btn').addEventListener('click', async () => {
+      const enabled = document.getElementById('auto-reply-enabled').checked;
+      const message = document.getElementById('auto-reply-message').value;
+      try {
+        await api('/api/settings/auto-reply', { method: 'POST', body: JSON.stringify({ enabled, message }) });
+        showToast('تم حفظ إعدادات الرد التلقائي');
+      } catch (e) { showToast(e.message); }
+    });
+
+    document.getElementById('copy-forward-command').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(document.getElementById('forward-link-command').textContent);
+      showToast('تم نسخ أمر الربط');
+    });
+
+    document.getElementById('save-forwarding-btn').addEventListener('click', async () => {
+      const enabled = document.getElementById('forwarding-enabled').checked;
+      try {
+        await api('/api/settings/forwarding', { method: 'POST', body: JSON.stringify({ enabled }) });
+        showToast('تم حفظ إعدادات تحويل الرسائل');
+        loadSettings();
+      } catch (e) { showToast(e.message); }
+    });
+
+    document.getElementById('save-follow-up-auto-btn').addEventListener('click', async () => {
+      const enabled = document.getElementById('follow-up-auto-enabled').checked;
+      const message = document.getElementById('follow-up-auto-message').value.trim();
+      if (enabled && !message) return showToast('اكتب نص رسالة المتابعة قبل التفعيل');
+      try {
+        await api('/api/settings/follow-up-automation', {
+          method: 'POST', body: JSON.stringify({ enabled, message })
+        });
+        showToast('تم حفظ رسالة المتابعة التلقائية');
+        loadSettings();
+      } catch (error) { showToast(error.message); }
+    });
+
+    document.getElementById('save-agent-intro-btn').addEventListener('click', async () => {
+      const enabled = document.getElementById('agent-intro-enabled').checked;
+      const message = document.getElementById('agent-intro-message').value.trim();
+      if (enabled && !message.includes('{name}')) return showToast('نص التعريف يجب أن يحتوي على {name}');
+      try {
+        await api('/api/settings/agent-introduction', {
+          method: 'POST', body: JSON.stringify({ enabled, message })
+        });
+        showToast('تم حفظ إعدادات تعريف الموظف');
+        loadSettings();
+      } catch (error) { showToast(error.message); }
+    });
+
+    document.getElementById('save-idea-settings-btn').addEventListener('click', async () => {
+      const max_idea_number = Number(document.getElementById('max-idea-number').value);
+      if (!max_idea_number || max_idea_number < 1) return showToast('أدخل عدد أفكار صحيح (1 على الأقل)');
+      try {
+        await api('/api/settings/idea-settings', {
+          method: 'POST', body: JSON.stringify({ max_idea_number })
+        });
+        showToast(`تم حفظ عدد الأفكار: ${max_idea_number}`);
+        ticketsMeta = null; // إعادة تحميل meta عشان يُحدَّث dropdown الأفكار
+      } catch (error) { showToast(error.message); }
+    });
+
+    async function loadAdminUsers() {
+      const list = document.getElementById('staff-users-list');
+      try {
+        const users = await api('/api/admin/users');
+        list.innerHTML = `
+          <table class="staff-table">
+            <thead><tr><th>الاسم</th><th>البريد</th><th>الدور</th><th>الحالة</th><th>تغيير كلمة المرور</th></tr></thead>
+            <tbody>${users.map((user) => `
+              <tr>
+                <td>${escapeHtml(user.name)}</td>
+                <td>${escapeHtml(user.email)}</td>
+                <td><select class="staff-role-select" data-user-id="${user.id}">
+                  <option value="agent" ${user.role === 'agent' ? 'selected' : ''}>موظف دعم</option>
+                  <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>مدير</option>
+                </select></td>
+                <td><label class="row" style="white-space:nowrap"><input type="checkbox" class="staff-active-toggle" data-user-id="${user.id}" ${user.is_active ? 'checked' : ''}> مفعّل</label></td>
+                <td><div class="staff-password-reset">
+                  <input type="password" class="staff-new-password" data-user-id="${user.id}" placeholder="كلمة جديدة">
+                  <button type="button" class="btn btn-ghost btn-sm staff-reset-password" data-user-id="${user.id}">تغيير</button>
+                </div></td>
+              </tr>`).join('')}</tbody>
+          </table>`;
+        list.querySelectorAll('.staff-role-select').forEach((select) => {
+          select.addEventListener('change', () => updateStaffUser(select.dataset.userId, { role: select.value }));
+        });
+        list.querySelectorAll('.staff-active-toggle').forEach((checkbox) => {
+          checkbox.addEventListener('change', () => updateStaffUser(checkbox.dataset.userId, { is_active: checkbox.checked }));
+        });
+        list.querySelectorAll('.staff-reset-password').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const input = list.querySelector(`.staff-new-password[data-user-id="${button.dataset.userId}"]`);
+            const password = input.value;
+            if (password.length < 8) return showToast('كلمة المرور يجب أن تكون 8 أحرف على الأقل');
+            button.disabled = true;
+            try {
+              await api('/api/admin/users/' + button.dataset.userId, {
+                method: 'PATCH', body: JSON.stringify({ password })
+              });
+              showToast('تم تغيير كلمة المرور');
+              loadAdminUsers();
+            } catch (error) {
+              showToast(error.message);
+              button.disabled = false;
+            }
+          });
+        });
+      } catch (error) {
+        list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function updateStaffUser(userId, changes) {
+      try {
+        await api('/api/admin/users/' + userId, { method: 'PATCH', body: JSON.stringify(changes) });
+        showToast('تم تحديث الحساب');
+        loadAdminUsers();
+      } catch (error) {
+        showToast(error.message);
+        loadAdminUsers();
+      }
+    }
+
+    document.getElementById('create-staff-btn').addEventListener('click', async () => {
+      const name = document.getElementById('staff-name').value.trim();
+      const email = document.getElementById('staff-email').value.trim();
+      const password = document.getElementById('staff-password').value;
+      const role = document.getElementById('staff-role').value;
+      if (!name || !email || !password) return showToast('املأ بيانات الحساب كاملة');
+      try {
+        await api('/api/admin/users', { method: 'POST', body: JSON.stringify({ name, email, password, role }) });
+        document.getElementById('staff-name').value = '';
+        document.getElementById('staff-email').value = '';
+        document.getElementById('staff-password').value = '';
+        showToast('تم إنشاء الحساب');
+        loadAdminUsers();
+      } catch (error) { showToast(error.message); }
+    });
+
+    // ---------- إشعارات وتحديثات الوقت الفعلي (Real-time SSE + Live Auto Sync) ----------
+    let liveEvtSource = null;
+    let liveSyncTimer = null;
+    let renderedMessageKeys = new Set();
+
+    function updateActiveConversationLive(data) {
+      if (!currentTicketId || !data || !data.messages) return;
+
+      const messagesContainer = document.getElementById('ticket-messages');
+      if (!messagesContainer) return;
+
+      let hasNew = false;
+      const emptyState = messagesContainer.querySelector('.empty-state');
+
+      data.messages.forEach((msg) => {
+        const key = msg.message_key || (msg.direction + '-' + msg.occurred_at);
+        if (!renderedMessageKeys.has(key)) {
+          renderedMessageKeys.add(key);
+          hasNew = true;
+
+          if (emptyState) emptyState.remove();
+
+          const msgHtml = `
+            <div class="ticket-message ${msg.direction}">
+              ${msg.image_path ? `<img class="ticket-message-image" src="/${escapeHtml(msg.image_path)}" alt="صورة مرفقة">` : ''}
+              ${msg.content ? `<div class="ticket-message-content">${escapeHtml(msg.content)}</div>` : ''}
+              <div class="ticket-message-meta">${msg.direction === 'outgoing' ? escapeHtml(msg.sender_name || 'فريق الدعم') + ' · ' : ''}${fmtDate(msg.occurred_at)}</div>
+            </div>`;
+          messagesContainer.insertAdjacentHTML('beforeend', msgHtml);
+        }
+      });
+
+      if (hasNew) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    }
+
+    async function performLiveSync() {
+      // فقط إذا كان الموظف/المدير متواجد في تبويب صندوق الدعم
+      const ticketsTab = document.getElementById('tab-tickets');
+      if (!ticketsTab || ticketsTab.style.display === 'none') return;
+
+      try {
+        // إذا كانت هناك محادثة مفتوحة حالياً، نحصل على الرسائل الجديدة فوراً
+        if (currentTicketId) {
+          const data = await api('/api/tickets/' + currentTicketId);
+          updateActiveConversationLive(data);
+        }
+        // تحديث قائمة التذاكر جانباً في الخلفية بشكل صامت وبدون اختفاء العناصر
+        if (typeof loadTickets === 'function') {
+          await loadTickets(true);
+        }
+      } catch (_) {}
+    }
+
+    function initLiveEvents() {
+      if (liveEvtSource) {
+        try { liveEvtSource.close(); } catch (_) {}
+      }
+
+      liveEvtSource = new EventSource('/api/tickets/stream');
+
+      liveEvtSource.onopen = function() {
+        console.log('⚡ Connected to real-time live events stream');
+      };
+
+      liveEvtSource.onerror = function() {
+        console.warn('⚠️ SSE connection lost/reconnecting...');
+      };
+
+      liveEvtSource.onmessage = function(event) {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'new_incoming_message') {
+            performLiveSync();
+          }
+        } catch (e) {
+          console.error('Error handling SSE message:', e);
+        }
+      };
+
+      // تشغيل فاحص تزامن سريع كل ثانيتين كضمان مزدوج لا يفوت أي رسالة أثناء فتح صندوق الدعم
+      if (liveSyncTimer) clearInterval(liveSyncTimer);
+      liveSyncTimer = setInterval(performLiveSync, 2500);
+    }
+
+    // ---------- تشغيل أولي ----------
+    if (currentUserRole === 'admin') loadStats(); else initTickets();
+    initLiveEvents();
+  </script>
+</body>
+</html>
