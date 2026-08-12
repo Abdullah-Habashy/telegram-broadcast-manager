@@ -3821,10 +3821,14 @@
       const statusBadge = student.new_bot_started
         ? '<span class="badge badge-success">✅ بدأ بوت طفرة</span>'
         : '<span class="badge badge-muted">لسه ما بدأش</span>';
+      const followUpBadge = student.can_message
+        ? '<span class="badge badge-success">✅ بدأ بوت المتابعة</span>'
+        : '<span class="badge badge-muted">لسه ما بدأش</span>';
       return `<tr>
         <td class="select-cell">${checkboxCell}</td>
         <td><div class="tafra-student-name">${escapeHtml(student.name || 'بدون اسم')}</div><div class="tafra-student-sub">الكود: ${escapeHtml(student.student_code || '—')}</div></td>
         <td>📱 ${escapeHtml(student.phone || '—')}</td>
+        <td>${followUpBadge}</td>
         <td>${statusBadge}</td>
       </tr>`;
     }
@@ -3845,7 +3849,7 @@
         }
         wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
           <th class="select-cell"><input type="checkbox" id="select-all-newbot-students" aria-label="تحديد الكل"></th>
-          <th>الطالب</th><th>الهاتف</th><th>حالة بوت طفرة</th>
+          <th>الطالب</th><th>الهاتف</th><th>بدأ بوت المتابعة</th><th>حالة بوت طفرة</th>
         </tr></thead><tbody>${result.students.map(newBotStudentRowHtml).join('')}</tbody></table></div>`;
         wrap.querySelectorAll('.contact-selector').forEach((checkbox) => {
           checkbox.addEventListener('change', () => {
