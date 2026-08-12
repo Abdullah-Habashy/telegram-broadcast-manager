@@ -260,7 +260,11 @@ async function getStaffActivityLog(req, res) {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = 50;
   const offset = (page - 1) * limit;
-  const userId = /^\d+$/.test(String(req.query.user_id || '')) ? Number(req.query.user_id) : null;
+  // الموظف (مش الأدمن) يشوف نشاطه هو بس — بيتجاهل أي user_id يبعته ويتقفل على حسابه هو، عشان
+  // محدش يقدر يشوف أداء زميله ولو حاول يلعب بالـ query string يدويًا
+  const userId = req.session.userRole === 'admin'
+    ? (/^\d+$/.test(String(req.query.user_id || '')) ? Number(req.query.user_id) : null)
+    : Number(req.session.userId);
   const from = req.query.from && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : null;
   const to = req.query.to && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to) ? req.query.to : null;
 

@@ -109,14 +109,16 @@
           <p>استقبال رسائل الطلاب، توزيعها على الموظفين، والرد من مكان واحد</p>
         </div>
 
-        <% if (userRole === 'admin') { %>
-          <div class="subtabs" id="tickets-subtabs">
-            <button type="button" class="subtab-btn active" data-subtab="conversations">المحادثات</button>
+        <div class="subtabs" id="tickets-subtabs">
+          <button type="button" class="subtab-btn active" data-subtab="conversations">المحادثات</button>
+          <% if (userRole === 'admin') { %>
             <button type="button" class="subtab-btn" data-subtab="staff">الفريق</button>
-            <button type="button" class="subtab-btn" data-subtab="activity">متابعة الأداء</button>
+          <% } %>
+          <button type="button" class="subtab-btn" data-subtab="activity">متابعة الأداء</button>
+          <% if (userRole === 'admin') { %>
             <button type="button" class="subtab-btn" data-subtab="flagged">الرسائل المميزة</button>
-          </div>
-        <% } %>
+          <% } %>
+        </div>
 
         <div class="subtab-section" data-subtab="conversations">
         <div class="ticket-toolbar card">
@@ -243,11 +245,14 @@
             <div id="staff-users-list"><div class="empty-state">بيتحمّل...</div></div>
           </div>
         </div>
+        <% } %>
 
         <div class="subtab-section" data-subtab="activity" style="display:none">
           <div class="card" style="padding-block:12px">
             <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
-              <select id="activity-user-filter" class="compact-select"><option value="">كل الموظفين</option></select>
+              <% if (userRole === 'admin') { %>
+                <select id="activity-user-filter" class="compact-select"><option value="">كل الموظفين</option></select>
+              <% } %>
               <input type="date" id="activity-from-filter" class="compact-input" title="من تاريخ">
               <input type="date" id="activity-to-filter" class="compact-input" title="إلى تاريخ">
               <button type="button" class="btn btn-ghost btn-sm" id="clear-activity-filters">مسح الفلاتر</button>
@@ -267,6 +272,7 @@
           </div>
         </div>
 
+        <% if (userRole === 'admin') { %>
         <div class="subtab-section" data-subtab="flagged" style="display:none">
           <div class="card" style="padding-block:12px">
             <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
@@ -1215,17 +1221,21 @@
     initSubTabs('tickets-subtabs');
     initTicketsBulkAssign();
 
-    // ---------- متابعة أداء الموظفين (أدمن فقط) ----------
+    // ---------- متابعة أداء الموظفين (الأدمن يشوف الكل، والموظف يشوف نشاطه هو بس) ----------
     async function initStaffActivity() {
+      const activityList = document.getElementById('activity-list');
+      if (!activityList) return;
+      // فلتر "كل الموظفين" للأدمن بس — الموظف بيشوف نشاطه هو بس أصلاً، مش محتاج يختار حد
       const userFilter = document.getElementById('activity-user-filter');
-      if (!userFilter) return;
-      await ensureTicketsMeta();
-      userFilter.innerHTML = '<option value="">كل الموظفين</option>' +
-        ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+      if (userFilter) {
+        await ensureTicketsMeta();
+        userFilter.innerHTML = '<option value="">كل الموظفين</option>' +
+          ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+      }
 
       function activityQuery() {
         const params = new URLSearchParams({ page: activityPage });
-        const userId = userFilter.value;
+        const userId = userFilter ? userFilter.value : '';
         const from = document.getElementById('activity-from-filter').value;
         const to = document.getElementById('activity-to-filter').value;
         if (userId) params.set('user_id', userId);
@@ -1275,12 +1285,12 @@
         }
       }
 
-      userFilter.addEventListener('change', () => { activityPage = 1; loadStaffActivity(); });
+      if (userFilter) userFilter.addEventListener('change', () => { activityPage = 1; loadStaffActivity(); });
       document.getElementById('activity-from-filter').addEventListener('change', () => { activityPage = 1; loadStaffActivity(); });
       document.getElementById('activity-to-filter').addEventListener('change', () => { activityPage = 1; loadStaffActivity(); });
       document.getElementById('refresh-activity-btn').addEventListener('click', loadStaffActivity);
       document.getElementById('clear-activity-filters').addEventListener('click', () => {
-        userFilter.value = '';
+        if (userFilter) userFilter.value = '';
         document.getElementById('activity-from-filter').value = '';
         document.getElementById('activity-to-filter').value = '';
         activityPage = 1;
