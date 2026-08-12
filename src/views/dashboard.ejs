@@ -44,6 +44,9 @@
         <button type="button" class="account-menu-toggle-btn" id="account-menu-toggle-btn" title="الحساب" aria-label="الحساب">👤</button>
         <div class="account-menu-dropdown" id="account-menu-dropdown" style="display:none">
           <div class="account-menu-name">👋 <%= userName %></div>
+          <% if (canViewTickets) { %>
+            <button type="button" class="btn btn-ghost btn-sm" id="mobile-open-activity-btn" style="width:100%">متابعة الأداء</button>
+          <% } %>
           <button type="button" class="btn btn-ghost btn-sm" id="mobile-open-change-password-btn" style="width:100%">تغيير كلمة المرور</button>
           <form method="POST" action="/logout">
             <button type="submit" class="btn btn-ghost btn-sm" style="width:100%">تسجيل الخروج</button>
@@ -136,9 +139,7 @@
         <div class="subtab-section" data-subtab="conversations">
         <div class="ticket-toolbar card">
           <input type="search" id="ticket-search" class="compact-input" placeholder="بحث بالاسم، اليوزر، الهاتف أو Chat ID">
-          <% if (userRole === 'agent') { %>
-            <button type="button" class="btn btn-ghost btn-sm agent-filter-toggle" id="agent-filter-toggle" title="إظهار الفلاتر" aria-label="إظهار الفلاتر">⚲</button>
-          <% } %>
+          <button type="button" class="btn btn-ghost btn-sm agent-filter-toggle" id="agent-filter-toggle" title="إظهار الفلاتر" aria-label="إظهار الفلاتر">⚲</button>
           <div class="ticket-advanced-filters" id="ticket-advanced-filters">
           <select id="ticket-status-filter" class="compact-select">
             <option value="">كل الحالات</option>
@@ -1432,6 +1433,14 @@
     document.addEventListener('click', (event) => {
       if (!event.target.closest('.account-menu-wrap')) accountMenuDropdown.style.display = 'none';
     });
+    const mobileOpenActivityBtn = document.getElementById('mobile-open-activity-btn');
+    if (mobileOpenActivityBtn) {
+      mobileOpenActivityBtn.addEventListener('click', () => {
+        accountMenuDropdown.style.display = 'none';
+        document.querySelector('.nav-item[data-tab="tickets"]')?.click();
+        document.querySelector('#tickets-subtabs .subtab-btn[data-subtab="activity"]')?.click();
+      });
+    }
     changePasswordOverlay.querySelectorAll('[data-toggle-for]').forEach((toggleBtn) => {
       toggleBtn.addEventListener('click', () => {
         const input = document.getElementById(toggleBtn.dataset.toggleFor);

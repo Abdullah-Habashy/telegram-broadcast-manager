@@ -574,6 +574,8 @@ tr:last-child td { border-bottom: none; }
 .role-agent .ticket-advanced-filters.open .compact-select { flex: 1; min-width: 170px; }
 .agent-filter-toggle { width: 38px; height: 38px; padding: 0; font-size: 19px; }
 .agent-filter-toggle.active { background: var(--primary-tint); color: var(--primary); }
+/* الأدمن فلاتره فاضلة ظاهرة كلها على الديسك توب زي ما هي — الزرار ده بيظهرله بس على الموبايل */
+.role-admin .agent-filter-toggle { display: none; }
 .agent-filter-toggle.has-filter { box-shadow: 0 0 0 3px var(--warning-tint); color: var(--warning); }
 .role-agent .ticket-list-meta, .role-agent .follow-up-badge, .role-agent .ticket-conversation-header .ticket-muted { display: none; }
 .agent-logout-form { margin-inline-start: auto; }
@@ -678,8 +680,15 @@ tr:last-child td { border-bottom: none; }
   .reply-image-indicator { position: absolute; bottom: 58px; left: 58px; }
   .role-agent .main { padding: 6px; }
   .role-agent .ticket-toolbar { padding: 8px; }
-  .role-agent .ticket-advanced-filters.open { display: grid; grid-template-columns: 1fr 1fr; }
-  .role-agent .ticket-advanced-filters.open .ticket-unread-filter { grid-column: 1 / -1; }
+  /* على الموبايل، فلاتر التذاكر بتتقفل خلف أيقونة ⚲ لكل الأدوار (مش الموظف بس) عشان نسيب أكبر
+     مساحة ممكنة لقائمة التذاكر والمحادثة نفسها — الديسك توب للأدمن مش متأثر (فلاتره فاضلة زي ما هي) */
+  .ticket-advanced-filters { display: none; }
+  .ticket-advanced-filters.open {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; padding: 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--surface-sunken); order: 10;
+  }
+  .ticket-advanced-filters.open .ticket-unread-filter { grid-column: 1 / -1; }
+  .role-admin .agent-filter-toggle { display: inline-flex; }
   .role-agent .ticket-conversation-panel { height: calc(100dvh - 12px); min-height: 480px; }
   .audience-filter-grid { grid-template-columns: 1fr 1fr; }
   .audience-actions { align-items: stretch; }
