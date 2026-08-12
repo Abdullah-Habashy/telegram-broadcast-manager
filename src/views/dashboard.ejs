@@ -727,6 +727,7 @@
         </div>
         <div class="card tafra-student-filters">
           <input type="search" id="newbot-search" class="compact-input" placeholder="بحث بالاسم أو الهاتف أو الكود">
+          <input type="hidden" id="newbot-bootcamp-filter" value="">
           <select id="newbot-status-filter" class="compact-select">
             <option value="">الكل</option>
             <option value="not_started">لسه ما بدأش البوت الجديد</option>
@@ -1849,16 +1850,21 @@
         ideaSelect.value = previousIdeaValue;
       });
 
+      // فلتر الباب لتاب "البوت الجديد" مستقل عن اللوب فوق (التاب ده معندوش صف دراسي/حالة/اختبار،
+      // بس محتاج فلتر الباب بنفس الافتراضي)
+      createMultiSelectFilter('newbot-bootcamp-filter', 'الباب/الكورس')
+        .setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
+
       // افتراضيًا نفعّل فلتر البابين الأكتر استخدامًا (الباب الأول الانتقالية + المنهج كاملا) مع بعض
       // عشان محتاجش تختارهم يدويًا كل مرة — بيتطبّق بس أول ما الصفحة تتحمّل (لو الفلتر لسه فاضي)،
-      // ولو غيّرته بنفسك في نفس الجلسة بيفضل زي ما اخترت. لازم يتطبّق على الثلاث تابات ('report' بيتزامن
-      // تلقائيًا من 'tafra' برضه، لكن 'calls' فلتره مستقل تمامًا فمحتاج يتحدد صراحةً هنا كمان)
+      // ولو غيّرته بنفسك في نفس الجلسة بيفضل زي ما اخترت. لازم يتطبّق على كل التابات ('report' بيتزامن
+      // تلقائيًا من 'tafra' برضه، لكن 'calls' و'newbot' فلترهم مستقل فمحتاج يتحدد صراحةً هنا كمان)
       const defaultBootcampIds = filters.bootcamps
         .filter((item) => (item.name.includes('الباب الأول') && item.name.includes('العناصر الانتقالية'))
           || (item.name.includes('المنهج') && item.name.includes('كامل')))
         .map((item) => String(item.id));
       if (defaultBootcampIds.length) {
-        ['tafra', 'report', 'calls'].forEach((prefix) => {
+        ['tafra', 'report', 'calls', 'newbot'].forEach((prefix) => {
           const input = document.getElementById(`${prefix}-bootcamp-filter`);
           if (input && !input.value) {
             input.value = defaultBootcampIds.join(',');
@@ -3711,8 +3717,10 @@
       const params = new URLSearchParams({ page: newBotStudentsPage, limit: 50 });
       const search = document.getElementById('newbot-search').value.trim();
       const status = document.getElementById('newbot-status-filter').value;
+      const bootcamp = document.getElementById('newbot-bootcamp-filter').value;
       if (search) params.set('search', search);
       if (status) params.set('new_bot_status', status);
+      if (bootcamp) params.set('bootcamp', bootcamp);
       return params.toString();
     }
 
@@ -3771,23 +3779,28 @@
       }
     }
 
-    function initNewBotTab() {
-      loadNewBotStudents();
-      if (newBotTabInitialized) return;
-      newBotTabInitialized = true;
-      document.getElementById('newbot-search').addEventListener('input', () => {
-        clearTimeout(newBotSearchTimer);
-        newBotSearchTimer = setTimeout(() => { newBotStudentsPage = 1; loadNewBotStudents(); }, 350);
-      });
-      document.getElementById('newbot-status-filter').addEventListener('change', () => {
-        newBotStudentsPage = 1; loadNewBotStudents();
-      });
-      document.getElementById('clear-newbot-filters').addEventListener('click', () => {
-        document.getElementById('newbot-search').value = '';
-        document.getElementById('newbot-status-filter').value = '';
-        newBotStudentsPage = 1;
-        loadNewBotStudents();
-      });
+    async function initNewBotTab() {
+      await loadTafraStudentFilters(); // بيجهّز خيارات وافتراضي فلتر الباب (الباب الأول + المنهج كاملا)
+      if (!newBotTabInitialized) {
+        newBotTabInitialized = true;
+        document.getElementById('newbot-search').addEventListener('input', () => {
+          clearTimeout(newBotSearchTimer);
+          newBotSearchTimer = setTimeout(() => { newBotStudentsPage = 1; loadNewBotStudents(); }, 350);
+        });
+        document.getElementById('newbot-status-filter').addEventListener('change', () => {
+          newBotStudentsPage = 1; loadNewBotStudents();
+        });
+        document.getElementById('newbot-bootcamp-filter').addEventListener('change', () => {
+          newBotStudentsPage = 1; loadNewBotStudents();
+        });
+        document.getElementById('clear-newbot-filters').addEventListener('click', () => {
+          document.getElementById('newbot-search').value = '';
+          document.getElementById('newbot-status-filter').value = '';
+          document.getElementById('newbot-bootcamp-filter').value = '';
+          multiSelectControllers['newbot-bootcamp-filter']?.refresh();
+          newBotStudentsPage = 1;
+          loadNewBotStudents();
+        });
       document.getElementById('newbot-students-prev').addEventListener('click', () => {
         if (newBotStudentsPage > 1) { newBotStudentsPage--; loadNewBotStudents(); }
       });
@@ -3817,12 +3830,14 @@
           btn.disabled = false;
         }
       });
-      document.getElementById('clear-selected-newbot-btn').addEventListener('click', () => {
-        selectedContactIds.clear();
-        document.querySelectorAll('#newbot-students-table .contact-selector').forEach((checkbox) => { checkbox.checked = false; });
-        updateSelectedContactsUi();
-      });
-      document.getElementById('message-selected-newbot-btn').addEventListener('click', goToComposeWithSelection);
+        document.getElementById('clear-selected-newbot-btn').addEventListener('click', () => {
+          selectedContactIds.clear();
+          document.querySelectorAll('#newbot-students-table .contact-selector').forEach((checkbox) => { checkbox.checked = false; });
+          updateSelectedContactsUi();
+        });
+        document.getElementById('message-selected-newbot-btn').addEventListener('click', goToComposeWithSelection);
+      }
+      loadNewBotStudents();
     }
     let newBotSearchTimer = null;
 
