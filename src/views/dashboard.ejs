@@ -796,6 +796,19 @@
         <div class="subtab-section" data-subtab="subscribers" style="display:none">
         <div class="card tafra-student-filters">
           <input type="search" id="newbot-sub-search" class="compact-input" placeholder="بحث بالاسم أو اليوزر">
+          <input type="hidden" id="newbot-sub-bootcamp-filter" value="">
+          <select id="newbot-sub-gender-filter" class="compact-select" title="نوع الطالب متخمّن من اسمه، مش بيانات مؤكدة من المنصة">
+            <option value="">كل الأنواع (ولد/بنت)</option>
+            <option value="male">ولد</option>
+            <option value="female">بنت</option>
+            <option value="unknown">غير محدد</option>
+          </select>
+          <select id="newbot-sub-telegram-filter" class="compact-select">
+            <option value="">حالة بوت المتابعة: الكل</option>
+            <option value="started">بدأ بوت المتابعة (يمكن مراسلته منه)</option>
+            <option value="linked_not_started">لم يبدأ بوت المتابعة</option>
+          </select>
+          <button type="button" class="btn btn-ghost" id="clear-newbot-sub-filters">مسح الفلاتر</button>
           <button type="button" class="btn btn-ghost" id="refresh-newbot-subs-btn">تحديث</button>
         </div>
         <div class="card">
@@ -1928,20 +1941,22 @@
       });
 
       // فلتر الباب لتاب "بوت طفرة" مستقل عن اللوب فوق (التاب ده معندوش صف دراسي/حالة/اختبار،
-      // بس محتاج فلتر الباب بنفس الافتراضي)
+      // بس محتاج فلتر الباب بنفس الافتراضي) — نفس الفلتر مكرر لتبويبي "التوجيه" و"مشتركين بوت طفرة"
       createMultiSelectFilter('newbot-bootcamp-filter', 'الباب/الكورس')
+        .setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
+      createMultiSelectFilter('newbot-sub-bootcamp-filter', 'الباب/الكورس')
         .setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
 
       // افتراضيًا نفعّل فلتر البابين الأكتر استخدامًا (الباب الأول الانتقالية + المنهج كاملا) مع بعض
       // عشان محتاجش تختارهم يدويًا كل مرة — بيتطبّق بس أول ما الصفحة تتحمّل (لو الفلتر لسه فاضي)،
       // ولو غيّرته بنفسك في نفس الجلسة بيفضل زي ما اخترت. لازم يتطبّق على كل التابات ('report' بيتزامن
-      // تلقائيًا من 'tafra' برضه، لكن 'calls' و'newbot' فلترهم مستقل فمحتاج يتحدد صراحةً هنا كمان)
+      // تلقائيًا من 'tafra' برضه، لكن 'calls' و'newbot'/'newbot-sub' فلترهم مستقل فمحتاج يتحدد صراحةً هنا كمان)
       const defaultBootcampIds = filters.bootcamps
         .filter((item) => (item.name.includes('الباب الأول') && item.name.includes('العناصر الانتقالية'))
           || (item.name.includes('المنهج') && item.name.includes('كامل')))
         .map((item) => String(item.id));
       if (defaultBootcampIds.length) {
-        ['tafra', 'report', 'calls', 'newbot'].forEach((prefix) => {
+        ['tafra', 'report', 'calls', 'newbot', 'newbot-sub'].forEach((prefix) => {
           const input = document.getElementById(`${prefix}-bootcamp-filter`);
           if (input && !input.value) {
             input.value = defaultBootcampIds.join(',');
@@ -4005,7 +4020,13 @@
     function newBotSubQuery() {
       const params = new URLSearchParams({ page: newBotSubPage, limit: 50 });
       const search = document.getElementById('newbot-sub-search').value.trim();
+      const bootcamp = document.getElementById('newbot-sub-bootcamp-filter').value;
+      const gender = document.getElementById('newbot-sub-gender-filter').value;
+      const telegram = document.getElementById('newbot-sub-telegram-filter').value;
       if (search) params.set('search', search);
+      if (bootcamp) params.set('bootcamp', bootcamp);
+      if (gender) params.set('gender', gender);
+      if (telegram) params.set('telegram', telegram);
       return params.toString();
     }
 
@@ -4028,12 +4049,15 @@
         }
         wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
           <th class="select-cell"><input type="checkbox" id="select-all-newbot-sub" aria-label="تحديد الكل"></th>
-          <th>الاسم</th><th>اليوزر</th><th>بدأ في</th>
+          <th>الطالب</th><th>الهاتف</th><th>بدأ بوت المتابعة</th><th>انضم لبوت طفرة</th>
         </tr></thead><tbody>${result.contacts.map((c) => `
           <tr>
             <td class="select-cell"><input type="checkbox" class="newbot-sub-selector" value="${c.chat_id}" ${selectedNewBotSubChatIds.has(Number(c.chat_id)) ? 'checked' : ''} aria-label="تحديد المشترك"></td>
-            <td>${escapeHtml([c.first_name, c.last_name].filter(Boolean).join(' ') || 'بدون اسم')}</td>
-            <td>${c.telegram_username ? '@' + escapeHtml(c.telegram_username) : '—'}</td>
+            <td><div class="tafra-student-name">${escapeHtml(c.tafra_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || 'بدون اسم')}</div><div class="tafra-student-sub">${c.telegram_username ? '@' + escapeHtml(c.telegram_username) : (c.student_code ? 'الكود: ' + escapeHtml(c.student_code) : '')}</div></td>
+            <td>📱 ${escapeHtml(c.phone || '—')}</td>
+            <td>${c.followup_started
+              ? '<span class="badge badge-success">✅ بدأ بوت المتابعة</span>'
+              : '<span class="badge badge-muted">لسه ما بدأش</span>'}</td>
             <td>${c.source === 'platform_link'
               ? '<span class="badge badge-muted" title="اتأكد إنه قابل للمراسلة عن طريق الفحص، مش من ضغطه Start على الهاندلر بتاعنا">🔗 من المنصة</span>'
               : fmtDate(c.started_at)}</td>
@@ -4076,6 +4100,24 @@
       document.getElementById('newbot-sub-search').addEventListener('input', () => {
         clearTimeout(newBotSubSearchTimer);
         newBotSubSearchTimer = setTimeout(() => { newBotSubPage = 1; loadNewBotSubscribers(); }, 350);
+      });
+      document.getElementById('newbot-sub-bootcamp-filter').addEventListener('change', () => {
+        newBotSubPage = 1; loadNewBotSubscribers();
+      });
+      document.getElementById('newbot-sub-gender-filter').addEventListener('change', () => {
+        newBotSubPage = 1; loadNewBotSubscribers();
+      });
+      document.getElementById('newbot-sub-telegram-filter').addEventListener('change', () => {
+        newBotSubPage = 1; loadNewBotSubscribers();
+      });
+      document.getElementById('clear-newbot-sub-filters').addEventListener('click', () => {
+        document.getElementById('newbot-sub-search').value = '';
+        document.getElementById('newbot-sub-gender-filter').value = '';
+        document.getElementById('newbot-sub-telegram-filter').value = '';
+        document.getElementById('newbot-sub-bootcamp-filter').value = '';
+        multiSelectControllers['newbot-sub-bootcamp-filter']?.refresh();
+        newBotSubPage = 1;
+        loadNewBotSubscribers();
       });
       document.getElementById('refresh-newbot-subs-btn').addEventListener('click', () => {
         newBotSubPage = 1; loadNewBotSubscribers();

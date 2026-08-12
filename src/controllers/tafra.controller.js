@@ -371,7 +371,9 @@ async function getNewBotInfo(req, res) {
 }
 
 // قايمة الطلاب اللي بدأوا "بوت طفرة" بالفعل (اشتركوا فيه) — عشان نقدر نبعتلهم رسالة منه هو
-// نفسه (مش من بوت المتابعة)، زي مثلًا رسالة فيها رابط بوت المتابعة لو محتاجين يرجعوله
+// نفسه (مش من بوت المتابعة)، زي مثلًا رسالة فيها رابط بوت المتابعة لو محتاجين يرجعوله.
+// بنعمل LEFT JOIN بـ tafra_students وcontacts (عن طريق chat_id) عشان نقدر نستخدم نفس فلاتر
+// الباب/النوع/حالة بوت المتابعة المستخدمة في تاب التوجيه، ونعرض نفس أسلوب العرض (اسم + كود + هاتف)
 async function listNewBotContacts(req, res) {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = 50;
@@ -381,16 +383,45 @@ async function listNewBotContacts(req, res) {
   const conditions = [];
   if (search) {
     params.push(`%${search}%`);
-    conditions.push(`(first_name ILIKE $${params.length} OR last_name ILIKE $${params.length} OR telegram_username ILIKE $${params.length})`);
+    conditions.push(`(nbc.first_name ILIKE $${params.length} OR nbc.last_name ILIKE $${params.length} OR nbc.telegram_username ILIKE $${params.length} OR s.name ILIKE $${params.length})`);
+  }
+  if (req.query.gender === 'male' || req.query.gender === 'female') {
+    params.push(req.query.gender);
+    conditions.push(`s.gender = $${params.length}`);
+  } else if (req.query.gender === 'unknown') {
+    conditions.push('s.gender IS NULL');
+  }
+  if (req.query.telegram === 'started') {
+    conditions.push('c.last_contacted_at IS NOT NULL');
+  } else if (req.query.telegram === 'linked_not_started') {
+    conditions.push('c.last_contacted_at IS NULL');
+  }
+  const bootcampIds = parseFilterList(req.query.bootcamp).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  if (bootcampIds.length) {
+    params.push(bootcampIds);
+    conditions.push(`EXISTS (
+      SELECT 1 FROM tafra_enrollments e
+      WHERE e.tafra_student_id = s.tafra_student_id AND e.enrollment_type = 'enroll'
+        AND e.tafra_bootcamp_id = ANY($${params.length}::bigint[])
+    )`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const joins = `
+    LEFT JOIN tafra_students s ON s.telegram_chat_id = nbc.chat_id
+    LEFT JOIN contacts c ON c.chat_id = nbc.chat_id
+  `;
   try {
-    const countResult = await pool.query(`SELECT COUNT(*)::int AS count FROM new_bot_contacts ${where}`, params);
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM new_bot_contacts nbc ${joins} ${where}`, params
+    );
     const listParams = [...params, limit, offset];
     const result = await pool.query(
-      `SELECT id, chat_id, telegram_username, first_name, last_name, started_at, source
-       FROM new_bot_contacts ${where}
-       ORDER BY started_at DESC NULLS LAST
+      `SELECT nbc.id, nbc.chat_id, nbc.telegram_username, nbc.first_name, nbc.last_name,
+        nbc.started_at, nbc.source, s.name AS tafra_name, s.phone, s.student_code,
+        (c.last_contacted_at IS NOT NULL) AS followup_started
+       FROM new_bot_contacts nbc ${joins}
+       ${where}
+       ORDER BY nbc.started_at DESC NULLS LAST
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
       listParams
     );
