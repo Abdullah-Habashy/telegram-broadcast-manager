@@ -758,9 +758,14 @@
             <option value="unknown">غير محدد</option>
           </select>
           <select id="newbot-status-filter" class="compact-select">
-            <option value="">الكل</option>
+            <option value="">حالة بوت طفرة: الكل</option>
             <option value="not_started">لسه ما بدأش بوت طفرة</option>
             <option value="started">بدأ بوت طفرة بالفعل</option>
+          </select>
+          <select id="newbot-telegram-filter" class="compact-select">
+            <option value="">حالة بوت المتابعة: الكل</option>
+            <option value="started">بدأ بوت المتابعة (يمكن مراسلته منه)</option>
+            <option value="linked_not_started">لم يبدأ بوت المتابعة</option>
           </select>
           <button type="button" class="btn btn-ghost" id="clear-newbot-filters">مسح الفلاتر</button>
         </div>
@@ -3804,10 +3809,12 @@
       const params = new URLSearchParams({ page: newBotStudentsPage, limit: 50 });
       const search = document.getElementById('newbot-search').value.trim();
       const status = document.getElementById('newbot-status-filter').value;
+      const telegram = document.getElementById('newbot-telegram-filter').value;
       const bootcamp = document.getElementById('newbot-bootcamp-filter').value;
       const gender = document.getElementById('newbot-gender-filter').value;
       if (search) params.set('search', search);
       if (status) params.set('new_bot_status', status);
+      if (telegram) params.set('telegram', telegram);
       if (bootcamp) params.set('bootcamp', bootcamp);
       if (gender) params.set('gender', gender);
       return params.toString();
@@ -3929,6 +3936,9 @@
         document.getElementById('newbot-status-filter').addEventListener('change', () => {
           newBotStudentsPage = 1; loadNewBotStudents();
         });
+        document.getElementById('newbot-telegram-filter').addEventListener('change', () => {
+          newBotStudentsPage = 1; loadNewBotStudents();
+        });
         document.getElementById('newbot-bootcamp-filter').addEventListener('change', () => {
           newBotStudentsPage = 1; loadNewBotStudents();
         });
@@ -3938,6 +3948,7 @@
         document.getElementById('clear-newbot-filters').addEventListener('click', () => {
           document.getElementById('newbot-search').value = '';
           document.getElementById('newbot-status-filter').value = '';
+          document.getElementById('newbot-telegram-filter').value = '';
           document.getElementById('newbot-gender-filter').value = '';
           document.getElementById('newbot-bootcamp-filter').value = '';
           multiSelectControllers['newbot-bootcamp-filter']?.refresh();
