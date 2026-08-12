@@ -734,6 +734,14 @@
           <p>وجّه الطلاب اللي لسه ما بدأوش بوت طفرة، أو ابعت رسالة من بوت طفرة نفسه لمشتركين فيه بالفعل</p>
         </div>
 
+        <div class="card" style="margin-bottom:14px">
+          <div class="row-between">
+            <span id="newbot-reachability-status" class="card-desc">جارٍ التحقق من حالة الفحص...</span>
+            <button type="button" class="btn btn-ghost btn-sm" id="run-newbot-reachability-sync" style="width:auto">🔍 تحديث حالة الوصول الفعلية</button>
+          </div>
+          <p class="ticket-muted" style="margin-top:8px">بوت طفرة هو نفس بوت منصة طفرة الرسمي، فكتير من الطلاب المرتبطين على المنصة ضغطوا Start عليه قبل كده من غير ما نعرف — الفحص ده بيتأكد فعليًا (بدون إرسال أي رسالة) مين منهم قابل للمراسلة بالفعل.</p>
+        </div>
+
         <div class="subtabs" id="new-bot-subtabs">
           <button type="button" class="subtab-btn active" data-subtab="nudge">توجيه اللي لسه ما بدأش</button>
           <button type="button" class="subtab-btn" data-subtab="subscribers">رسالة من بوت طفرة لمشتركينه</button>
@@ -3860,10 +3868,56 @@
       }
     }
 
+    // ---------- فحص "الوصول الفعلي" لطلاب طفرة المرتبطين اللي ضغطوا Start على بوت طفرة قبل كده
+    // (بوت طفرة هو نفس بوت منصة طفرة الرسمي) من غير ما يظهروا في new_bot_contacts ----------
+    async function loadNewBotReachabilitySyncStatus() {
+      const statusElement = document.getElementById('newbot-reachability-status');
+      const button = document.getElementById('run-newbot-reachability-sync');
+      try {
+        const result = await api('/api/tafra/new-bot-reachability-sync-status');
+        const sync = result.sync || {};
+        button.disabled = sync.status === 'running';
+        if (sync.status === 'running') {
+          statusElement.textContent = `جارٍ الفحص: ${sync.checked_count || 0} من ${sync.total_count || '...'} — ${sync.found_reachable || 0} قابل للمراسلة لحد دلوقتي`;
+        } else if (sync.status === 'completed') {
+          statusElement.textContent = `آخر فحص: ${fmtDate(sync.completed_at)} — ${sync.found_reachable || 0} طالب إضافي قابل للمراسلة من أصل ${sync.total_count || 0} اتفحصوا`;
+        } else if (sync.status === 'failed') {
+          statusElement.textContent = `فشل آخر فحص: ${sync.error_message || 'سبب غير معروف'}`;
+        } else {
+          statusElement.textContent = 'لسه ما اتعملش فحص للوصول الفعلي — دوس الزرار عشان تبدأ.';
+        }
+        return sync;
+      } catch (error) {
+        statusElement.textContent = error.message;
+      }
+    }
+
     async function initNewBotTab() {
       await loadTafraStudentFilters(); // بيجهّز خيارات وافتراضي فلتر الباب (الباب الأول + المنهج كاملا)
+      loadNewBotReachabilitySyncStatus();
       if (!newBotTabInitialized) {
         newBotTabInitialized = true;
+        document.getElementById('run-newbot-reachability-sync').addEventListener('click', async () => {
+          const button = document.getElementById('run-newbot-reachability-sync');
+          if (!window.confirm('فحص حالة الوصول ممكن ياخد كذا دقيقة (بيتم في الخلفية، مش هيبعت أي رسالة لحد). تكمل؟')) return;
+          button.disabled = true;
+          try {
+            const result = await api('/api/tafra/new-bot-reachability-sync', { method: 'POST' });
+            showToast(result.message || 'بدأ الفحص في الخلفية');
+            const poll = async () => {
+              const sync = await loadNewBotReachabilitySyncStatus();
+              if (sync?.status === 'running') setTimeout(poll, 3000);
+              else if (sync?.status === 'completed') {
+                showToast(`اكتمل الفحص — ${sync.found_reachable || 0} طالب إضافي قابل للمراسلة`);
+                loadNewBotStudents();
+              } else if (sync?.status === 'failed') showToast('فشل الفحص، راجع التفاصيل');
+            };
+            setTimeout(poll, 1500);
+          } catch (error) {
+            showToast(error.message);
+            button.disabled = false;
+          }
+        });
         document.getElementById('newbot-search').addEventListener('input', () => {
           clearTimeout(newBotSearchTimer);
           newBotSearchTimer = setTimeout(() => { newBotStudentsPage = 1; loadNewBotStudents(); }, 350);
@@ -3965,7 +4019,9 @@
             <td class="select-cell"><input type="checkbox" class="newbot-sub-selector" value="${c.chat_id}" ${selectedNewBotSubChatIds.has(Number(c.chat_id)) ? 'checked' : ''} aria-label="تحديد المشترك"></td>
             <td>${escapeHtml([c.first_name, c.last_name].filter(Boolean).join(' ') || 'بدون اسم')}</td>
             <td>${c.telegram_username ? '@' + escapeHtml(c.telegram_username) : '—'}</td>
-            <td>${fmtDate(c.started_at)}</td>
+            <td>${c.source === 'platform_link'
+              ? '<span class="badge badge-muted" title="اتأكد إنه قابل للمراسلة عن طريق الفحص، مش من ضغطه Start على الهاندلر بتاعنا">🔗 من المنصة</span>'
+              : fmtDate(c.started_at)}</td>
           </tr>`).join('')}</tbody></table></div>`;
         wrap.querySelectorAll('.newbot-sub-selector').forEach((checkbox) => {
           checkbox.addEventListener('change', () => {

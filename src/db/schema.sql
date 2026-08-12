@@ -82,6 +82,26 @@ CREATE TABLE IF NOT EXISTS new_bot_contacts (
     last_name VARCHAR(255),
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- بوت طفرة هو نفسه بوت منصة طفرة الرسمي، فكتير من الطلاب أصلاً ضغطوا Start عليه قبل ما نضيف
+-- الهاندلر بتاعنا إحنا — started_at بقى اختياري لأننا مش عارفين تاريخ البدء الحقيقي بتاعهم،
+-- وsource بيفرّق بين "start" (ضغط Start فعليًا على الهاندلر بتاعنا) و"platform_link" (اتأكد إنه
+-- قابل للمراسلة عن طريق فحص getChat، مش من ضغطه Start عندنا)
+ALTER TABLE new_bot_contacts ALTER COLUMN started_at DROP NOT NULL;
+ALTER TABLE new_bot_contacts ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'start';
+
+-- حالة فحص "الوصول الفعلي" لطلاب طفرة المرتبطين على بوت طفرة (اللي لسه مش مسجّلين في new_bot_contacts)
+CREATE TABLE IF NOT EXISTS new_bot_reachability_sync_status (
+    id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    status VARCHAR(30) NOT NULL DEFAULT 'never',
+    checked_count INTEGER NOT NULL DEFAULT 0,
+    total_count INTEGER NOT NULL DEFAULT 0,
+    found_reachable INTEGER NOT NULL DEFAULT 0,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    error_message TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO new_bot_reachability_sync_status (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 -- التصنيفات (Tags)
 CREATE TABLE IF NOT EXISTS tags (

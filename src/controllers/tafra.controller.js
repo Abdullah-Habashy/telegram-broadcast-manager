@@ -33,6 +33,7 @@ let syncRunning = false;
 let enrollmentSyncRunning = false;
 let examSyncRunning = false;
 let selectiveSyncRunning = false;
+let reachabilitySyncRunning = false;
 
 const MARK_RANGE_OPERATORS = {
   under_50: '< 50', over_50: '>= 50',
@@ -387,9 +388,9 @@ async function listNewBotContacts(req, res) {
     const countResult = await pool.query(`SELECT COUNT(*)::int AS count FROM new_bot_contacts ${where}`, params);
     const listParams = [...params, limit, offset];
     const result = await pool.query(
-      `SELECT id, chat_id, telegram_username, first_name, last_name, started_at
+      `SELECT id, chat_id, telegram_username, first_name, last_name, started_at, source
        FROM new_bot_contacts ${where}
-       ORDER BY started_at DESC
+       ORDER BY started_at DESC NULLS LAST
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
       listParams
     );
@@ -443,6 +444,90 @@ async function sendNewBotBroadcast(req, res) {
     await new Promise((resolve) => setTimeout(resolve, 60));
   }
   res.json({ sent, failed, total: contactsResult.rows.length });
+}
+
+// بوت طفرة هو نفس بوت منصة طفرة الرسمي (اللي بتستخدمه المنصة نفسها في ربط حساب الطالب) — يعني كتير
+// من الطلاب أصلاً ضغطوا Start عليه قبل ما نضيف الهاندلر بتاعنا إحنا، فمش هيظهروا في new_bot_contacts
+// غير كده. الفحص ده بيتأكد فعليًا (getChat، من غير إرسال أي رسالة) مين من الطلاب المرتبطين (عندهم
+// telegram_chat_id) قابل للمراسلة بالفعل، ويسجّله بـ source='platform_link' (بدون started_at حقيقي
+// لأننا مش عارفين متى فعلًا بدأ). عملية طويلة نسبيًا (آلاف الطلاب) فبتشتغل في الخلفية زي باقي المزامنات.
+async function performReachabilitySync() {
+  reachabilitySyncRunning = true;
+  const newBotManager = require('../bot/newBotManager');
+  const bot = newBotManager.getBot();
+  let checked = 0;
+  let found = 0;
+  try {
+    const candidates = await pool.query(
+      `SELECT s.telegram_chat_id, s.telegram_username, s.name
+       FROM tafra_students s
+       WHERE s.telegram_chat_id IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM new_bot_contacts nbc WHERE nbc.chat_id = s.telegram_chat_id)`
+    );
+    const rows = candidates.rows;
+    await pool.query(
+      `UPDATE new_bot_reachability_sync_status SET status='running', checked_count=0,
+       total_count=$1, found_reachable=0, started_at=NOW(), completed_at=NULL,
+       error_message=NULL, updated_at=NOW() WHERE id=1`,
+      [rows.length]
+    );
+
+    for (const row of rows) {
+      try {
+        const chat = await bot.telegram.getChat(row.telegram_chat_id);
+        await pool.query(
+          `INSERT INTO new_bot_contacts (chat_id, telegram_username, first_name, started_at, source)
+           VALUES ($1, $2, $3, NULL, 'platform_link')
+           ON CONFLICT (chat_id) DO NOTHING`,
+          [row.telegram_chat_id, chat.username || row.telegram_username || null, chat.first_name || row.name || null]
+        );
+        found += 1;
+      } catch (error) {
+        // مش قابل للمراسلة فعليًا (لسه ما ضغطش Start، أو بلوك البوت) — متوقّع لجزء من الطلاب، نتجاهله ونكمل
+      }
+      checked += 1;
+      if (checked % 20 === 0) {
+        await pool.query(
+          `UPDATE new_bot_reachability_sync_status SET checked_count=$1, found_reachable=$2, updated_at=NOW() WHERE id=1`,
+          [checked, found]
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+
+    await pool.query(
+      `UPDATE new_bot_reachability_sync_status SET status='completed', checked_count=$1,
+       found_reachable=$2, completed_at=NOW(), updated_at=NOW() WHERE id=1`,
+      [checked, found]
+    );
+  } catch (error) {
+    console.error('Failed to sync new-bot reachability:', error.message);
+    await pool.query(
+      `UPDATE new_bot_reachability_sync_status SET status='failed', error_message=$1,
+       completed_at=NOW(), updated_at=NOW() WHERE id=1`,
+      [String(error.message).slice(0, 1000)]
+    ).catch(() => {});
+  } finally {
+    reachabilitySyncRunning = false;
+  }
+}
+
+async function syncNewBotReachability(req, res) {
+  if (reachabilitySyncRunning) return res.status(409).json({ error: 'فحص الوصول جارٍ بالفعل' });
+  const newBotManager = require('../bot/newBotManager');
+  if (!newBotManager.getBot()) return res.status(503).json({ error: 'بوت طفرة غير متصل حاليًا' });
+  performReachabilitySync().catch((error) => console.error('Unexpected reachability sync failure:', error.message));
+  res.status(202).json({ ok: true, message: 'بدأ فحص حالة الوصول الفعلية في الخلفية' });
+}
+
+async function getNewBotReachabilitySyncStatus(req, res) {
+  try {
+    const result = await pool.query('SELECT * FROM new_bot_reachability_sync_status WHERE id = 1');
+    res.json({ sync: result.rows[0] });
+  } catch (error) {
+    console.error('Failed to load reachability sync status:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل حالة فحص الوصول' });
+  }
 }
 
 // كل معرّفات جهات الاتصال (contact_id) للطلاب المطابقين لنفس فلاتر صفحة "طلاب المنصة" بالظبط،
@@ -1174,4 +1259,5 @@ module.exports = {
   syncExams, getExamSyncStatus, exportStudentsReport, listStudentContactIds, buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL,
   triggerAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, sendNewBotBroadcast,
+  syncNewBotReachability, getNewBotReachabilitySyncStatus,
 };
