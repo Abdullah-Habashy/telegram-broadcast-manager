@@ -6,6 +6,7 @@ const path = require('path');
 
 const pool = require('./config/db');
 const botManager = require('./bot/botManager');
+const newBotManager = require('./bot/newBotManager');
 const { startScheduler } = require('./jobs/scheduler');
 const { startTafraSyncScheduler } = require('./jobs/tafraSyncScheduler');
 const { startStaffActivityDigest } = require('./jobs/staffActivityDigest');
@@ -62,6 +63,14 @@ app.post(botManager.WEBHOOK_PATH, (req, res) => {
   const bot = botManager.getBot();
   if (!bot) return res.sendStatus(404);
   if (req.headers['x-telegram-bot-api-secret-token'] !== botManager.getSecretToken()) {
+    return res.sendStatus(401);
+  }
+  bot.handleUpdate(req.body, res);
+});
+app.post(newBotManager.WEBHOOK_PATH, (req, res) => {
+  const bot = newBotManager.getBot();
+  if (!bot) return res.sendStatus(404);
+  if (req.headers['x-telegram-bot-api-secret-token'] !== newBotManager.getSecretToken()) {
     return res.sendStatus(401);
   }
   bot.handleUpdate(req.body, res);
@@ -165,6 +174,7 @@ async function start() {
   server.on('listening', async () => {
     console.log(`🚀 Server running at http://localhost:${env.port}`);
     await botManager.initBot();
+    await newBotManager.initBot();
     startScheduler();
     startTafraSyncScheduler();
     startStaffActivityDigest();

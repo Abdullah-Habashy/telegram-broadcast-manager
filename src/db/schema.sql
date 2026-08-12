@@ -71,6 +71,18 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 CREATE INDEX IF NOT EXISTS idx_contacts_last_contacted ON contacts (last_contacted_at);
 
+-- طلاب بدأوا محادثة مع "البوت الجديد" (بوت منفصل تمامًا، شغّال بالتوازي مع بوت الدعم الحالي).
+-- chat_id بيتطابق مع نفس chat_id بتاع تليجرام العادي بتاع المستخدم (مش خاص بالبوت)، فبيتربط
+-- مباشرة بـ tafra_students.telegram_chat_id من غير أي حاجة زيادة — عشان نعرف مين لسه ما بدأش
+CREATE TABLE IF NOT EXISTS new_bot_contacts (
+    id SERIAL PRIMARY KEY,
+    chat_id BIGINT UNIQUE NOT NULL,
+    telegram_username VARCHAR(255),
+    first_name VARCHAR(255),
+    last_name VARCHAR(255),
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- التصنيفات (Tags)
 CREATE TABLE IF NOT EXISTS tags (
     id SERIAL PRIMARY KEY,
@@ -330,6 +342,7 @@ CREATE TABLE IF NOT EXISTS settings (
 
 INSERT INTO settings (key, value) VALUES
     ('bot_token_encrypted', NULL),
+    ('new_bot_token_encrypted', NULL),
     ('auto_reply_enabled', 'false'),
     ('auto_reply_message', 'شكرًا لتواصلك معنا، هنرد عليك في أقرب وقت.'),
     ('forwarding_enabled', 'false'),

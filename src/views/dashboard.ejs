@@ -30,6 +30,7 @@
       <% if (userRole === 'admin') { %>
         <div class="nav-item" data-tab="contacts"><span class="ind"></span> جهات الاتصال والإرسال</div>
         <div class="nav-item" data-tab="tafra-students"><span class="ind"></span> طلاب المنصة</div>
+        <div class="nav-item" data-tab="new-bot"><span class="ind"></span> البوت الجديد</div>
         <div class="nav-item" data-tab="reports"><span class="ind"></span> التقارير</div>
         <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
         <div class="nav-item" data-tab="settings"><span class="ind"></span> الإعدادات</div>
@@ -714,6 +715,45 @@
           <div class="ticket-pagination">
             <button type="button" class="btn btn-ghost btn-sm" id="tafra-students-prev">السابق</button>
             <button type="button" class="btn btn-ghost btn-sm" id="tafra-students-next">التالي</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== البوت الجديد ===== -->
+      <section class="tab-panel" id="tab-new-bot" style="display:none">
+        <div class="page-header">
+          <h1>البوت الجديد</h1>
+          <p>وجّه الطلاب اللي لسه ما بدأوش البوت الجديد — الإرسال بيتم عن طريق بوت الدعم الحالي (اللي هم بدأوه بالفعل)</p>
+        </div>
+        <div class="card tafra-student-filters">
+          <input type="search" id="newbot-search" class="compact-input" placeholder="بحث بالاسم أو الهاتف أو الكود">
+          <select id="newbot-status-filter" class="compact-select">
+            <option value="">الكل</option>
+            <option value="not_started">لسه ما بدأش البوت الجديد</option>
+            <option value="started">بدأ البوت الجديد بالفعل</option>
+          </select>
+          <button type="button" class="btn btn-ghost" id="clear-newbot-filters">مسح الفلاتر</button>
+        </div>
+        <div class="card">
+          <div class="row-between" style="margin-bottom:12px">
+            <b id="newbot-student-count">الطلاب</b>
+            <span id="newbot-student-page-label" class="ticket-muted"></span>
+          </div>
+          <div class="row-between audience-actions">
+            <div class="row">
+              <button type="button" class="btn btn-ghost btn-sm" id="select-page-newbot-btn">تحديد نتائج هذه الصفحة فقط</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="select-all-newbot-btn">تحديد كل الصفحات (الفلتر الحالي)</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="clear-selected-newbot-btn">إلغاء التحديد</button>
+            </div>
+            <div class="row">
+              <span id="selected-newbot-count" class="badge badge-muted">المحدد: 0</span>
+              <button type="button" class="btn btn-primary btn-sm" id="message-selected-newbot-btn" style="width:auto" disabled>مراسلة المحددين</button>
+            </div>
+          </div>
+          <div id="newbot-students-table"><div class="empty-state">جارٍ التحميل...</div></div>
+          <div class="ticket-pagination">
+            <button type="button" class="btn btn-ghost btn-sm" id="newbot-students-prev">السابق</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="newbot-students-next">التالي</button>
           </div>
         </div>
       </section>
@@ -1776,6 +1816,7 @@
       if (tab === 'calls') initCalls();
       if (tab === 'contacts') initContactsAndBroadcasts();
       if (tab === 'tafra-students') initTafraStudents();
+      if (tab === 'new-bot') initNewBotTab();
       if (tab === 'reports') initReports();
       if (tab === 'templates') loadTemplates();
       if (tab === 'settings') loadSettings();
@@ -3490,6 +3531,10 @@
       document.getElementById('message-selected-btn').disabled = count === 0;
       document.getElementById('selected-tafra-students-count').textContent = `المحدد: ${count}`;
       document.getElementById('message-selected-tafra-students-btn').disabled = count === 0;
+      const selectedNewBotCount = document.getElementById('selected-newbot-count');
+      if (selectedNewBotCount) selectedNewBotCount.textContent = `المحدد: ${count}`;
+      const messageSelectedNewBotBtn = document.getElementById('message-selected-newbot-btn');
+      if (messageSelectedNewBotBtn) messageSelectedNewBotBtn.disabled = count === 0;
 
       const selectedOption = document.querySelector('#broadcast-tag option[value="__selected__"]');
       if (selectedOption) selectedOption.textContent = `الجهات المحددة (${count})`;
@@ -3655,6 +3700,131 @@
       updateSelectedContactsUi();
     });
     document.getElementById('message-selected-tafra-students-btn').addEventListener('click', goToComposeWithSelection);
+
+    // ---------- البوت الجديد (توجيه الطلاب اللي لسه ما بدأوش، عن طريق بوت الدعم الحالي) ----------
+    let newBotStudentsPage = 1;
+    let newBotStudentsPages = 1;
+    let newBotTabInitialized = false;
+    let currentFilteredNewBotContactIds = [];
+
+    function newBotStudentQuery() {
+      const params = new URLSearchParams({ page: newBotStudentsPage, limit: 50 });
+      const search = document.getElementById('newbot-search').value.trim();
+      const status = document.getElementById('newbot-status-filter').value;
+      if (search) params.set('search', search);
+      if (status) params.set('new_bot_status', status);
+      return params.toString();
+    }
+
+    function newBotStudentRowHtml(student) {
+      const canMessage = canMessageStudent(student);
+      const checkboxCell = canMessage
+        ? `<input type="checkbox" class="contact-selector" value="${student.contact_id}" ${selectedContactIds.has(Number(student.contact_id)) ? 'checked' : ''} aria-label="تحديد الطالب">`
+        : telegramReachBadge(false);
+      const statusBadge = student.new_bot_started
+        ? '<span class="badge badge-success">✅ بدأ البوت الجديد</span>'
+        : '<span class="badge badge-muted">لسه ما بدأش</span>';
+      return `<tr>
+        <td class="select-cell">${checkboxCell}</td>
+        <td><div class="tafra-student-name">${escapeHtml(student.name || 'بدون اسم')}</div><div class="tafra-student-sub">الكود: ${escapeHtml(student.student_code || '—')}</div></td>
+        <td>📱 ${escapeHtml(student.phone || '—')}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    }
+
+    async function loadNewBotStudents() {
+      const wrap = document.getElementById('newbot-students-table');
+      try {
+        const result = await api('/api/tafra/students?' + newBotStudentQuery());
+        newBotStudentsPages = result.meta.pages;
+        document.getElementById('newbot-student-count').textContent = `الطلاب: ${result.meta.total}`;
+        document.getElementById('newbot-student-page-label').textContent = `صفحة ${result.meta.page} من ${result.meta.pages}`;
+        document.getElementById('newbot-students-prev').disabled = result.meta.page <= 1;
+        document.getElementById('newbot-students-next').disabled = result.meta.page >= result.meta.pages;
+        currentFilteredNewBotContactIds = result.students.filter(canMessageStudent).map((s) => Number(s.contact_id));
+        if (!result.students.length) {
+          wrap.innerHTML = '<div class="empty-state">لا يوجد طلاب مطابقون</div>';
+          return;
+        }
+        wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
+          <th class="select-cell"><input type="checkbox" id="select-all-newbot-students" aria-label="تحديد الكل"></th>
+          <th>الطالب</th><th>الهاتف</th><th>حالة البوت الجديد</th>
+        </tr></thead><tbody>${result.students.map(newBotStudentRowHtml).join('')}</tbody></table></div>`;
+        wrap.querySelectorAll('.contact-selector').forEach((checkbox) => {
+          checkbox.addEventListener('change', () => {
+            const id = Number(checkbox.value);
+            checkbox.checked ? selectedContactIds.add(id) : selectedContactIds.delete(id);
+            updateSelectedContactsUi();
+          });
+        });
+        document.getElementById('select-all-newbot-students').addEventListener('change', (event) => {
+          wrap.querySelectorAll('.contact-selector').forEach((checkbox) => {
+            checkbox.checked = event.target.checked;
+            const id = Number(checkbox.value);
+            checkbox.checked ? selectedContactIds.add(id) : selectedContactIds.delete(id);
+          });
+          updateSelectedContactsUi();
+        });
+        updateSelectedContactsUi();
+      } catch (error) {
+        wrap.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function initNewBotTab() {
+      loadNewBotStudents();
+      if (newBotTabInitialized) return;
+      newBotTabInitialized = true;
+      document.getElementById('newbot-search').addEventListener('input', () => {
+        clearTimeout(newBotSearchTimer);
+        newBotSearchTimer = setTimeout(() => { newBotStudentsPage = 1; loadNewBotStudents(); }, 350);
+      });
+      document.getElementById('newbot-status-filter').addEventListener('change', () => {
+        newBotStudentsPage = 1; loadNewBotStudents();
+      });
+      document.getElementById('clear-newbot-filters').addEventListener('click', () => {
+        document.getElementById('newbot-search').value = '';
+        document.getElementById('newbot-status-filter').value = '';
+        newBotStudentsPage = 1;
+        loadNewBotStudents();
+      });
+      document.getElementById('newbot-students-prev').addEventListener('click', () => {
+        if (newBotStudentsPage > 1) { newBotStudentsPage--; loadNewBotStudents(); }
+      });
+      document.getElementById('newbot-students-next').addEventListener('click', () => {
+        if (newBotStudentsPage < newBotStudentsPages) { newBotStudentsPage++; loadNewBotStudents(); }
+      });
+      document.getElementById('select-page-newbot-btn').addEventListener('click', () => {
+        currentFilteredNewBotContactIds.forEach((id) => selectedContactIds.add(id));
+        document.querySelectorAll('#newbot-students-table .contact-selector').forEach((checkbox) => { checkbox.checked = true; });
+        updateSelectedContactsUi();
+        showToast(`تم تحديد ${currentFilteredNewBotContactIds.length} طالب ممكن مراسلته`);
+      });
+      document.getElementById('select-all-newbot-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('select-all-newbot-btn');
+        btn.disabled = true;
+        try {
+          const result = await api('/api/tafra/students/ids?' + newBotStudentQuery());
+          result.ids.forEach((id) => selectedContactIds.add(id));
+          document.querySelectorAll('#newbot-students-table .contact-selector').forEach((checkbox) => {
+            if (selectedContactIds.has(Number(checkbox.value))) checkbox.checked = true;
+          });
+          updateSelectedContactsUi();
+          showToast(`تم تحديد ${result.ids.length} طالب من كل الصفحات المطابقة للفلتر`);
+        } catch (error) {
+          showToast(error.message);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      document.getElementById('clear-selected-newbot-btn').addEventListener('click', () => {
+        selectedContactIds.clear();
+        document.querySelectorAll('#newbot-students-table .contact-selector').forEach((checkbox) => { checkbox.checked = false; });
+        updateSelectedContactsUi();
+      });
+      document.getElementById('message-selected-newbot-btn').addEventListener('click', goToComposeWithSelection);
+    }
+    let newBotSearchTimer = null;
 
     document.getElementById('csv-input').addEventListener('change', async (e) => {
       const file = e.target.files[0];
