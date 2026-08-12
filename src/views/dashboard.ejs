@@ -38,6 +38,19 @@
       <button type="button" class="push-toggle-btn" id="push-toggle-btn"
         title="تفعيل إشعارات التليفون" aria-label="تفعيل إشعارات التليفون">🔕</button>
 
+      <!-- زرار الحساب ده بيظهر على الموبايل بس (القائمة الجانبية بتتحول لصف علوي، وقسم الحساب
+           التحتاني بيختفي) — نفس الوظايف (تغيير كلمة المرور وتسجيل الخروج) بس في مكان يوصله فيه -->
+      <div class="account-menu-wrap">
+        <button type="button" class="account-menu-toggle-btn" id="account-menu-toggle-btn" title="الحساب" aria-label="الحساب">👤</button>
+        <div class="account-menu-dropdown" id="account-menu-dropdown" style="display:none">
+          <div class="account-menu-name">👋 <%= userName %></div>
+          <button type="button" class="btn btn-ghost btn-sm" id="mobile-open-change-password-btn" style="width:100%">تغيير كلمة المرور</button>
+          <form method="POST" action="/logout">
+            <button type="submit" class="btn btn-ghost btn-sm" style="width:100%">تسجيل الخروج</button>
+          </form>
+        </div>
+      </div>
+
       <div class="sidebar-footer">
         <div class="user-name">👋 <%= userName %></div>
         <button type="button" class="btn btn-ghost btn-sm" id="open-change-password-btn" style="width:100%">تغيير كلمة المرور</button>
@@ -1398,11 +1411,27 @@
       document.getElementById('change-password-new').value = '';
       document.getElementById('change-password-confirm').value = '';
     }
-    document.getElementById('open-change-password-btn').addEventListener('click', () => {
+    function openChangePasswordModal() {
       changePasswordOverlay.style.display = 'flex';
       document.getElementById('change-password-current').focus();
+    }
+    document.getElementById('open-change-password-btn').addEventListener('click', openChangePasswordModal);
+    document.getElementById('mobile-open-change-password-btn').addEventListener('click', () => {
+      document.getElementById('account-menu-dropdown').style.display = 'none';
+      openChangePasswordModal();
     });
     document.getElementById('close-change-password-btn').addEventListener('click', closeChangePasswordModal);
+
+    // ---------- قائمة الحساب على الموبايل ----------
+    const accountMenuToggleBtn = document.getElementById('account-menu-toggle-btn');
+    const accountMenuDropdown = document.getElementById('account-menu-dropdown');
+    accountMenuToggleBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      accountMenuDropdown.style.display = accountMenuDropdown.style.display === 'none' ? 'flex' : 'none';
+    });
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('.account-menu-wrap')) accountMenuDropdown.style.display = 'none';
+    });
     changePasswordOverlay.querySelectorAll('[data-toggle-for]').forEach((toggleBtn) => {
       toggleBtn.addEventListener('click', () => {
         const input = document.getElementById(toggleBtn.dataset.toggleFor);
