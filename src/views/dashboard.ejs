@@ -30,7 +30,7 @@
       <% if (userRole === 'admin') { %>
         <div class="nav-item" data-tab="contacts"><span class="ind"></span> جهات الاتصال والإرسال</div>
         <div class="nav-item" data-tab="tafra-students"><span class="ind"></span> طلاب المنصة</div>
-        <div class="nav-item" data-tab="new-bot"><span class="ind"></span> البوت الجديد</div>
+        <div class="nav-item" data-tab="new-bot"><span class="ind"></span> بوت طفرة</div>
         <div class="nav-item" data-tab="reports"><span class="ind"></span> التقارير</div>
         <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
         <div class="nav-item" data-tab="settings"><span class="ind"></span> الإعدادات</div>
@@ -569,7 +569,7 @@
           <div class="field">
             <label>زرار تحت الرسالة (اختياري — بيفتح رابط لما الطالب يضغط عليه)</label>
             <div class="row" style="gap:10px">
-              <input type="text" id="broadcast-button-text" class="compact-input" placeholder="نص الزرار، مثلاً: 🚀 ابدأ البوت الجديد" maxlength="64" style="flex:1">
+              <input type="text" id="broadcast-button-text" class="compact-input" placeholder="نص الزرار، مثلاً: 🚀 ابدأ بوت طفرة" maxlength="64" style="flex:1">
               <input type="url" id="broadcast-button-url" class="compact-input" placeholder="https://t.me/..." style="flex:1">
               <button type="button" class="btn btn-ghost btn-sm" id="clear-broadcast-button" style="width:auto">مسح الزرار</button>
             </div>
@@ -727,16 +727,16 @@
         </div>
       </section>
 
-      <!-- ===== البوت الجديد ===== -->
+      <!-- ===== بوت طفرة ===== -->
       <section class="tab-panel" id="tab-new-bot" style="display:none">
         <div class="page-header">
-          <h1>البوت الجديد</h1>
-          <p>وجّه الطلاب اللي لسه ما بدأوش البوت الجديد، أو ابعت رسالة من البوت الجديد نفسه لمشتركين فيه بالفعل</p>
+          <h1>بوت طفرة</h1>
+          <p>وجّه الطلاب اللي لسه ما بدأوش بوت طفرة، أو ابعت رسالة من بوت طفرة نفسه لمشتركين فيه بالفعل</p>
         </div>
 
         <div class="subtabs" id="new-bot-subtabs">
           <button type="button" class="subtab-btn active" data-subtab="nudge">توجيه اللي لسه ما بدأش</button>
-          <button type="button" class="subtab-btn" data-subtab="subscribers">رسالة من البوت الجديد لمشتركينه</button>
+          <button type="button" class="subtab-btn" data-subtab="subscribers">رسالة من بوت طفرة لمشتركينه</button>
         </div>
 
         <div class="subtab-section" data-subtab="nudge">
@@ -751,8 +751,8 @@
           </select>
           <select id="newbot-status-filter" class="compact-select">
             <option value="">الكل</option>
-            <option value="not_started">لسه ما بدأش البوت الجديد</option>
-            <option value="started">بدأ البوت الجديد بالفعل</option>
+            <option value="not_started">لسه ما بدأش بوت طفرة</option>
+            <option value="started">بدأ بوت طفرة بالفعل</option>
           </select>
           <button type="button" class="btn btn-ghost" id="clear-newbot-filters">مسح الفلاتر</button>
         </div>
@@ -787,7 +787,7 @@
         </div>
         <div class="card">
           <div class="row-between" style="margin-bottom:12px">
-            <b id="newbot-sub-count">مشتركين البوت الجديد</b>
+            <b id="newbot-sub-count">مشتركين بوت طفرة</b>
             <span id="newbot-sub-page-label" class="ticket-muted"></span>
           </div>
           <div class="row-between audience-actions">
@@ -1914,7 +1914,7 @@
         ideaSelect.value = previousIdeaValue;
       });
 
-      // فلتر الباب لتاب "البوت الجديد" مستقل عن اللوب فوق (التاب ده معندوش صف دراسي/حالة/اختبار،
+      // فلتر الباب لتاب "بوت طفرة" مستقل عن اللوب فوق (التاب ده معندوش صف دراسي/حالة/اختبار،
       // بس محتاج فلتر الباب بنفس الافتراضي)
       createMultiSelectFilter('newbot-bootcamp-filter', 'الباب/الكورس')
         .setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
@@ -3728,7 +3728,7 @@
       document.getElementById('broadcast-tag').value = '__selected__';
       document.getElementById('broadcast-exam-context').value = activeExamFilter || '';
       updateSelectedContactsUi();
-      // لما الإرسال جاي من تاب "البوت الجديد"، نجهّز رسالة وزرار جاهزين يوجّهوا الطالب للبوت الجديد
+      // لما الإرسال جاي من تاب "بوت طفرة"، نجهّز رسالة وزرار جاهزين يوجّهوا الطالب لبوت طفرة
       // مباشرة — الموظف يقدر يعدّلهم عادي زي أي رسالة تانية قبل الإرسال
       if (prefillNewBot) {
         try {
@@ -3737,10 +3737,10 @@
           if (!contentField.value.trim()) {
             contentField.value = 'أهلاً يا الاسم! 👋 عندنا بوت جديد فيه خدمات إضافية ليك، اضغط على الزرار تحت وابدأ معاه دلوقتي.';
           }
-          document.getElementById('broadcast-button-text').value = '🚀 ابدأ البوت الجديد';
+          document.getElementById('broadcast-button-text').value = '🚀 ابدأ بوت طفرة';
           document.getElementById('broadcast-button-url').value = info.link;
         } catch (error) {
-          showToast('تعذر تجهيز رابط البوت الجديد تلقائيًا: ' + error.message);
+          showToast('تعذر تجهيز رابط بوت طفرة تلقائيًا: ' + error.message);
         }
       }
       document.getElementById('broadcast-compose').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3786,7 +3786,7 @@
     });
     document.getElementById('message-selected-tafra-students-btn').addEventListener('click', goToComposeWithSelection);
 
-    // ---------- البوت الجديد (توجيه الطلاب اللي لسه ما بدأوش، عن طريق بوت الدعم الحالي) ----------
+    // ---------- بوت طفرة (توجيه الطلاب اللي لسه ما بدأوش، عن طريق بوت المتابعة) ----------
     let newBotStudentsPage = 1;
     let newBotStudentsPages = 1;
     let newBotTabInitialized = false;
@@ -3811,7 +3811,7 @@
         ? `<input type="checkbox" class="contact-selector" value="${student.contact_id}" ${selectedContactIds.has(Number(student.contact_id)) ? 'checked' : ''} aria-label="تحديد الطالب">`
         : telegramReachBadge(false);
       const statusBadge = student.new_bot_started
-        ? '<span class="badge badge-success">✅ بدأ البوت الجديد</span>'
+        ? '<span class="badge badge-success">✅ بدأ بوت طفرة</span>'
         : '<span class="badge badge-muted">لسه ما بدأش</span>';
       return `<tr>
         <td class="select-cell">${checkboxCell}</td>
@@ -3837,7 +3837,7 @@
         }
         wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
           <th class="select-cell"><input type="checkbox" id="select-all-newbot-students" aria-label="تحديد الكل"></th>
-          <th>الطالب</th><th>الهاتف</th><th>حالة البوت الجديد</th>
+          <th>الطالب</th><th>الهاتف</th><th>حالة بوت طفرة</th>
         </tr></thead><tbody>${result.students.map(newBotStudentRowHtml).join('')}</tbody></table></div>`;
         wrap.querySelectorAll('.contact-selector').forEach((checkbox) => {
           checkbox.addEventListener('change', () => {
@@ -3926,7 +3926,7 @@
     }
     let newBotSearchTimer = null;
 
-    // ---------- رسالة من البوت الجديد نفسه لمشتركين فيه بالفعل (اتجاه عكسي — مثلًا نرجعهم لبوت الدعم) ----------
+    // ---------- رسالة من بوت طفرة نفسه لمشتركين فيه بالفعل (اتجاه عكسي — مثلًا نرجعهم لبوت المتابعة) ----------
     let newBotSubPage = 1;
     let newBotSubPages = 1;
     let newBotSubInitialized = false;
@@ -3949,12 +3949,12 @@
       try {
         const result = await api('/api/tafra/new-bot-contacts?' + newBotSubQuery());
         newBotSubPages = result.meta.pages;
-        document.getElementById('newbot-sub-count').textContent = `مشتركين البوت الجديد (${result.meta.total})`;
+        document.getElementById('newbot-sub-count').textContent = `مشتركين بوت طفرة (${result.meta.total})`;
         document.getElementById('newbot-sub-page-label').textContent = `صفحة ${result.meta.page} من ${result.meta.pages}`;
         document.getElementById('newbot-sub-prev').disabled = result.meta.page <= 1;
         document.getElementById('newbot-sub-next').disabled = result.meta.page >= result.meta.pages;
         if (!result.contacts.length) {
-          wrap.innerHTML = '<div class="empty-state">لسه محدش بدأ البوت الجديد</div>';
+          wrap.innerHTML = '<div class="empty-state">لسه محدش بدأ بوت طفرة</div>';
           return;
         }
         wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
@@ -3990,14 +3990,14 @@
 
     function initNewBotSubscribersTab() {
       loadNewBotSubscribers();
-      // نجهّز رابط بوت الدعم القديم كقيمة افتراضية للزرار (لو لسه فاضي) — مفيد جدًا لو الرسالة هدفها
-      // ترجّع الطالب لبوت الدعم، وبرضه قابل للتعديل عادي
+      // نجهّز رابط بوت المتابعة كقيمة افتراضية للزرار (لو لسه فاضي) — مفيد جدًا لو الرسالة هدفها
+      // ترجّع الطالب لبوت المتابعة، وبرضه قابل للتعديل عادي
       api('/api/tafra/new-bot-info').then((info) => {
         const urlField = document.getElementById('newbot-sub-button-url');
         const textField = document.getElementById('newbot-sub-button-text');
         if (info.main_bot_link && !urlField.value) {
           urlField.value = info.main_bot_link;
-          if (!textField.value) textField.value = '💬 ارجع لبوت الدعم';
+          if (!textField.value) textField.value = '💬 ارجع لبوت المتابعة';
         }
       }).catch(() => {});
       if (newBotSubInitialized) return;
@@ -4040,7 +4040,7 @@
         if (!message) return showToast('اكتب نص الرسالة الأول');
         if (buttonText && !buttonUrl) return showToast('حطيت نص للزرار من غير رابط');
         if (buttonUrl && !/^https?:\/\//i.test(buttonUrl)) return showToast('رابط الزرار لازم يبدأ بـ http:// أو https://');
-        if (!confirm(`إرسال الرسالة دي لـ ${selectedNewBotSubChatIds.size} مشترك عن طريق البوت الجديد؟`)) return;
+        if (!confirm(`إرسال الرسالة دي لـ ${selectedNewBotSubChatIds.size} مشترك عن طريق بوت طفرة؟`)) return;
         btn.disabled = true;
         try {
           const result = await api('/api/tafra/new-bot-broadcast', {

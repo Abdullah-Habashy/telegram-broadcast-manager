@@ -1,4 +1,4 @@
-// إدارة "البوت الجديد" — بوت تليجرام مستقل تمامًا وشغّال بالتوازي مع بوت الدعم الحالي، بحد أدنى
+// إدارة "بوت طفرة" — بوت تليجرام مستقل تمامًا وشغّال بالتوازي مع بوت المتابعة، بحد أدنى
 // من الوظايف دلوقتي: تسجيل أي حد يضغط /start بس، عشان نعرف مين من طلاب المنصة بدأه ومين لسه.
 // نفس نمط src/bot/botManager.js لكن بمسار Webhook ومفتاح سري منفصلين تمامًا عن البوت الأساسي.
 const crypto = require('crypto');
@@ -63,7 +63,7 @@ async function activateToken(token) {
   botUsername = botInfo.username;
 
   if (!env.publicUrl) {
-    console.warn('⚠️  PUBLIC_URL غير محدد — البوت الجديد مش هيستقبل تحديثات لحد ما يتحدد ويتعاد تشغيل السيرفر.');
+    console.warn('⚠️  PUBLIC_URL غير محدد — بوت طفرة مش هيستقبل تحديثات لحد ما يتحدد ويتعاد تشغيل السيرفر.');
     botInstance = bot;
     activeToken = token;
     return bot;
@@ -86,7 +86,7 @@ async function initBot() {
   try {
     return await activateToken(token);
   } catch (err) {
-    console.error('❌ فشل تسجيل Webhook البوت الجديد:', err.message);
+    console.error('❌ فشل تسجيل Webhook بوت طفرة:', err.message);
     return null;
   }
 }

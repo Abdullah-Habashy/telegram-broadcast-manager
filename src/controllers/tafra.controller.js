@@ -145,7 +145,7 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   } else if (query.telegram === 'unlinked') {
     conditions.push('s.telegram_chat_id IS NULL');
   }
-  // هل الطالب بدأ "البوت الجديد" (بوت منفصل شغّال بالتوازي) ولا لسه — chat_id بتاع تليجرام نفسه
+  // هل الطالب بدأ "بوت طفرة" (بوت منفصل شغّال بالتوازي) ولا لسه — chat_id بتاع تليجرام نفسه
   // بيتطابق مع أي بوت، فمقارنته بجدول new_bot_contacts كافية من غير أي ربط إضافي
   if (query.new_bot_status === 'started') {
     conditions.push('EXISTS (SELECT 1 FROM new_bot_contacts nbc WHERE nbc.chat_id = s.telegram_chat_id)');
@@ -354,13 +354,13 @@ async function listStudents(req, res) {
 }
 
 // معلومات البوتين (يوزر كل واحد بس دلوقتي) — مستخدمة لتجهيز رابط الزرار تلقائيًا في أي اتجاه
-// (توجيه لغير البدأ بعد، أو توجيه العكس من البوت الجديد لبوت الدعم)، بدل ما الموظف يكتب اليوزر يدوي
+// (توجيه لغير البدأ بعد، أو توجيه العكس من بوت طفرة لبوت المتابعة)، بدل ما الموظف يكتب اليوزر يدوي
 async function getNewBotInfo(req, res) {
   const newBotManager = require('../bot/newBotManager');
   const botManager = require('../bot/botManager');
   const newUsername = newBotManager.getBotUsername();
   const mainUsername = botManager.getBotUsername();
-  if (!newUsername) return res.status(503).json({ error: 'البوت الجديد لسه مش متصل' });
+  if (!newUsername) return res.status(503).json({ error: 'بوت طفرة لسه مش متصل' });
   res.json({
     username: newUsername,
     link: `https://t.me/${newUsername}`,
@@ -369,8 +369,8 @@ async function getNewBotInfo(req, res) {
   });
 }
 
-// قايمة الطلاب اللي بدأوا "البوت الجديد" بالفعل (اشتركوا فيه) — عشان نقدر نبعتلهم رسالة منه هو
-// نفسه (مش من بوت الدعم)، زي مثلًا رسالة فيها رابط بوت الدعم القديم لو محتاجين يرجعوله
+// قايمة الطلاب اللي بدأوا "بوت طفرة" بالفعل (اشتركوا فيه) — عشان نقدر نبعتلهم رسالة منه هو
+// نفسه (مش من بوت المتابعة)، زي مثلًا رسالة فيها رابط بوت المتابعة لو محتاجين يرجعوله
 async function listNewBotContacts(req, res) {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = 50;
@@ -397,16 +397,16 @@ async function listNewBotContacts(req, res) {
     res.json({ contacts: result.rows, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (error) {
     console.error('Failed to list new-bot contacts:', error.message);
-    res.status(500).json({ error: 'تعذر تحميل قائمة مشتركي البوت الجديد' });
+    res.status(500).json({ error: 'تعذر تحميل قائمة مشتركي بوت طفرة' });
   }
 }
 
-// إرسال رسالة جماعية عن طريق "البوت الجديد" نفسه لمشتركين فيه بالفعل (المخاطبين المحددين لازم يكونوا
+// إرسال رسالة جماعية عن طريق "بوت طفرة" نفسه لمشتركين فيه بالفعل (المخاطبين المحددين لازم يكونوا
 // موجودين في new_bot_contacts أصلًا — تليجرام مايسمحش نبعت لحد لسه ما بدأش نفس البوت ده)
 async function sendNewBotBroadcast(req, res) {
   const newBotManager = require('../bot/newBotManager');
   const bot = newBotManager.getBot();
-  if (!bot) return res.status(503).json({ error: 'البوت الجديد غير متصل حاليًا' });
+  if (!bot) return res.status(503).json({ error: 'بوت طفرة غير متصل حاليًا' });
 
   const chatIds = Array.isArray(req.body.chat_ids)
     ? [...new Set(req.body.chat_ids.map(Number).filter((id) => Number.isInteger(id)))]

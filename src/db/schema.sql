@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS contacts (
 );
 CREATE INDEX IF NOT EXISTS idx_contacts_last_contacted ON contacts (last_contacted_at);
 
--- طلاب بدأوا محادثة مع "البوت الجديد" (بوت منفصل تمامًا، شغّال بالتوازي مع بوت الدعم الحالي).
+-- طلاب بدأوا محادثة مع "بوت طفرة" (بوت منفصل تمامًا، شغّال بالتوازي مع بوت المتابعة).
 -- chat_id بيتطابق مع نفس chat_id بتاع تليجرام العادي بتاع المستخدم (مش خاص بالبوت)، فبيتربط
 -- مباشرة بـ tafra_students.telegram_chat_id من غير أي حاجة زيادة — عشان نعرف مين لسه ما بدأش
 CREATE TABLE IF NOT EXISTS new_bot_contacts (
