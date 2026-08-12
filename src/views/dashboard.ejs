@@ -742,6 +742,23 @@
           <p class="ticket-muted" style="margin-top:8px">بوت طفرة هو نفس بوت منصة طفرة الرسمي، فكتير من الطلاب المرتبطين على المنصة ضغطوا Start عليه قبل كده من غير ما نعرف — الفحص ده بيتأكد فعليًا (بدون إرسال أي رسالة) مين منهم قابل للمراسلة بالفعل، ويضيفهم لقائمة المشتركين تحت.</p>
         </div>
 
+        <div class="card">
+          <h2>الرسالة</h2>
+          <div class="field">
+            <label>المحتوى</label>
+            <textarea id="newbot-sub-message" placeholder="اكتب نص الرسالة هنا... تقدر تستخدم كلمة الاسم وهتتحول لاسم كل طالب"></textarea>
+          </div>
+          <div class="field">
+            <label>زرار تحت الرسالة (اختياري)</label>
+            <div class="row" style="gap:10px">
+              <input type="text" id="newbot-sub-button-text" class="compact-input" placeholder="نص الزرار" maxlength="64" style="flex:1">
+              <input type="url" id="newbot-sub-button-url" class="compact-input" placeholder="https://t.me/..." style="flex:1">
+              <button type="button" class="btn btn-ghost btn-sm" id="clear-newbot-sub-button" style="width:auto">مسح الزرار</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary" id="send-newbot-sub-btn" style="width:auto; padding-inline:24px">إرسال للمحددين</button>
+        </div>
+
         <div class="card tafra-student-filters">
           <input type="search" id="newbot-sub-search" class="compact-input" placeholder="بحث بالاسم أو اليوزر">
           <input type="hidden" id="newbot-sub-bootcamp-filter" value="">
@@ -776,22 +793,6 @@
             <button type="button" class="btn btn-ghost btn-sm" id="newbot-sub-prev">السابق</button>
             <button type="button" class="btn btn-ghost btn-sm" id="newbot-sub-next">التالي</button>
           </div>
-        </div>
-        <div class="card">
-          <h2>الرسالة</h2>
-          <div class="field">
-            <label>المحتوى</label>
-            <textarea id="newbot-sub-message" placeholder="اكتب نص الرسالة هنا... تقدر تستخدم كلمة الاسم وهتتحول لاسم كل طالب"></textarea>
-          </div>
-          <div class="field">
-            <label>زرار تحت الرسالة (اختياري)</label>
-            <div class="row" style="gap:10px">
-              <input type="text" id="newbot-sub-button-text" class="compact-input" placeholder="نص الزرار" maxlength="64" style="flex:1">
-              <input type="url" id="newbot-sub-button-url" class="compact-input" placeholder="https://t.me/..." style="flex:1">
-              <button type="button" class="btn btn-ghost btn-sm" id="clear-newbot-sub-button" style="width:auto">مسح الزرار</button>
-            </div>
-          </div>
-          <button type="button" class="btn btn-primary" id="send-newbot-sub-btn" style="width:auto; padding-inline:24px">إرسال للمحددين</button>
         </div>
       </section>
 
