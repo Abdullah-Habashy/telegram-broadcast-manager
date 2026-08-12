@@ -146,13 +146,6 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   } else if (query.telegram === 'unlinked') {
     conditions.push('s.telegram_chat_id IS NULL');
   }
-  // هل الطالب بدأ "بوت طفرة" (بوت منفصل شغّال بالتوازي) ولا لسه — chat_id بتاع تليجرام نفسه
-  // بيتطابق مع أي بوت، فمقارنته بجدول new_bot_contacts كافية من غير أي ربط إضافي
-  if (query.new_bot_status === 'started') {
-    conditions.push('EXISTS (SELECT 1 FROM new_bot_contacts nbc WHERE nbc.chat_id = s.telegram_chat_id)');
-  } else if (query.new_bot_status === 'not_started') {
-    conditions.push('NOT EXISTS (SELECT 1 FROM new_bot_contacts nbc WHERE nbc.chat_id = s.telegram_chat_id)');
-  }
   // حالة التواصل الفعلي — أدق من فلتر تيليجرام لأنه بيفرّق بين "دوس Start بس" و"فعلاً اتكلم معاه"،
   // وكمان بيربطها بموعد المتابعة المحدد للتذكرة (لو موجودة)
   if (query.conversation_status === 'start_only') {
@@ -331,7 +324,6 @@ async function listStudents(req, res) {
         c.id AS contact_id, t.current_idea_number,
         -- تيليجرام مايسمحش للبوت يبعت لطالب لسه ما بدأش معاه محادثة، حتى لو ربط حسابه على منصة طفرة
         (c.last_contacted_at IS NOT NULL) AS can_message,
-        EXISTS (SELECT 1 FROM new_bot_contacts nbc WHERE nbc.chat_id = s.telegram_chat_id) AS new_bot_started,
         last_sent.last_sent_at, last_received.last_received_at,
         bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum${examSelectSql}${enrollmentDatesSelectSql}
        FROM tafra_students s
