@@ -12,6 +12,7 @@ const WEBHOOK_PATH = '/bot/webhook';
 
 let botInstance = null;
 let activeToken = null;
+let botUsername = null;
 
 // نستخدم هاش ثابت مبني على SESSION_SECRET كـ secret_token بتاع الـ webhook
 // (تليجرام بيرجّعه في هيدر X-Telegram-Bot-Api-Secret-Token مع كل تحديث، وبنتحقق منه قبل المعالجة)
@@ -54,6 +55,7 @@ async function activateToken(token) {
 
   const bot = createBot(token);
   const botInfo = await bot.telegram.getMe();
+  botUsername = botInfo.username;
 
   if (!env.publicUrl) {
     console.warn('⚠️  PUBLIC_URL is not configured in .env. The bot cannot receive updates until it is set and the server is restarted.');
@@ -99,4 +101,8 @@ function getBot() {
   return botInstance;
 }
 
-module.exports = { initBot, activateToken, verifyToken, getBot, getSecretToken, WEBHOOK_PATH };
+function getBotUsername() {
+  return botUsername;
+}
+
+module.exports = { initBot, activateToken, verifyToken, getBot, getBotUsername, getSecretToken, WEBHOOK_PATH };

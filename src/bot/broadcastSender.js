@@ -92,15 +92,18 @@ async function sendBroadcast(broadcastId) {
 
     try {
       const personalizedContent = personalizeMessage(broadcast.message_content, contact, examContext);
+      const replyMarkup = broadcast.button_text && broadcast.button_url
+        ? { inline_keyboard: [[{ text: broadcast.button_text, url: broadcast.button_url }]] }
+        : undefined;
       if (broadcast.image_path) {
         const imagePath = path.join(__dirname, '..', '..', 'public', broadcast.image_path);
         await bot.telegram.sendPhoto(
           contact.chat_id,
           { source: imagePath },
-          { caption: personalizedContent }
+          { caption: personalizedContent, reply_markup: replyMarkup }
         );
       } else {
-        await bot.telegram.sendMessage(contact.chat_id, personalizedContent);
+        await bot.telegram.sendMessage(contact.chat_id, personalizedContent, { reply_markup: replyMarkup });
       }
       await pool.query(
         "UPDATE broadcast_recipients SET status = 'sent', sent_at = NOW() WHERE id = $1",

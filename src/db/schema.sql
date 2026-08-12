@@ -123,6 +123,9 @@ ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS image_path TEXT;
 -- ربط اختياري باختبار معيّن — يفعّل استبدال كلمتي "اختبار"/"الدرجة" باسم الاختبار ودرجة كل طالب عند الإرسال
 ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS context_exam_type VARCHAR(10);
 ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS context_exam_id BIGINT;
+-- زرار اختياري تحت الرسالة (Inline Keyboard) — مفيد مثلاً لتوجيه الطالب لبوت تاني بضغطة واحدة
+ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS button_text VARCHAR(64);
+ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS button_url TEXT;
 CREATE INDEX IF NOT EXISTS idx_broadcasts_pending_schedule ON broadcasts (status, scheduled_for);
 
 -- تقرير نجاح/فشل كل رسالة داخل عملية الإرسال (سجل الرسائل المُرسلة)

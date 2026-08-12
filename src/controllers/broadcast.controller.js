@@ -10,6 +10,23 @@ async function createBroadcast(req, res) {
   const { message_content, template_id, filter_tag_id, scheduled_for } = req.body;
   let selectedContactIds = req.body.selected_contact_ids;
 
+  // زرار اختياري تحت الرسالة — لازم نص ورابط مع بعض أو ولا حاجة، والرابط لازم يبقى http(s) صحيح
+  // عشان تليجرام يرفض أي reply_markup فيه رابط غير صالح ويفشل الإرسال كله
+  const buttonText = String(req.body.button_text || '').trim() || null;
+  const buttonUrl = String(req.body.button_url || '').trim() || null;
+  if (buttonText && !buttonUrl) {
+    removeUploadedImage(req.file);
+    return res.status(400).json({ error: 'حطيت نص للزرار بدون رابط' });
+  }
+  if (buttonUrl && !/^https?:\/\//i.test(buttonUrl)) {
+    removeUploadedImage(req.file);
+    return res.status(400).json({ error: 'رابط الزرار لازم يبدأ بـ http:// أو https://' });
+  }
+  if (buttonText && buttonText.length > 64) {
+    removeUploadedImage(req.file);
+    return res.status(400).json({ error: 'نص الزرار طويل جدًا (64 حرف كحد أقصى)' });
+  }
+
   const examMatch = /^(online|offline)-(\d+)$/.exec(String(req.body.exam || ''));
   const contextExamType = examMatch ? examMatch[1] : null;
   const contextExamId = examMatch ? Number(examMatch[2]) : null;
@@ -69,8 +86,8 @@ async function createBroadcast(req, res) {
     const result = await client.query(
       `INSERT INTO broadcasts
         (created_by, template_id, message_content, filter_tag_id, selected_contact_ids, image_path, scheduled_for,
-         context_exam_type, context_exam_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+         context_exam_type, context_exam_id, button_text, button_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [
         req.session.userId,
         template_id || null,
@@ -81,6 +98,8 @@ async function createBroadcast(req, res) {
         scheduled_for || null,
         contextExamType,
         contextExamId,
+        buttonText,
+        buttonUrl,
       ]
     );
     const broadcast = result.rows[0];

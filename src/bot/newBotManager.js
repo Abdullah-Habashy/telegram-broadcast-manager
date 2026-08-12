@@ -11,6 +11,7 @@ const WEBHOOK_PATH = '/bot2/webhook';
 
 let botInstance = null;
 let activeToken = null;
+let botUsername = null;
 
 function getSecretToken() {
   return crypto.createHash('sha256').update(env.sessionSecret + ':new-bot').digest('hex');
@@ -59,6 +60,7 @@ async function activateToken(token) {
 
   const bot = createBot(token);
   const botInfo = await bot.telegram.getMe();
+  botUsername = botInfo.username;
 
   if (!env.publicUrl) {
     console.warn('⚠️  PUBLIC_URL غير محدد — البوت الجديد مش هيستقبل تحديثات لحد ما يتحدد ويتعاد تشغيل السيرفر.');
@@ -93,4 +95,8 @@ function getBot() {
   return botInstance;
 }
 
-module.exports = { initBot, getBot, getSecretToken, WEBHOOK_PATH };
+function getBotUsername() {
+  return botUsername;
+}
+
+module.exports = { initBot, getBot, getBotUsername, getSecretToken, WEBHOOK_PATH };

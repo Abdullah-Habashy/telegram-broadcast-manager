@@ -353,6 +353,98 @@ async function listStudents(req, res) {
   }
 }
 
+// معلومات البوتين (يوزر كل واحد بس دلوقتي) — مستخدمة لتجهيز رابط الزرار تلقائيًا في أي اتجاه
+// (توجيه لغير البدأ بعد، أو توجيه العكس من البوت الجديد لبوت الدعم)، بدل ما الموظف يكتب اليوزر يدوي
+async function getNewBotInfo(req, res) {
+  const newBotManager = require('../bot/newBotManager');
+  const botManager = require('../bot/botManager');
+  const newUsername = newBotManager.getBotUsername();
+  const mainUsername = botManager.getBotUsername();
+  if (!newUsername) return res.status(503).json({ error: 'البوت الجديد لسه مش متصل' });
+  res.json({
+    username: newUsername,
+    link: `https://t.me/${newUsername}`,
+    main_bot_username: mainUsername || null,
+    main_bot_link: mainUsername ? `https://t.me/${mainUsername}` : null,
+  });
+}
+
+// قايمة الطلاب اللي بدأوا "البوت الجديد" بالفعل (اشتركوا فيه) — عشان نقدر نبعتلهم رسالة منه هو
+// نفسه (مش من بوت الدعم)، زي مثلًا رسالة فيها رابط بوت الدعم القديم لو محتاجين يرجعوله
+async function listNewBotContacts(req, res) {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = 50;
+  const offset = (page - 1) * limit;
+  const search = String(req.query.search || '').trim();
+  const params = [];
+  const conditions = [];
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(`(first_name ILIKE $${params.length} OR last_name ILIKE $${params.length} OR telegram_username ILIKE $${params.length})`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  try {
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS count FROM new_bot_contacts ${where}`, params);
+    const listParams = [...params, limit, offset];
+    const result = await pool.query(
+      `SELECT id, chat_id, telegram_username, first_name, last_name, started_at
+       FROM new_bot_contacts ${where}
+       ORDER BY started_at DESC
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams
+    );
+    const total = countResult.rows[0].count;
+    res.json({ contacts: result.rows, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+  } catch (error) {
+    console.error('Failed to list new-bot contacts:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل قائمة مشتركي البوت الجديد' });
+  }
+}
+
+// إرسال رسالة جماعية عن طريق "البوت الجديد" نفسه لمشتركين فيه بالفعل (المخاطبين المحددين لازم يكونوا
+// موجودين في new_bot_contacts أصلًا — تليجرام مايسمحش نبعت لحد لسه ما بدأش نفس البوت ده)
+async function sendNewBotBroadcast(req, res) {
+  const newBotManager = require('../bot/newBotManager');
+  const bot = newBotManager.getBot();
+  if (!bot) return res.status(503).json({ error: 'البوت الجديد غير متصل حاليًا' });
+
+  const chatIds = Array.isArray(req.body.chat_ids)
+    ? [...new Set(req.body.chat_ids.map(Number).filter((id) => Number.isInteger(id)))]
+    : [];
+  const message = String(req.body.message || '').trim();
+  const buttonText = String(req.body.button_text || '').trim() || null;
+  const buttonUrl = String(req.body.button_url || '').trim() || null;
+
+  if (!chatIds.length) return res.status(400).json({ error: 'اختر مشترك واحد على الأقل' });
+  if (!message) return res.status(400).json({ error: 'اكتب نص الرسالة' });
+  if (buttonText && !buttonUrl) return res.status(400).json({ error: 'حطيت نص للزرار من غير رابط' });
+  if (buttonUrl && !/^https?:\/\//i.test(buttonUrl)) return res.status(400).json({ error: 'رابط الزرار لازم يبدأ بـ http:// أو https://' });
+
+  const replyMarkup = buttonText && buttonUrl
+    ? { inline_keyboard: [[{ text: buttonText, url: buttonUrl }]] }
+    : undefined;
+
+  const contactsResult = await pool.query(
+    'SELECT chat_id, first_name FROM new_bot_contacts WHERE chat_id = ANY($1::bigint[])',
+    [chatIds]
+  );
+
+  let sent = 0;
+  let failed = 0;
+  for (const contact of contactsResult.rows) {
+    try {
+      const personalized = message.replaceAll('الاسم', contact.first_name || 'صديقنا');
+      await bot.telegram.sendMessage(contact.chat_id, personalized, { reply_markup: replyMarkup });
+      sent += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(`❌ Failed to send new-bot broadcast to chat ${contact.chat_id}:`, error.message);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+  res.json({ sent, failed, total: contactsResult.rows.length });
+}
+
 // كل معرّفات جهات الاتصال (contact_id) للطلاب المطابقين لنفس فلاتر صفحة "طلاب المنصة" بالظبط،
 // بدون تقسيم صفحات — عشان زرار "تحديد كل الصفحات" يقدر يحدد كل الطلاب المطابقين مش بس صفحة واحدة.
 // بيرجّع بس اللي ممكن نراسلهم فعليًا (بدأوا محادثة مع البوت قبل كده) بنفس شرط canMessageStudent بالفرونت
@@ -1081,5 +1173,5 @@ module.exports = {
   getStatus, saveCredentials, syncStudents, syncEnrollments, syncBootcampNames, listStudents, getStudentFilters,
   syncExams, getExamSyncStatus, exportStudentsReport, listStudentContactIds, buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL,
   triggerAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
-  getCredentials, saveEnrollmentPage,
+  getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, sendNewBotBroadcast,
 };
