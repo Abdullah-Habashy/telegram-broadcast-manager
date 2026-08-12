@@ -40,11 +40,34 @@
 
       <div class="sidebar-footer">
         <div class="user-name">👋 <%= userName %></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="open-change-password-btn" style="width:100%">تغيير كلمة المرور</button>
         <form method="POST" action="/logout">
           <button type="submit" class="btn btn-ghost btn-sm" style="width:100%">تسجيل الخروج</button>
         </form>
       </div>
     </aside>
+
+    <div class="modal-overlay" id="change-password-overlay" style="display:none">
+      <div class="modal-card card">
+        <div class="row-between" style="margin-bottom:14px">
+          <h2 style="margin:0">تغيير كلمة المرور</h2>
+          <button type="button" class="btn btn-ghost btn-sm" id="close-change-password-btn" title="إغلاق" aria-label="إغلاق">✕</button>
+        </div>
+        <div class="field">
+          <label>كلمة المرور الحالية</label>
+          <input type="password" id="change-password-current" autocomplete="current-password">
+        </div>
+        <div class="field">
+          <label>كلمة المرور الجديدة</label>
+          <input type="password" id="change-password-new" autocomplete="new-password" placeholder="8 أحرف على الأقل">
+        </div>
+        <div class="field">
+          <label>تأكيد كلمة المرور الجديدة</label>
+          <input type="password" id="change-password-confirm" autocomplete="new-password">
+        </div>
+        <button type="button" class="btn btn-primary" id="submit-change-password-btn" style="width:100%; margin-top:8px">حفظ كلمة المرور الجديدة</button>
+      </div>
+    </div>
 
     <main class="main">
       <!-- ===== نظرة عامة ===== -->
@@ -1347,6 +1370,47 @@
         }
       });
     }
+
+    // ---------- تغيير كلمة المرور الذاتي ----------
+    const changePasswordOverlay = document.getElementById('change-password-overlay');
+    function closeChangePasswordModal() {
+      changePasswordOverlay.style.display = 'none';
+      document.getElementById('change-password-current').value = '';
+      document.getElementById('change-password-new').value = '';
+      document.getElementById('change-password-confirm').value = '';
+    }
+    document.getElementById('open-change-password-btn').addEventListener('click', () => {
+      changePasswordOverlay.style.display = 'flex';
+      document.getElementById('change-password-current').focus();
+    });
+    document.getElementById('close-change-password-btn').addEventListener('click', closeChangePasswordModal);
+    changePasswordOverlay.addEventListener('click', (event) => {
+      if (event.target === changePasswordOverlay) closeChangePasswordModal();
+    });
+    document.getElementById('submit-change-password-btn').addEventListener('click', async () => {
+      const button = document.getElementById('submit-change-password-btn');
+      const currentPassword = document.getElementById('change-password-current').value;
+      const newPassword = document.getElementById('change-password-new').value;
+      const confirmPassword = document.getElementById('change-password-confirm').value;
+      if (!currentPassword || !newPassword) return showToast('من فضلك املأ كل الحقول');
+      if (newPassword.length < 8) return showToast('كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل');
+      if (newPassword !== confirmPassword) return showToast('تأكيد كلمة المرور مش مطابق');
+      button.disabled = true;
+      try {
+        const response = await fetch('/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'تعذر تغيير كلمة المرور');
+        showToast('تم تغيير كلمة المرور — سجّل دخول تاني بكلمة المرور الجديدة');
+        setTimeout(() => { window.location.href = '/login'; }, 1200);
+      } catch (error) {
+        showToast(error.message);
+        button.disabled = false;
+      }
+    });
 
     // تحديد أول عدد (N) من عناصر التحديد الموجودة حاليًا في الصفحة، بترتيب ظهورهم — العدد قابل
     // للتغيير من الموظف نفسه في الخانة المجاورة للزرار

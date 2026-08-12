@@ -10,5 +10,6 @@ router.post('/register', authController.register);
 
 router.post('/logout', authController.logout);
 router.post('/stop-impersonation', authController.stopImpersonation);
+router.post('/change-password', authController.changeOwnPassword);
 
 module.exports = router;

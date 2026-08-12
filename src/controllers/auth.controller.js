@@ -130,4 +130,38 @@ function logout(req, res) {
   });
 }
 
-module.exports = { showLogin, showRegister, register, login, logout, stopImpersonation };
+// تغيير كلمة المرور الذاتي — متاح لأي مستخدم مسجّل دخول (موظف أو أدمن)، مختلف عن تغيير الأدمن
+// لباسورد موظف تاني من صفحة الفريق. بيتأكد من كلمة المرور الحالية الأول، وبعد النجاح بيلغي كل
+// الجلسات (بما فيها الحالية) زي بالظبط ما بيحصل لو الأدمن غيّر باسورد حد — يعني هيحتاج يسجّل دخول تاني
+async function changeOwnPassword(req, res) {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: 'غير مصرح — سجّل الدخول الأول' });
+  }
+  const currentPassword = String(req.body.current_password || '');
+  const newPassword = String(req.body.new_password || '');
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'من فضلك املأ كل الحقول' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل' });
+  }
+
+  try {
+    const result = await pool.query('SELECT id, password_hash FROM users WHERE id = $1', [req.session.userId]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'الحساب غير موجود' });
+
+    const match = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!match) return res.status(400).json({ error: 'كلمة المرور الحالية غلط' });
+
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, user.id]);
+    await pool.query("DELETE FROM session WHERE sess->>'userId' = $1", [String(user.id)]);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Failed to change own password:', error.message);
+    res.status(500).json({ error: 'حصل خطأ في تغيير كلمة المرور' });
+  }
+}
+
+module.exports = { showLogin, showRegister, register, login, logout, stopImpersonation, changeOwnPassword };
