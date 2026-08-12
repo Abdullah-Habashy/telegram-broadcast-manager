@@ -108,6 +108,15 @@ a { color: inherit; text-decoration: none; }
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-tint);
 }
+/* زرار إظهار/إخفاء كلمة المرور جوّه خانة الباسورد */
+.password-field-wrap { position: relative; }
+.password-field-wrap input { padding-inline-end: 42px; }
+.password-toggle-btn {
+  position: absolute; inset-inline-end: 4px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; padding: 0; border: none; background: transparent;
+  font-size: 15px; cursor: pointer; color: var(--text-muted); border-radius: 6px;
+}
+.password-toggle-btn:hover { background: var(--surface-sunken); }
 .field textarea { resize: vertical; min-height: 90px; }
 
 .btn {

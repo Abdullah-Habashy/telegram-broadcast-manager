@@ -55,15 +55,24 @@
         </div>
         <div class="field">
           <label>كلمة المرور الحالية</label>
-          <input type="password" id="change-password-current" autocomplete="current-password">
+          <div class="password-field-wrap">
+            <input type="password" id="change-password-current" autocomplete="current-password">
+            <button type="button" class="password-toggle-btn" data-toggle-for="change-password-current" title="إظهار كلمة المرور" aria-label="إظهار كلمة المرور">👁</button>
+          </div>
         </div>
         <div class="field">
           <label>كلمة المرور الجديدة</label>
-          <input type="password" id="change-password-new" autocomplete="new-password" placeholder="8 أحرف على الأقل">
+          <div class="password-field-wrap">
+            <input type="password" id="change-password-new" autocomplete="new-password" placeholder="8 أحرف على الأقل">
+            <button type="button" class="password-toggle-btn" data-toggle-for="change-password-new" title="إظهار كلمة المرور" aria-label="إظهار كلمة المرور">👁</button>
+          </div>
         </div>
         <div class="field">
           <label>تأكيد كلمة المرور الجديدة</label>
-          <input type="password" id="change-password-confirm" autocomplete="new-password">
+          <div class="password-field-wrap">
+            <input type="password" id="change-password-confirm" autocomplete="new-password">
+            <button type="button" class="password-toggle-btn" data-toggle-for="change-password-confirm" title="إظهار كلمة المرور" aria-label="إظهار كلمة المرور">👁</button>
+          </div>
         </div>
         <button type="button" class="btn btn-primary" id="submit-change-password-btn" style="width:100%; margin-top:8px">حفظ كلمة المرور الجديدة</button>
       </div>
@@ -1384,6 +1393,16 @@
       document.getElementById('change-password-current').focus();
     });
     document.getElementById('close-change-password-btn').addEventListener('click', closeChangePasswordModal);
+    changePasswordOverlay.querySelectorAll('[data-toggle-for]').forEach((toggleBtn) => {
+      toggleBtn.addEventListener('click', () => {
+        const input = document.getElementById(toggleBtn.dataset.toggleFor);
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+        toggleBtn.textContent = isHidden ? '🙈' : '👁';
+        toggleBtn.title = isHidden ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور';
+        toggleBtn.setAttribute('aria-label', toggleBtn.title);
+      });
+    });
     changePasswordOverlay.addEventListener('click', (event) => {
       if (event.target === changePasswordOverlay) closeChangePasswordModal();
     });
