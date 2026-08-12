@@ -5,16 +5,28 @@ const { decrypt } = require('../utils/crypto');
 
 async function main() {
   const publicUrl = String(process.argv[2] || env.publicUrl || '').trim().replace(/\/$/, '');
-  const chatIds = String(process.env.TUNNEL_NOTIFY_CHAT_IDS || '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => /^-?\d+$/.test(value));
 
   if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(publicUrl)) {
     throw new Error('A valid trycloudflare.com URL is required.');
   }
+
+  // كل موظف ربط حسابه الشخصي على تيليجرام (عن طريق /linkstaff) بيوصله الرابط تلقائيًا — ده المصدر
+  // الأساسي دلوقتي، وبنضيفله كمان أي أرقام قديمة متحطة يدويًا في .env عشان ما حدش يفوته أثناء
+  // فترة الانتقال قبل ما كل الموظفين يربطوا حساباتهم
+  const staffResult = await pool.query(
+    "SELECT telegram_chat_id FROM users WHERE is_active = TRUE AND telegram_chat_id IS NOT NULL"
+  );
+  const staffChatIds = staffResult.rows.map((row) => String(row.telegram_chat_id));
+
+  const envChatIds = String(process.env.TUNNEL_NOTIFY_CHAT_IDS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => /^-?\d+$/.test(value));
+
+  const chatIds = [...new Set([...staffChatIds, ...envChatIds])];
+
   if (!chatIds.length) {
-    console.log('No TUNNEL_NOTIFY_CHAT_IDS are configured; notification skipped.');
+    console.log('No staff Telegram accounts are linked and no TUNNEL_NOTIFY_CHAT_IDS are configured; notification skipped.');
     return;
   }
 

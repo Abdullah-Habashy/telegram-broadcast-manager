@@ -31,14 +31,8 @@ function registerClient(req, res) {
   });
 }
 
-function notifyNewIncomingMessage(data) {
-  const payload = JSON.stringify({
-    type: 'new_incoming_message',
-    ...data,
-  });
-
-  console.log(`📢 Broadcasting new message to ${clients.size} SSE client(s)...`, data);
-
+function broadcast(type, data) {
+  const payload = JSON.stringify({ type, ...data });
   clients.forEach((res) => {
     try {
       res.write(`data: ${payload}\n\n`);
@@ -49,7 +43,19 @@ function notifyNewIncomingMessage(data) {
   });
 }
 
+function notifyNewIncomingMessage(data) {
+  console.log(`📢 Broadcasting new message to ${clients.size} SSE client(s)...`, data);
+  broadcast('new_incoming_message', data);
+}
+
+// بتوصل لكل اللي فاتحين اللوحة عشان يحدّثوا قايمة الطلاب لوحدهم من غير ما حد يعمل Refresh يدوي
+function notifyTafraSyncCompleted(data) {
+  console.log(`📢 Broadcasting Tafra sync completion to ${clients.size} SSE client(s)...`, data);
+  broadcast('tafra_sync_completed', data);
+}
+
 module.exports = {
   registerClient,
   notifyNewIncomingMessage,
+  notifyTafraSyncCompleted,
 };

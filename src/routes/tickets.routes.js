@@ -5,7 +5,7 @@ const path = require('path');
 const multer = require('multer');
 const router = express.Router();
 const ticketsController = require('../controllers/tickets.controller');
-const { requireAuthApi } = require('../middleware/requireAuth');
+const { requireAuthApi, requireTicketsAccessApi, requireAdminApi } = require('../middleware/requireAuth');
 
 const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'support');
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -27,14 +27,24 @@ const upload = multer({
 });
 
 router.use(requireAuthApi);
+router.use(requireTicketsAccessApi);
 router.get('/stream', ticketsController.streamEvents);
 router.get('/meta', ticketsController.getTicketMeta);
+router.get('/flagged-messages', ticketsController.listFlaggedMessages);
 router.post('/subtitles', ticketsController.createTicketSubtitle);
+router.patch('/messages/:messageId', ticketsController.editSupportMessage);
+router.delete('/messages/:messageId', ticketsController.deleteSupportMessage);
+router.patch('/incoming-messages/:messageId/flag', ticketsController.flagIncomingMessage);
+router.patch('/incoming-messages/:messageId/react', ticketsController.reactToIncomingMessage);
 router.get('/', ticketsController.listTickets);
+router.get('/ids', ticketsController.listTicketIds);
+router.patch('/bulk-assign', requireAdminApi, ticketsController.bulkAssignTickets);
 router.get('/:id', ticketsController.getTicket);
 router.patch('/:id', ticketsController.updateTicket);
 router.post('/:id/reply', upload.single('image'), ticketsController.replyToTicket);
 router.patch('/:id/idea', ticketsController.updateIdeaProgress);
 router.get('/:id/idea-log', ticketsController.getIdeaProgressLog);
+router.get('/:id/recent-exam-marks', ticketsController.getRecentExamMarks);
+router.get('/:id/course-exam-marks', ticketsController.getCourseExamMarks);
 
 module.exports = router;

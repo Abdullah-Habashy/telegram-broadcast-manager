@@ -23,4 +23,7 @@ module.exports = {
   databaseUrl: process.env.DATABASE_URL,
   sessionSecret: process.env.SESSION_SECRET,
   encryptionKey: process.env.ENCRYPTION_KEY,
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
+  vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
 };

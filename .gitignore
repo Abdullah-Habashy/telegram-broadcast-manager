@@ -6,3 +6,7 @@ npm-debug.log*
 dist/
 coverage/
 .runtime/
+
+# صور حقيقية اترفعت من طلاب حقيقيين على البوت — بيانات مستخدمين خاصة، معندهاش مكان في مستودع عام
+public/uploads/incoming/
+public/uploads/support/

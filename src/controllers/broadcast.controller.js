@@ -10,6 +10,10 @@ async function createBroadcast(req, res) {
   const { message_content, template_id, filter_tag_id, scheduled_for } = req.body;
   let selectedContactIds = req.body.selected_contact_ids;
 
+  const examMatch = /^(online|offline)-(\d+)$/.exec(String(req.body.exam || ''));
+  const contextExamType = examMatch ? examMatch[1] : null;
+  const contextExamId = examMatch ? Number(examMatch[2]) : null;
+
   if (typeof selectedContactIds === 'string') {
     try {
       selectedContactIds = JSON.parse(selectedContactIds);
@@ -52,9 +56,7 @@ async function createBroadcast(req, res) {
       const contactsResult = await client.query(
         `SELECT COUNT(*)::int AS count FROM contacts c
          WHERE id = ANY($1::int[])
-           AND (c.source <> 'tafra' OR EXISTS (
-             SELECT 1 FROM incoming_messages source_message WHERE source_message.contact_id = c.id
-           ))`,
+           AND (c.source <> 'tafra' OR c.last_contacted_at IS NOT NULL)`,
         [selectedIds]
       );
       if (contactsResult.rows[0].count !== selectedIds.length) {
@@ -66,8 +68,9 @@ async function createBroadcast(req, res) {
 
     const result = await client.query(
       `INSERT INTO broadcasts
-        (created_by, template_id, message_content, filter_tag_id, selected_contact_ids, image_path, scheduled_for)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        (created_by, template_id, message_content, filter_tag_id, selected_contact_ids, image_path, scheduled_for,
+         context_exam_type, context_exam_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         req.session.userId,
         template_id || null,
@@ -76,6 +79,8 @@ async function createBroadcast(req, res) {
         selectedIds,
         req.file ? `uploads/${req.file.filename}` : null,
         scheduled_for || null,
+        contextExamType,
+        contextExamId,
       ]
     );
     const broadcast = result.rows[0];

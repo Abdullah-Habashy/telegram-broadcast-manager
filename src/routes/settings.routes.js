@@ -11,9 +11,12 @@ router.post('/bots', settingsController.createBotProfile);
 router.post('/bots/:id/activate', settingsController.activateBotProfile);
 router.delete('/bots/:id', settingsController.deleteBotProfile);
 router.post('/auto-reply', settingsController.updateAutoReply);
+router.post('/working-hours', settingsController.updateWorkingHours);
 router.post('/forwarding', settingsController.updateForwarding);
 router.post('/follow-up-automation', settingsController.updateFollowUpAutomation);
+router.post('/welcome-message', settingsController.updateWelcomeMessage);
 router.post('/agent-introduction', settingsController.updateAgentIntroduction);
 router.post('/idea-settings', settingsController.updateMaxIdeaNumber);
+router.post('/tafra-auto-sync', settingsController.updateTafraAutoSyncInterval);
 
 module.exports = router;

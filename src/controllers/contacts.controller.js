@@ -1,10 +1,33 @@
 const pool = require('../config/db');
 const { parse } = require('csv-parse/sync');
 const { stringify } = require('csv-stringify/sync');
+const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
 
 const VALID_STATUSES = ['new', 'in_progress', 'waiting_student', 'resolved', 'closed'];
 const VALID_PRIORITIES = ['low', 'normal', 'urgent'];
 const VALID_CATEGORIES = ['general', 'registration', 'fees', 'results', 'platform', 'complaint', 'technical'];
+
+// نفس علامة الباب المستخدمة في صندوق الدعم وصفحة الطلاب — هنا عن طريق c.chat_id
+const BOOTCAMP_MARKS_JOIN_SQL = `
+  LEFT JOIN LATERAL (
+    SELECT ${BOOTCAMP_MARKS_SELECT_SQL}
+    FROM tafra_students tstu
+    JOIN tafra_enrollments en ON en.tafra_student_id = tstu.tafra_student_id AND en.enrollment_type = 'enroll'
+    JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = en.tafra_bootcamp_id
+    WHERE tstu.telegram_chat_id = c.chat_id
+  ) bootcamp_marks ON true
+`;
+
+const MARK_RANGE_OPERATORS = {
+  under_50: '< 50', over_50: '>= 50',
+  under_75: '< 75', over_75: '>= 75',
+  over_90: '>= 90',
+};
+
+function buildMarkRangeSql(range) {
+  const operator = MARK_RANGE_OPERATORS[String(range || '')];
+  return operator ? ` AND tem.percentage ${operator}` : '';
+}
 const LAST_SENT_SQL = `(SELECT MAX(outgoing.sent_at) FROM (
   SELECT br.sent_at FROM broadcast_recipients br
   WHERE br.contact_id = c.id AND br.status = 'sent'
@@ -45,9 +68,7 @@ async function listContacts(req, res) {
   const params = [];
   // طلاب طفرة الذين لم يراسلوا البوت الحالي يظلون في صفحة طلاب المنصة فقط.
   const conditions = [
-    `(c.source <> 'tafra' OR EXISTS (
-      SELECT 1 FROM incoming_messages source_message WHERE source_message.contact_id = c.id
-    ))`,
+    `(c.source <> 'tafra' OR c.last_contacted_at IS NOT NULL)`,
   ];
 
   if (sent_older_than === 'never') {
@@ -95,6 +116,55 @@ async function listContacts(req, res) {
     conditions.push(`t.assigned_to = $${params.length}`);
   }
   if (req.query.unread === 'true') conditions.push('t.unread_count > 0');
+  // فلتر تاريخ الاشتراك بيشتغل لوحده (أي كورس) أو مع فلتر باب محدد — مش لازم الاتنين مع بعض
+  if ((req.query.bootcamp_id && /^\d+$/.test(req.query.bootcamp_id)) || req.query.enrolled_from || req.query.enrolled_to) {
+    const enrollmentCondition = [`te.tafra_student_id = ts.tafra_student_id`, `te.enrollment_type = 'enroll'`];
+    if (req.query.bootcamp_id && /^\d+$/.test(req.query.bootcamp_id)) {
+      params.push(Number(req.query.bootcamp_id));
+      enrollmentCondition.push(`te.tafra_bootcamp_id = $${params.length}`);
+    }
+    if (req.query.enrolled_from && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.enrolled_from))) {
+      params.push(req.query.enrolled_from);
+      enrollmentCondition.push(`te.enrolled_at >= $${params.length}::date`);
+    }
+    if (req.query.enrolled_to && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.enrolled_to))) {
+      params.push(req.query.enrolled_to);
+      enrollmentCondition.push(`te.enrolled_at < ($${params.length}::date + INTERVAL '1 day')`);
+    }
+    conditions.push(`EXISTS (
+      SELECT 1 FROM tafra_students ts
+      JOIN tafra_enrollments te ON ${enrollmentCondition.join(' AND ')}
+      WHERE ts.telegram_chat_id = c.chat_id
+    )`);
+  }
+  const examMatch = /^(online|offline)-(\d+)$/.exec(String(req.query.exam || ''));
+  if (examMatch) {
+    params.push(examMatch[1]);
+    const typeParam = `$${params.length}`;
+    params.push(Number(examMatch[2]));
+    const idParam = `$${params.length}`;
+    const notEntered = req.query.attendance === 'not_entered';
+    const markRangeSql = !notEntered ? buildMarkRangeSql(req.query.mark_range) : '';
+    const existsClause = `EXISTS (
+      SELECT 1 FROM tafra_students ts
+      JOIN tafra_exam_marks tem ON tem.tafra_student_id = ts.tafra_student_id
+      WHERE ts.telegram_chat_id = c.chat_id
+        AND tem.exam_type = ${typeParam} AND tem.tafra_exam_id = ${idParam}${markRangeSql}
+    )`;
+    conditions.push(notEntered ? `NOT ${existsClause}` : existsClause);
+  }
+  // فلتر حالة الترحيب: طالب بدأ Start فعلاً (عنده تذكرة) لكن لسه مفيش أي رسالة تانية بينا وبينه
+  // (لا هو رد، ولا موظف كتبله حاجة يدوي) — يستخدم في مراسلة "الاطمئنان" الأولى بدون تكرار
+  if (req.query.start_status === 'welcome_only') {
+    conditions.push(`t.id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM incoming_messages im WHERE im.contact_id = c.id)
+      AND EXISTS (SELECT 1 FROM support_messages sm WHERE sm.ticket_id = t.id)
+      AND NOT EXISTS (SELECT 1 FROM support_messages sm WHERE sm.ticket_id = t.id AND sm.sent_by IS NOT NULL)`);
+  } else if (req.query.start_status === 'pending_welcome') {
+    conditions.push(`t.id IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM incoming_messages im WHERE im.contact_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM support_messages sm WHERE sm.ticket_id = t.id)`);
+  }
   if (req.query.follow_up === 'due') {
     conditions.push("t.next_follow_up_at <= NOW() AND t.status NOT IN ('resolved', 'closed')");
   } else if (req.query.follow_up === 'today') {
@@ -115,6 +185,7 @@ async function listContacts(req, res) {
       t.status AS ticket_status, t.priority AS ticket_priority, t.category AS ticket_category,
       t.assigned_to, t.unread_count, t.next_follow_up_at,
       ts.name AS subtitle_name, u.name AS assigned_name,
+      bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
       COALESCE((
         SELECT json_agg(json_build_object('id', tag_item.id, 'name', tag_item.name, 'color', tag_item.color))
         FROM contact_tags contact_tag
@@ -125,6 +196,7 @@ async function listContacts(req, res) {
     LEFT JOIN tickets t ON t.contact_id = c.id
     LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
     LEFT JOIN users u ON u.id = t.assigned_to
+    ${BOOTCAMP_MARKS_JOIN_SQL}
     ${where}
     ORDER BY c.created_at DESC
   `;

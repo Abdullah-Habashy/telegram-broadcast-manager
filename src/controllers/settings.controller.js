@@ -156,6 +156,30 @@ async function updateFollowUpAutomation(req, res) {
   }
 }
 
+async function updateWelcomeMessage(req, res) {
+  const { enabled, message } = req.body;
+  const normalizedMessage = String(message || '').trim();
+  if (Boolean(enabled) && !normalizedMessage) {
+    return res.status(400).json({ error: 'اكتب نص رسالة الترحيب قبل التفعيل' });
+  }
+  if (normalizedMessage.length > 4096) {
+    return res.status(400).json({ error: 'رسالة الترحيب أطول من الحد المسموح' });
+  }
+  try {
+    await pool.query(
+      `UPDATE settings SET value = CASE key
+        WHEN 'welcome_message_enabled' THEN $1
+        WHEN 'welcome_message_text' THEN $2
+       END WHERE key IN ('welcome_message_enabled', 'welcome_message_text')`,
+      [String(Boolean(enabled)), normalizedMessage]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Failed to update welcome message settings:', err.message);
+    res.status(500).json({ error: 'حصل خطأ في حفظ رسالة الترحيب' });
+  }
+}
+
 async function updateAgentIntroduction(req, res) {
   const { enabled, message } = req.body;
   const normalizedMessage = String(message || '').trim();
@@ -221,6 +245,36 @@ async function updateAutoReply(req, res) {
   }
 }
 
+async function updateWorkingHours(req, res) {
+  const { enabled, start, end, message } = req.body;
+  const normalizedMessage = String(message || '').trim();
+  const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!timePattern.test(start) || !timePattern.test(end)) {
+    return res.status(400).json({ error: 'حدد مواعيد صحيحة (من/إلى)' });
+  }
+  if (Boolean(enabled) && !normalizedMessage) {
+    return res.status(400).json({ error: 'اكتب نص الرد خارج مواعيد العمل قبل التفعيل' });
+  }
+  if (normalizedMessage.length > 4096) {
+    return res.status(400).json({ error: 'نص الرد أطول من الحد المسموح' });
+  }
+  try {
+    await pool.query(
+      `UPDATE settings SET value = CASE key
+        WHEN 'working_hours_enabled' THEN $1
+        WHEN 'working_hours_start' THEN $2
+        WHEN 'working_hours_end' THEN $3
+        WHEN 'outside_hours_reply_message' THEN $4
+       END WHERE key IN ('working_hours_enabled', 'working_hours_start', 'working_hours_end', 'outside_hours_reply_message')`,
+      [String(Boolean(enabled)), start, end, normalizedMessage]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Failed to update working hours settings:', err.message);
+    res.status(500).json({ error: 'حصل خطأ في حفظ مواعيد العمل' });
+  }
+}
+
 async function updateMaxIdeaNumber(req, res) {
   const value = Number(req.body.max_idea_number);
   if (!Number.isInteger(value) || value < 1 || value > 999) {
@@ -235,15 +289,32 @@ async function updateMaxIdeaNumber(req, res) {
   }
 }
 
+async function updateTafraAutoSyncInterval(req, res) {
+  const value = Number(req.body.interval_hours);
+  if (!Number.isInteger(value) || value < 1 || value > 168) {
+    return res.status(400).json({ error: 'الفاصل الزمني يجب أن يكون بين 1 و 168 ساعة (أسبوع)' });
+  }
+  try {
+    await pool.query("UPDATE settings SET value = $1 WHERE key = 'tafra_auto_sync_interval_hours'", [String(value)]);
+    res.json({ ok: true, interval_hours: value });
+  } catch (err) {
+    console.error('❌ Failed to update Tafra auto-sync interval:', err.message);
+    res.status(500).json({ error: 'حصل خطأ في حفظ الفاصل الزمني' });
+  }
+}
+
 module.exports = {
   getSettings,
   saveBotToken,
   updateAutoReply,
   updateForwarding,
   updateFollowUpAutomation,
+  updateWelcomeMessage,
   updateAgentIntroduction,
   createBotProfile,
   activateBotProfile,
   deleteBotProfile,
   updateMaxIdeaNumber,
+  updateTafraAutoSyncInterval,
+  updateWorkingHours,
 };

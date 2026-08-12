@@ -2,9 +2,40 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const pool = require('../../config/db');
+const push = require('../../utils/push');
+const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
+const { isWithinWorkingHours, currentCairoTime } = require('../../utils/workingHours');
 
 const incomingUploadDir = path.join(__dirname, '..', '..', '..', 'public', 'uploads', 'incoming');
 fs.mkdirSync(incomingUploadDir, { recursive: true });
+
+// لو التذكرة متعيّنة لموظف بنعلّمه بس، لو لسه بلا موظف بنعلّم كل الموظفين النشطين عشان حد ياخدها
+async function notifyEmployeesOfIncomingMessage(ticket, { studentName, content, imagePath }) {
+  if (!push.enabled || !ticket) return;
+
+  let recipientIds;
+  if (ticket.assigned_to) {
+    recipientIds = [ticket.assigned_to];
+  } else {
+    const activeUsers = await pool.query('SELECT id FROM users WHERE is_active = TRUE');
+    recipientIds = activeUsers.rows.map((row) => row.id);
+  }
+  if (!recipientIds.length) return;
+
+  await push.sendToUsers(recipientIds, {
+    title: `رسالة جديدة من ${studentName}`,
+    body: content?.trim() ? content.trim().slice(0, 180) : (imagePath ? '📷 صورة' : ''),
+    tag: `ticket-${ticket.id}`,
+    url: `/?ticket=${ticket.id}`,
+  });
+}
+
+function isOutsideWorkingHours(settings) {
+  if (settings.working_hours_enabled !== 'true') return false;
+  const start = settings.working_hours_start || '00:00';
+  const end = settings.working_hours_end || '23:59';
+  return !isWithinWorkingHours(start, end, currentCairoTime());
+}
 
 async function downloadTelegramPhoto(ctx, fileId) {
   const fileUrl = await ctx.telegram.getFileLink(fileId);
@@ -16,7 +47,7 @@ async function downloadTelegramPhoto(ctx, fileId) {
   return { imagePath: `uploads/incoming/${filename}`, absolutePath };
 }
 
-async function processIncomingMessage(bot, ctx, { content, imagePath = null, absolutePath = null, fileId = null }) {
+async function processIncomingMessage(bot, ctx, { content, imagePath = null, absolutePath = null, fileId = null, telegramMessageId = null }) {
   const chatId = ctx.chat.id;
   const { username, first_name, last_name } = ctx.from;
 
@@ -36,28 +67,57 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
     const contactId = contactResult.rows[0].id;
 
     await pool.query(
-      'INSERT INTO incoming_messages (contact_id, content, image_path, telegram_file_id) VALUES ($1, $2, $3, $4)',
-      [contactId, content || '', imagePath, fileId]
+      `INSERT INTO incoming_messages (contact_id, content, image_path, telegram_file_id, telegram_message_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [contactId, content || '', imagePath, fileId, telegramMessageId]
     );
     imageStored = Boolean(imagePath);
 
-    const ticketResult = await pool.query(
-      `INSERT INTO tickets (contact_id, status, subtitle_id, unread_count, last_message_at, updated_at)
-       VALUES ($1, 'new', (SELECT id FROM ticket_subtitles WHERE name = 'مطلوب المتابعة'), 1, NOW(), NOW())
-       ON CONFLICT (contact_id) DO UPDATE SET
-         status = CASE WHEN tickets.status = 'closed' THEN 'new' ELSE tickets.status END,
-         unread_count = tickets.unread_count + 1,
-         last_message_at = NOW(),
-         updated_at = NOW()
-       RETURNING id, unread_count`,
-      [contactId]
-    );
-    const ticketId = ticketResult.rows[0]?.id;
+    // بنستخدم transaction هنا (مش UPSERT عادي) عشان نفرّق بدقة بين "تذكرة جديدة تمامًا" (تاخد دور
+    // في توزيع صندوق الدعم بالتبادل) و"تذكرة موجودة بالفعل" (تتحدّث بس، تفضل عند نفس الموظف المسند لها)
+    const ticketClient = await pool.connect();
+    let ticketRow;
+    try {
+      await ticketClient.query('BEGIN');
+      const existingTicket = await ticketClient.query(
+        'SELECT id FROM tickets WHERE contact_id = $1 FOR UPDATE',
+        [contactId]
+      );
+      if (existingTicket.rows[0]) {
+        const updateResult = await ticketClient.query(
+          `UPDATE tickets SET
+             status = CASE WHEN status = 'closed' THEN 'new' ELSE status END,
+             unread_count = unread_count + 1,
+             last_message_at = NOW(),
+             updated_at = NOW()
+           WHERE contact_id = $1
+           RETURNING id, unread_count, assigned_to`,
+          [contactId]
+        );
+        ticketRow = updateResult.rows[0];
+      } else {
+        const nextAssignee = await getNextTicketAssignee(ticketClient);
+        const insertResult = await ticketClient.query(
+          `INSERT INTO tickets (contact_id, status, subtitle_id, unread_count, last_message_at, updated_at, assigned_to)
+           VALUES ($1, 'new', (SELECT id FROM ticket_subtitles WHERE name = 'مطلوب المتابعة'), 1, NOW(), NOW(), $2)
+           RETURNING id, unread_count, assigned_to`,
+          [contactId, nextAssignee]
+        );
+        ticketRow = insertResult.rows[0];
+      }
+      await ticketClient.query('COMMIT');
+    } catch (error) {
+      await ticketClient.query('ROLLBACK');
+      throw error;
+    } finally {
+      ticketClient.release();
+    }
+    const ticketId = ticketRow?.id;
+    const studentName = [first_name, last_name].filter(Boolean).join(' ') || (username ? `@${username}` : String(chatId));
 
     // إرسال إشعار فوري لجميع الموظفين المتصلين عبر SSE
     try {
       const events = require('../../utils/events');
-      const studentName = [first_name, last_name].filter(Boolean).join(' ') || (username ? `@${username}` : String(chatId));
       events.notifyNewIncomingMessage({
         ticket_id: ticketId,
         contact_id: contactId,
@@ -71,9 +131,15 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
       console.error('❌ Failed to emit SSE event:', eventErr.message);
     }
 
+    // إشعار على تليفون الموظف (Web Push) حتى لو المتصفح مقفول
+    notifyEmployeesOfIncomingMessage(ticketRow, { studentName, content, imagePath }).catch((pushErr) =>
+      console.error('❌ Failed to send push notification:', pushErr.message)
+    );
+
     const settingsResult = await pool.query(
       `SELECT key, value FROM settings WHERE key IN
-        ('auto_reply_enabled', 'auto_reply_message', 'forwarding_enabled', 'forward_chat_id')`
+        ('auto_reply_enabled', 'auto_reply_message', 'forwarding_enabled', 'forward_chat_id',
+         'working_hours_enabled', 'working_hours_start', 'working_hours_end', 'outside_hours_reply_message')`
     );
     const settings = Object.fromEntries(settingsResult.rows.map((row) => [row.key, row.value]));
 
@@ -98,7 +164,17 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
       }
     }
 
-    if (settings.auto_reply_enabled === 'true' && settings.auto_reply_message) {
+    // خارج مواعيد العمل بيطغى على الرد العادي — رسالة واحدة بس في كل مرة
+    if (isOutsideWorkingHours(settings) && settings.outside_hours_reply_message) {
+      try {
+        const message = settings.outside_hours_reply_message
+          .replaceAll('{start}', settings.working_hours_start || '')
+          .replaceAll('{end}', settings.working_hours_end || '');
+        await ctx.reply(message);
+      } catch (replyError) {
+        console.error('❌ Failed to send outside-hours reply:', replyError.message);
+      }
+    } else if (settings.auto_reply_enabled === 'true' && settings.auto_reply_message) {
       try {
         await ctx.reply(settings.auto_reply_message);
       } catch (replyError) {
@@ -111,10 +187,10 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
   }
 }
 
-module.exports = function registerMessageHandler(bot) {
+function registerMessageHandler(bot) {
   bot.on('text', async (ctx) => {
     if (ctx.message.text.startsWith('/')) return;
-    await processIncomingMessage(bot, ctx, { content: ctx.message.text });
+    await processIncomingMessage(bot, ctx, { content: ctx.message.text, telegramMessageId: ctx.message.message_id });
   });
 
   bot.on('photo', async (ctx) => {
@@ -128,6 +204,7 @@ module.exports = function registerMessageHandler(bot) {
         imagePath: downloaded.imagePath,
         absolutePath: downloaded.absolutePath,
         fileId: largestPhoto.file_id,
+        telegramMessageId: ctx.message.message_id,
       });
     } catch (error) {
       if (downloaded?.absolutePath) fs.unlink(downloaded.absolutePath, () => {});
@@ -135,4 +212,7 @@ module.exports = function registerMessageHandler(bot) {
       await ctx.reply('تعذر حفظ الصورة. حاول إرسالها مرة أخرى.');
     }
   });
-};
+}
+
+module.exports = registerMessageHandler;
+module.exports.notifyEmployeesOfIncomingMessage = notifyEmployeesOfIncomingMessage;

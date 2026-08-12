@@ -9,5 +9,6 @@ router.get('/register', authController.showRegister);
 router.post('/register', authController.register);
 
 router.post('/logout', authController.logout);
+router.post('/stop-impersonation', authController.stopImpersonation);
 
 module.exports = router;

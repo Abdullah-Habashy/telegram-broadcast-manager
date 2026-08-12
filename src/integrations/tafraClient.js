@@ -120,6 +120,65 @@ class TafraReadOnlyClient {
     }
     throw lastError;
   }
+
+  // طلب GET مع نفس منطق إعادة المحاولة المستخدم في باقي العميل (تجديد التوكن عند 401، تأجيل عند 429/5xx)
+  async getWithRetry(url) {
+    await this.ensureLogin();
+    let lastError;
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      try {
+        return await this.request(url, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${this.accessToken}` },
+        });
+      } catch (error) {
+        lastError = error;
+        if (error.status === 401) {
+          this.accessToken = null;
+          await this.ensureLogin();
+        } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429 || error.status >= 500)) {
+          await delay(attempt * 1500);
+        } else {
+          throw error;
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  // ⚠ اكتشاف مؤكّد: filterData/online-exams و filterData/offline-exams بدون فلتر بيرجّعوا
+  // أحدث 10 نتائج بس (سلوك غير موثّق في دليل المنصة) — مش كل الاختبارات فعليًا.
+  // filter[id]=N لوحده بيعمل بحث مباشر بالمعرّف من غير القيد ده، فبنستخدمه للمسح الكامل بدل القائمة المبتورة.
+  async findExamById(examType, examId) {
+    const path = examType === 'online' ? 'online-exams' : 'offline-exams';
+    const response = await this.getWithRetry(`${BASE_URL}/filterData/${path}?filter[id]=${examId}`);
+    const rows = Array.isArray(response.data) ? response.data : [];
+    return rows[0] || null;
+  }
+
+  async getOnlineExamStudentsPage(examId, page) {
+    const safeExamId = Number(examId);
+    const safePage = Math.max(1, Number(page) || 1);
+    if (!Number.isInteger(safeExamId) || safeExamId <= 0) throw new Error('رقم الاختبار غير صالح');
+    return this.getWithRetry(`${BASE_URL}/online-exams/${safeExamId}/students?page=${safePage}`);
+  }
+
+  // ملاحظة: filter[search] معطّل على هذا المسار من طرف المنصة نفسها (خطأ 500) — لا تضِفه أبدًا هنا
+  async getOfflineExamMarksPage(examId, page) {
+    const safeExamId = Number(examId);
+    const safePage = Math.max(1, Number(page) || 1);
+    if (!Number.isInteger(safeExamId) || safeExamId <= 0) throw new Error('رقم الاختبار غير صالح');
+    return this.getWithRetry(`${BASE_URL}/offline-exams/${safeExamId}/marks?page=${safePage}`);
+  }
+
+  // بيرجّع اسم الكورس اللي الاختبار الأونلاين ده تابع له — متاح للأونلاين بس (قيد من المنصة نفسها)
+  async getStudentExamMarksHistory(studentId, examId) {
+    const safeStudentId = Number(studentId);
+    const safeExamId = Number(examId);
+    if (!Number.isInteger(safeStudentId) || safeStudentId <= 0) throw new Error('رقم الطالب غير صالح');
+    if (!Number.isInteger(safeExamId) || safeExamId <= 0) throw new Error('رقم الاختبار غير صالح');
+    return this.getWithRetry(`${BASE_URL}/online-exams/student/${safeStudentId}/marksHistory?filter[online_exam_id]=${safeExamId}`);
+  }
 }
 
 module.exports = { TafraReadOnlyClient, BASE_URL };

@@ -1,9 +1,19 @@
 const cron = require('node-cron');
 const pool = require('../config/db');
-const { sendBroadcast } = require('../bot/broadcastSender');
+const { sendBroadcast, getFirstName } = require('../bot/broadcastSender');
 const botManager = require('../bot/botManager');
 
 let followUpJobRunning = false;
+
+// استبدال "الاسم" و"رقم الفكرة" في نص رسالة المتابعة التلقائية ببيانات الطالب الفعلية
+function personalizeFollowUpMessage(template, student) {
+  let result = template.replaceAll('الاسم', getFirstName(student));
+  const ideaPhrase = student.current_idea_number
+    ? `فكرة رقم ${student.current_idea_number}`
+    : 'الفكرة المتفق عليها';
+  result = result.replaceAll('رقم الفكرة', ideaPhrase);
+  return result;
+}
 
 async function sendDueTicketFollowUps() {
   if (followUpJobRunning) return;
@@ -29,19 +39,23 @@ async function sendDueTicketFollowUps() {
       const claimResult = await pool.query(
         `UPDATE tickets t SET next_follow_up_at = NULL, updated_at = NOW()
          FROM contacts c
+         LEFT JOIN LATERAL (
+           SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+         ) tafra_match ON true
          WHERE t.id = $1 AND t.contact_id = c.id AND t.next_follow_up_at <= NOW()
-         RETURNING t.id, c.chat_id`,
+         RETURNING t.id, t.current_idea_number, c.chat_id, c.first_name, c.telegram_username, tafra_match.name AS tafra_name`,
         [ticket.id]
       );
       const claimed = claimResult.rows[0];
       if (!claimed) continue;
 
       try {
-        const telegramMessage = await bot.telegram.sendMessage(claimed.chat_id, settings.follow_up_auto_message);
+        const personalizedMessage = personalizeFollowUpMessage(settings.follow_up_auto_message, claimed);
+        const telegramMessage = await bot.telegram.sendMessage(claimed.chat_id, personalizedMessage);
         await pool.query(
           `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id)
            VALUES ($1, NULL, $2, $3)`,
-          [claimed.id, settings.follow_up_auto_message, telegramMessage.message_id]
+          [claimed.id, personalizedMessage, telegramMessage.message_id]
         );
         await pool.query(
           `UPDATE tickets SET

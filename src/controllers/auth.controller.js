@@ -1,5 +1,6 @@
 const bcrypt = require('bcrypt');
 const pool = require('../config/db');
+const { parseDeviceLabel } = require('../utils/deviceInfo');
 
 const SALT_ROUNDS = 12;
 
@@ -46,6 +47,9 @@ async function register(req, res) {
     req.session.userId = result.rows[0].id;
     req.session.userName = name;
     req.session.userRole = result.rows[0].role;
+    req.session.userAgent = req.headers['user-agent'] || '';
+    req.session.deviceLabel = parseDeviceLabel(req.session.userAgent);
+    req.session.loginAt = new Date().toISOString();
     res.redirect('/');
   } catch (err) {
     console.error('Registration failed:', err.message);
@@ -80,10 +84,43 @@ async function login(req, res) {
     req.session.userId = user.id;
     req.session.userName = user.name;
     req.session.userRole = user.role;
+    req.session.userAgent = req.headers['user-agent'] || '';
+    req.session.deviceLabel = parseDeviceLabel(req.session.userAgent);
+    req.session.loginAt = new Date().toISOString();
     res.redirect('/');
   } catch (err) {
     console.error('Sign-in failed:', err.message);
     res.render('login', { error: 'حصل خطأ غير متوقع، حاول تاني' });
+  }
+}
+
+// الرجوع من وضع "تسجيل الدخول كموظف" لحساب الأدمن الأصلي — متاحة لأي حد حاليًا في وضع Impersonation
+// (الجلسة بقت باسم الموظف فعليًا، فمش محمية بـ requireAdminApi هنا)، بس بتتأكد إن فيه impersonatorAdminId
+// أصلاً محفوظ في الجلسة قبل ما ترجّعه، وإلا يبقى مفيش حاجة ترجعله أصلًا
+async function stopImpersonation(req, res) {
+  const adminId = req.session?.impersonatorAdminId;
+  if (!adminId) return res.status(400).json({ error: 'انت مش في وضع تسجيل دخول كموظف' });
+
+  try {
+    const result = await pool.query('SELECT id, name, role, is_active FROM users WHERE id = $1', [adminId]);
+    const admin = result.rows[0];
+    if (!admin?.is_active) {
+      return req.session.destroy(() => res.status(401).json({ error: 'حساب الأدمن الأصلي غير مفعّل' }));
+    }
+
+    req.session.userId = admin.id;
+    req.session.userName = admin.name;
+    req.session.userRole = admin.role;
+    req.session.canViewTickets = true;
+    req.session.canViewCalls = true;
+    req.session.canAssignCalls = true;
+    delete req.session.impersonatorAdminId;
+    delete req.session.impersonatorAdminName;
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Failed to stop impersonation:', error.message);
+    res.status(500).json({ error: 'تعذر الرجوع لحساب الأدمن' });
   }
 }
 
@@ -93,4 +130,4 @@ function logout(req, res) {
   });
 }
 
-module.exports = { showLogin, showRegister, register, login, logout };
+module.exports = { showLogin, showRegister, register, login, logout, stopImpersonation };

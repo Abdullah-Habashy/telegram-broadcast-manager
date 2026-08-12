@@ -6,9 +6,9 @@ async function getStats(req, res) {
   try {
     const [totalContacts, activeLastWeek, totalSent, totalIncoming] = await Promise.all([
       pool.query(`SELECT COUNT(*)::int AS count FROM contacts c
-        WHERE c.source <> 'tafra' OR EXISTS (SELECT 1 FROM incoming_messages i WHERE i.contact_id=c.id)`),
+        WHERE c.source <> 'tafra' OR c.last_contacted_at IS NOT NULL`),
       pool.query(`SELECT COUNT(*)::int AS count FROM contacts c
-        WHERE (c.source <> 'tafra' OR EXISTS (SELECT 1 FROM incoming_messages i WHERE i.contact_id=c.id))
+        WHERE (c.source <> 'tafra' OR c.last_contacted_at IS NOT NULL)
           AND last_contacted_at >= NOW() - INTERVAL '7 days'`),
       pool.query(`SELECT COUNT(*)::int AS count FROM broadcast_recipients WHERE status = 'sent'`),
       pool.query('SELECT COUNT(*)::int AS count FROM incoming_messages'),

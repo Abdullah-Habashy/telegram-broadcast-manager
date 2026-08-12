@@ -5,6 +5,7 @@ const env = require('../config/env');
 const { decrypt } = require('../utils/crypto');
 const registerStartHandler = require('./handlers/start');
 const registerForwardingHandler = require('./handlers/forwarding');
+const registerStaffLinkHandler = require('./handlers/staffLink');
 const registerMessageHandler = require('./handlers/message');
 
 const WEBHOOK_PATH = '/bot/webhook';
@@ -34,6 +35,7 @@ function createBot(token) {
   const bot = new Telegraf(token);
   registerStartHandler(bot);
   registerForwardingHandler(bot);
+  registerStaffLinkHandler(bot);
   registerMessageHandler(bot);
   bot.catch((err, ctx) => {
     console.error(`❌ Telegraf failed while processing update [${ctx.updateType}]:`, err.message);
