@@ -32,6 +32,11 @@ const app = express();
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+// السيرفر بيشتغل ورا Cloudflare Tunnel (HTTPS بيتفكّ عند Cloudflare والاتصال الداخلي للسيرفر HTTP عادي)،
+// فلازم Express يثق في هيدر X-Forwarded-Proto عشان يعرف الاتصال فعليًا HTTPS — وإلا كوكي الجلسة
+// (secure: true في production) مش هتتبعت للمتصفح خالص، وتسجيل الدخول هيرجع لصفحة اللوجين تاني
+// من غير أي رسالة خطأ ظاهرة (بالظبط الأعراض اللي حصلت بعد النقل للسيرفر)
+app.set('trust proxy', 1);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
