@@ -354,11 +354,21 @@ async function getNewBotInfo(req, res) {
   const newUsername = newBotManager.getBotUsername();
   const mainUsername = botManager.getBotUsername();
   if (!newUsername) return res.status(503).json({ error: 'بوت طفرة لسه مش متصل' });
+
+  const lastSendResult = await pool.query(
+    `SELECT key, value FROM settings
+     WHERE key IN ('newbot_last_message', 'newbot_last_button_text', 'newbot_last_button_url')`
+  );
+  const lastSend = Object.fromEntries(lastSendResult.rows.map((row) => [row.key, row.value]));
+
   res.json({
     username: newUsername,
     link: `https://t.me/${newUsername}`,
     main_bot_username: mainUsername || null,
     main_bot_link: mainUsername ? `https://t.me/${mainUsername}` : null,
+    last_message: lastSend.newbot_last_message || null,
+    last_button_text: lastSend.newbot_last_button_text || null,
+    last_button_url: lastSend.newbot_last_button_url || null,
   });
 }
 
@@ -498,6 +508,14 @@ async function sendNewBotBroadcast(req, res) {
     await pool.query(
       'UPDATE new_bot_contacts SET last_broadcast_at = NOW() WHERE chat_id = ANY($1::bigint[])',
       [sentChatIds]
+    );
+    // بنحفظ آخر رسالة وزرار اتبعتوا فعليًا كقيم افتراضية جاهزة لأي إرسال جديد — بيوفّر على الموظف
+    // إعادة كتابة نفس الرسالة تاني لو محتاج يبعتها لمجموعة تانية بعدين
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES
+        ('newbot_last_message', $1), ('newbot_last_button_text', $2), ('newbot_last_button_url', $3)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [message, buttonText || '', buttonUrl || '']
     );
   }
   res.json({ sent, failed, total: contactsResult.rows.length });
