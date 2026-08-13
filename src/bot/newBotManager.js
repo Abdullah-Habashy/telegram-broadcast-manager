@@ -62,25 +62,24 @@ function createBot(token) {
   return bot;
 }
 
+// الافتراضي دايمًا عند أي تشغيل جديد للسيرفر (Restart) إننا "نسيب" الويب هوك لمنصة طفرة — مش
+// إحنا اللي بنطلبه تلقائيًا لنفسنا. الرجوع لينا قرار يدوي بس، عن طريق زرار "رجّع لينا" في الداشبورد،
+// وإلا كل Restart (وده بيحصل كتير مع أي نشر تحديث) كان هيقاطع ميزات منصة طفرة نفسها من غير قصد
 async function activateToken(token) {
   if (botInstance && activeToken === token) return botInstance;
 
   const bot = createBot(token);
   const botInfo = await bot.telegram.getMe();
   botUsername = botInfo.username;
-
-  if (!env.publicUrl) {
-    console.warn('⚠️  PUBLIC_URL غير محدد — بوت طفرة مش هيستقبل تحديثات لحد ما يتحدد ويتعاد تشغيل السيرفر.');
-    botInstance = bot;
-    activeToken = token;
-    return bot;
-  }
-
-  const webhookUrl = `${env.publicUrl}${WEBHOOK_PATH}`;
-  await bot.telegram.setWebhook(webhookUrl, { secret_token: getSecretToken() });
   botInstance = bot;
   activeToken = token;
-  console.log(`✅ New bot @${botInfo.username} connected through webhook: ${webhookUrl}`);
+
+  try {
+    await bot.telegram.setWebhook(TAFRA_WEBHOOK_URL, { allowed_updates: TAFRA_ALLOWED_UPDATES });
+    console.log(`✅ New bot @${botInfo.username} ready — webhook left with Tafra's platform by default.`);
+  } catch (err) {
+    console.error('❌ فشل تسجيل الويب هوك الافتراضي لمنصة طفرة عند التشغيل:', err.message);
+  }
   return bot;
 }
 
