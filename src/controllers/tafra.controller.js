@@ -346,6 +346,43 @@ async function listStudents(req, res) {
   }
 }
 
+// بوت طفرة هو نفس بوت منصة طفرة الرسمي — تيليجرام بيسمح بويب هوك واحد بس شغال، فلو المنصة سجّلت
+// ويب هوك بتاعها هي على نفس البوت، إحنا بنفقد استقبال التحديثات من غير أي خطأ ظاهر. الثلاث دوال
+// دول بيسمحوا نتحقق مين صاحب الويب هوك دلوقتي، ونبدّل يدويًا لأي اتجاه محتاجينه
+async function getNewBotWebhookStatus(req, res) {
+  try {
+    const newBotManager = require('../bot/newBotManager');
+    const status = await newBotManager.getWebhookStatus();
+    if (!status) return res.status(503).json({ error: 'بوت طفرة لسه مش متصل' });
+    res.json(status);
+  } catch (error) {
+    console.error('Failed to get new-bot webhook status:', error.message);
+    res.status(500).json({ error: 'تعذر التحقق من حالة الويب هوك' });
+  }
+}
+
+async function claimNewBotWebhook(req, res) {
+  try {
+    const newBotManager = require('../bot/newBotManager');
+    const url = await newBotManager.claimWebhookForUs();
+    res.json({ ok: true, url, message: 'تم توجيه الويب هوك لسيرفرنا' });
+  } catch (error) {
+    console.error('Failed to claim new-bot webhook:', error.message);
+    res.status(500).json({ error: error.message || 'تعذر توجيه الويب هوك لسيرفرنا' });
+  }
+}
+
+async function releaseNewBotWebhook(req, res) {
+  try {
+    const newBotManager = require('../bot/newBotManager');
+    const url = await newBotManager.releaseWebhookToTafra();
+    res.json({ ok: true, url, message: 'تم إرجاع الويب هوك لمنصة طفرة' });
+  } catch (error) {
+    console.error('Failed to release new-bot webhook:', error.message);
+    res.status(500).json({ error: error.message || 'تعذر إرجاع الويب هوك لمنصة طفرة' });
+  }
+}
+
 // معلومات البوتين (يوزر كل واحد بس دلوقتي) — مستخدمة لتجهيز رابط الزرار تلقائيًا في أي اتجاه
 // (توجيه لغير البدأ بعد، أو توجيه العكس من بوت طفرة لبوت المتابعة)، بدل ما الموظف يكتب اليوزر يدوي
 async function getNewBotInfo(req, res) {
@@ -1374,4 +1411,5 @@ module.exports = {
   triggerAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
   syncNewBotReachability, getNewBotReachabilitySyncStatus, getFollowUpBotStartLog,
+  getNewBotWebhookStatus, claimNewBotWebhook, releaseNewBotWebhook,
 };

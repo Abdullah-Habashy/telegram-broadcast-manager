@@ -9,6 +9,13 @@ const { decrypt } = require('../utils/crypto');
 
 const WEBHOOK_PATH = '/bot2/webhook';
 
+// بوت طفرة هو نفس بوت منصة طفرة الرسمي، وتيليجرام بيسمح بويب هوك واحد بس شغال في نفس الوقت —
+// فلو المنصة سجّلت الويب هوك بتاعها هي على نفس البوت، بنفقد استقبال التحديثات من غير أي خطأ ظاهر
+// عندنا. القيم دي هي اللي لاحظناها فعليًا عن طريق getWebhookInfo وقت اكتشاف المشكلة —
+// لو المنصة غيّرت الرابط بتاعها يومًا ما، الزرار ده محتاج تحديث كمان
+const TAFRA_WEBHOOK_URL = 'https://api.abdullah-habashy.com/v1/academy/telegram/webhook';
+const TAFRA_ALLOWED_UPDATES = ['message', 'callback_query'];
+
 let botInstance = null;
 let activeToken = null;
 let botUsername = null;
@@ -99,4 +106,47 @@ function getBotUsername() {
   return botUsername;
 }
 
-module.exports = { initBot, getBot, getBotUsername, getSecretToken, WEBHOOK_PATH };
+// نفس البوت المحفوظ في الذاكرة (لو موجود) أو instance جديد بالتوكن المحفوظ — مستخدم لعمليات
+// الويب هوك (قراءة/تبديل)، من غير ما نلمس الحالة المحفوظة (activeToken) إلا وقت التفعيل الفعلي
+async function getBotForWebhookOps() {
+  if (botInstance) return botInstance;
+  const token = await getStoredToken();
+  if (!token) return null;
+  return new Telegraf(token);
+}
+
+// قراءة بس — بتوضح مين حاليًا صاحب الويب هوك (إحنا، منصة طفرة، أو حاجة تالتة)
+async function getWebhookStatus() {
+  const bot = await getBotForWebhookOps();
+  if (!bot) return null;
+  const info = await bot.telegram.getWebhookInfo();
+  const ourUrl = env.publicUrl ? `${env.publicUrl}${WEBHOOK_PATH}` : null;
+  const pointingTo = !info.url ? 'none' : info.url === ourUrl ? 'us' : info.url === TAFRA_WEBHOOK_URL ? 'tafra' : 'other';
+  return { ...info, pointing_to: pointingTo };
+}
+
+// تسجيل الويب هوك على سيرفرنا بالقوة، حتى لو activateToken فاكر إنه أصلاً مسجّل (ده بالظبط سبب
+// الحاجة للزرار ده — تيليجرام ممكن يتغيّر من برّه من غير ما نعرف)
+async function claimWebhookForUs() {
+  if (!env.publicUrl) throw new Error('PUBLIC_URL غير محدد في الإعدادات');
+  const bot = await getBotForWebhookOps();
+  if (!bot) throw new Error('لسه معملتش ربط للبوت الجديد');
+  const webhookUrl = `${env.publicUrl}${WEBHOOK_PATH}`;
+  await bot.telegram.setWebhook(webhookUrl, { secret_token: getSecretToken() });
+  botInstance = bot;
+  activeToken = await getStoredToken();
+  return webhookUrl;
+}
+
+// إرجاع الويب هوك لمنصة طفرة — مفيد لو محتاجين ميزات المنصة نفسها (زي ربط الحساب) تشتغل تاني
+async function releaseWebhookToTafra() {
+  const bot = await getBotForWebhookOps();
+  if (!bot) throw new Error('لسه معملتش ربط للبوت الجديد');
+  await bot.telegram.setWebhook(TAFRA_WEBHOOK_URL, { allowed_updates: TAFRA_ALLOWED_UPDATES });
+  return TAFRA_WEBHOOK_URL;
+}
+
+module.exports = {
+  initBot, getBot, getBotUsername, getSecretToken, WEBHOOK_PATH,
+  getWebhookStatus, claimWebhookForUs, releaseWebhookToTafra,
+};

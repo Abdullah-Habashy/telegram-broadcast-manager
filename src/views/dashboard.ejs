@@ -748,6 +748,17 @@
           <p class="ticket-muted" style="margin-top:8px">بوت طفرة هو نفس بوت منصة طفرة الرسمي، فكتير من الطلاب المرتبطين على المنصة ضغطوا Start عليه قبل كده من غير ما نعرف — الفحص ده بيتأكد فعليًا (بدون إرسال أي رسالة) مين منهم قابل للمراسلة بالفعل، ويضيفهم لقائمة المشتركين تحت.</p>
         </div>
 
+        <div class="card" style="margin-bottom:14px">
+          <div class="row-between">
+            <span id="newbot-webhook-status" class="card-desc">جارٍ التحقق من حالة الويب هوك...</span>
+            <div class="row" style="gap:8px">
+              <button type="button" class="btn btn-ghost btn-sm" id="claim-newbot-webhook-btn" style="width:auto">⬅️ رجّع لينا</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="release-newbot-webhook-btn" style="width:auto">➡️ رجّع لطفرة</button>
+            </div>
+          </div>
+          <p class="ticket-muted" style="margin-top:8px">تيليجرام بيسمح بويب هوك واحد بس شغال في نفس الوقت — بما إن بوت طفرة هو نفس بوت منصة طفرة الرسمي، ممكن المنصة تاخد الويب هوك لنفسها من غير ما نعرف. "رجّع لينا" يخلينا نستقبل تفاعل الطلاب تاني، و"رجّع لطفرة" يرجّع ميزات المنصة نفسها (زي ربط الحساب) تشتغل.</p>
+        </div>
+
         <div class="card">
           <h2>الرسالة</h2>
           <div class="field">
@@ -3869,9 +3880,28 @@
       }
     }
 
+    // ---------- حالة الويب هوك (مين حاليًا صاحبه — إحنا ولا منصة طفرة) وزراري التبديل ----------
+    const WEBHOOK_STATUS_LABELS = {
+      us: '✅ متوصل بينا (بنستقبل تفاعل الطلاب)',
+      tafra: '⚠️ متوصل بمنصة طفرة، مش بينا — تفاعل الطلاب مش بيوصلنا دلوقتي',
+      none: '❌ مفيش ويب هوك مسجّل خالص',
+      other: '❓ متوصل بجهة تانية غير معروفة',
+    };
+    async function loadNewBotWebhookStatus() {
+      const statusElement = document.getElementById('newbot-webhook-status');
+      try {
+        const status = await api('/api/tafra/new-bot-webhook-status');
+        statusElement.textContent = WEBHOOK_STATUS_LABELS[status.pointing_to] || status.url || 'غير معروف';
+        return status;
+      } catch (error) {
+        statusElement.textContent = error.message;
+      }
+    }
+
     async function initNewBotTab() {
       await loadTafraStudentFilters(); // بيجهّز خيارات وافتراضي فلتر الباب (الباب الأول + المنهج كاملا)
       loadNewBotReachabilitySyncStatus();
+      loadNewBotWebhookStatus();
       loadNewBotSubscribers();
       // نجهّز آخر رسالة وزرار اتبعتوا فعليًا كقيم افتراضية (لو لسه فاضيين) — وإلا رابط بوت المتابعة
       // كافتراضي احتياطي للزرار لو معندناش إرسال سابق أصلًا
@@ -3910,6 +3940,34 @@
           setTimeout(poll, 1500);
         } catch (error) {
           showToast(error.message);
+          button.disabled = false;
+        }
+      });
+      document.getElementById('claim-newbot-webhook-btn').addEventListener('click', async () => {
+        const button = document.getElementById('claim-newbot-webhook-btn');
+        if (!window.confirm('هيوقّف استقبال منصة طفرة لأي تحديث من بوت طفرة، ويخلينا إحنا اللي نستقبله بدالها. تكمل؟')) return;
+        button.disabled = true;
+        try {
+          await api('/api/tafra/new-bot-webhook-claim', { method: 'POST' });
+          showToast('تم توجيه الويب هوك لسيرفرنا');
+          loadNewBotWebhookStatus();
+        } catch (error) {
+          showToast(error.message);
+        } finally {
+          button.disabled = false;
+        }
+      });
+      document.getElementById('release-newbot-webhook-btn').addEventListener('click', async () => {
+        const button = document.getElementById('release-newbot-webhook-btn');
+        if (!window.confirm('هيوقّف استقبالنا لتفاعل الطلاب على بوت طفرة، ويرجّعه لمنصة طفرة بدالنا. تكمل؟')) return;
+        button.disabled = true;
+        try {
+          await api('/api/tafra/new-bot-webhook-release', { method: 'POST' });
+          showToast('تم إرجاع الويب هوك لمنصة طفرة');
+          loadNewBotWebhookStatus();
+        } catch (error) {
+          showToast(error.message);
+        } finally {
           button.disabled = false;
         }
       });
