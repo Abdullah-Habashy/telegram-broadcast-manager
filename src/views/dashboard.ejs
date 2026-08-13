@@ -734,6 +734,12 @@
           <p>ابعت رسالة من بوت طفرة نفسه لمشتركين فيه بالفعل</p>
         </div>
 
+        <div class="subtabs" id="new-bot-subtabs">
+          <button type="button" class="subtab-btn active" data-subtab="subscribers">مراسلة المشتركين</button>
+          <button type="button" class="subtab-btn" data-subtab="reports">التقارير</button>
+        </div>
+
+        <div class="subtab-section" data-subtab="subscribers">
         <div class="card" style="margin-bottom:14px">
           <div class="row-between">
             <span id="newbot-reachability-status" class="card-desc">جارٍ التحقق من حالة الفحص...</span>
@@ -798,6 +804,25 @@
             <button type="button" class="btn btn-ghost btn-sm" id="newbot-sub-prev">السابق</button>
             <button type="button" class="btn btn-ghost btn-sm" id="newbot-sub-next">التالي</button>
           </div>
+        </div>
+        </div>
+
+        <div class="subtab-section" data-subtab="reports" style="display:none">
+        <div class="card tafra-student-filters">
+          <input type="search" id="followup-log-search" class="compact-input" placeholder="بحث بالاسم أو اليوزر أو الهاتف">
+          <button type="button" class="btn btn-ghost" id="refresh-followup-log-btn">تحديث</button>
+        </div>
+        <div class="card">
+          <div class="row-between" style="margin-bottom:12px">
+            <b id="followup-log-count">لوج دخول بوت المتابعة</b>
+            <span id="followup-log-page-label" class="ticket-muted"></span>
+          </div>
+          <div id="followup-log-table"><div class="empty-state">جارٍ التحميل...</div></div>
+          <div class="ticket-pagination">
+            <button type="button" class="btn btn-ghost btn-sm" id="followup-log-prev">السابق</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="followup-log-next">التالي</button>
+          </div>
+        </div>
         </div>
       </section>
 
@@ -1316,6 +1341,7 @@
     initSubTabs('settings-subtabs');
     initSubTabs('contacts-subtabs');
     initSubTabs('tickets-subtabs');
+    initSubTabs('new-bot-subtabs');
     initTicketsBulkAssign();
 
     // ---------- متابعة أداء الموظفين (الأدمن يشوف الكل، والموظف يشوف نشاطه هو بس) ----------
@@ -3978,6 +4004,67 @@
         }
       });
     }
+
+    // ---------- لوج دخول بوت المتابعة (تاب "التقارير" الفرعي جوه بوت طفرة) — تاريخ أول /start حقيقي
+    // لكل طالب، مأخوذ من tickets.created_at لأنه بيتسجّل مرة واحدة بس بالظبط في هذه اللحظة ----------
+    let followUpLogPage = 1;
+    let followUpLogPages = 1;
+    let followUpLogInitialized = false;
+    let followUpLogSearchTimer = null;
+
+    function followUpLogQuery() {
+      const params = new URLSearchParams({ page: followUpLogPage, limit: 50 });
+      const search = document.getElementById('followup-log-search').value.trim();
+      if (search) params.set('search', search);
+      return params.toString();
+    }
+
+    async function loadFollowUpBotLog() {
+      const wrap = document.getElementById('followup-log-table');
+      try {
+        const result = await api('/api/tafra/follow-up-bot-log?' + followUpLogQuery());
+        followUpLogPages = result.meta.pages;
+        document.getElementById('followup-log-count').textContent = `لوج دخول بوت المتابعة (${result.meta.total})`;
+        document.getElementById('followup-log-page-label').textContent = `صفحة ${result.meta.page} من ${result.meta.pages}`;
+        document.getElementById('followup-log-prev').disabled = result.meta.page <= 1;
+        document.getElementById('followup-log-next').disabled = result.meta.page >= result.meta.pages;
+        if (!result.entries.length) {
+          wrap.innerHTML = '<div class="empty-state">لا يوجد طلاب مطابقون</div>';
+          return;
+        }
+        wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
+          <th>الاسم</th><th>الهاتف</th><th>اليوزر</th><th>تاريخ الدخول</th>
+        </tr></thead><tbody>${result.entries.map((entry) => `
+          <tr>
+            <td>${escapeHtml([entry.first_name, entry.last_name].filter(Boolean).join(' ') || 'بدون اسم')}</td>
+            <td>📱 ${escapeHtml(entry.phone || '—')}</td>
+            <td>${entry.telegram_username ? '@' + escapeHtml(entry.telegram_username) : '—'}</td>
+            <td>${fmtDate(entry.started_at)}</td>
+          </tr>`).join('')}</tbody></table></div>`;
+      } catch (error) {
+        wrap.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function initFollowUpBotLogTab() {
+      loadFollowUpBotLog();
+      if (followUpLogInitialized) return;
+      followUpLogInitialized = true;
+      document.getElementById('followup-log-search').addEventListener('input', () => {
+        clearTimeout(followUpLogSearchTimer);
+        followUpLogSearchTimer = setTimeout(() => { followUpLogPage = 1; loadFollowUpBotLog(); }, 350);
+      });
+      document.getElementById('refresh-followup-log-btn').addEventListener('click', () => {
+        followUpLogPage = 1; loadFollowUpBotLog();
+      });
+      document.getElementById('followup-log-prev').addEventListener('click', () => {
+        if (followUpLogPage > 1) { followUpLogPage--; loadFollowUpBotLog(); }
+      });
+      document.getElementById('followup-log-next').addEventListener('click', () => {
+        if (followUpLogPage < followUpLogPages) { followUpLogPage++; loadFollowUpBotLog(); }
+      });
+    }
+    document.querySelector('#new-bot-subtabs .subtab-btn[data-subtab="reports"]')?.addEventListener('click', initFollowUpBotLogTab);
 
     document.getElementById('csv-input').addEventListener('change', async (e) => {
       const file = e.target.files[0];

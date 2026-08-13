@@ -18,6 +18,7 @@ router.get('/new-bot-contacts/ids', controller.listNewBotContactIds);
 router.post('/new-bot-broadcast', controller.sendNewBotBroadcast);
 router.post('/new-bot-reachability-sync', controller.syncNewBotReachability);
 router.get('/new-bot-reachability-sync-status', controller.getNewBotReachabilitySyncStatus);
+router.get('/follow-up-bot-log', controller.getFollowUpBotStartLog);
 router.get('/students/export', controller.exportStudentsReport);
 router.post('/credentials', controller.saveCredentials);
 router.post('/sync', controller.syncStudents);

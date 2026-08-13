@@ -503,6 +503,45 @@ async function sendNewBotBroadcast(req, res) {
   res.json({ sent, failed, total: contactsResult.rows.length });
 }
 
+// لوج زمني لكل طالب دخل بوت المتابعة فعليًا لأول مرة — tickets.created_at بيتسجّل مرة واحدة بس بالظبط
+// وقت أول /start حقيقي لأي جهة اتصال (شوف start.js: التذكرة بتتنشأ بس لو isNewContact)، فهو أدق مصدر
+// لتاريخ "الدخول" المتاح عندنا، بغض النظر هل جهة الاتصال جاية من مزامنة طفرة أو من بدء عضوي على البوت
+async function getFollowUpBotStartLog(req, res) {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = 50;
+  const offset = (page - 1) * limit;
+  const search = String(req.query.search || '').trim();
+  const params = [];
+  const conditions = [];
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(`(c.first_name ILIKE $${params.length} OR c.last_name ILIKE $${params.length}
+      OR c.telegram_username ILIKE $${params.length} OR c.phone ILIKE $${params.length})`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  try {
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM contacts c JOIN tickets t ON t.contact_id = c.id ${where}`,
+      params
+    );
+    const listParams = [...params, limit, offset];
+    const result = await pool.query(
+      `SELECT c.id AS contact_id, c.chat_id, c.telegram_username, c.first_name, c.last_name, c.phone,
+        t.created_at AS started_at
+       FROM contacts c JOIN tickets t ON t.contact_id = c.id
+       ${where}
+       ORDER BY t.created_at DESC
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams
+    );
+    const total = countResult.rows[0].count;
+    res.json({ entries: result.rows, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+  } catch (error) {
+    console.error('Failed to load follow-up bot start log:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل لوج دخول بوت المتابعة' });
+  }
+}
+
 // بوت طفرة هو نفس بوت منصة طفرة الرسمي (اللي بتستخدمه المنصة نفسها في ربط حساب الطالب) — يعني كتير
 // من الطلاب أصلاً ضغطوا Start عليه قبل ما نضيف الهاندلر بتاعنا إحنا، فمش هيظهروا في new_bot_contacts
 // غير كده. الفحص ده بيتأكد فعليًا (getChat، من غير إرسال أي رسالة) مين من الطلاب المرتبطين (عندهم
@@ -1316,5 +1355,5 @@ module.exports = {
   syncExams, getExamSyncStatus, exportStudentsReport, listStudentContactIds, buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL,
   triggerAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
-  syncNewBotReachability, getNewBotReachabilitySyncStatus,
+  syncNewBotReachability, getNewBotReachabilitySyncStatus, getFollowUpBotStartLog,
 };
