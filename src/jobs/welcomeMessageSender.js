@@ -35,11 +35,12 @@ async function sendPendingWelcomeMessages() {
     if (!bot) return;
 
     const pendingResult = await pool.query(
-      `SELECT p.contact_id, p.ticket_id, c.chat_id, c.first_name, c.telegram_username, t.assigned_to,
+      `SELECT p.contact_id, p.ticket_id, c.chat_id, c.first_name, c.telegram_username, t.assigned_to, u.name AS agent_name,
         (SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1) AS tafra_name
        FROM pending_welcome_sends p
        JOIN contacts c ON c.id = p.contact_id
        JOIN tickets t ON t.id = p.ticket_id
+       LEFT JOIN users u ON u.id = t.assigned_to
        ORDER BY p.created_at
        LIMIT $1`,
       [BATCH_SIZE]
@@ -48,10 +49,12 @@ async function sendPendingWelcomeMessages() {
     for (const row of pendingResult.rows) {
       const studentName = (row.tafra_name || row.first_name || row.telegram_username || String(row.chat_id)).trim();
       try {
-        const messageText = settings.welcome_message_text.replaceAll(
-          'الاسم',
-          getFirstName({ tafra_name: row.tafra_name, first_name: row.first_name, telegram_username: row.telegram_username })
-        );
+        const messageText = settings.welcome_message_text
+          .replaceAll(
+            'الاسم',
+            getFirstName({ tafra_name: row.tafra_name, first_name: row.first_name, telegram_username: row.telegram_username })
+          )
+          .replaceAll('الموظف', row.agent_name || 'فريق المتابعة');
         const telegramMessage = await bot.telegram.sendMessage(row.chat_id, messageText);
         await pool.query(
           `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id) VALUES ($1, NULL, $2, $3)`,
