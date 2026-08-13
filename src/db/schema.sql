@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS new_bot_contacts (
 -- قابل للمراسلة عن طريق فحص getChat، مش من ضغطه Start عندنا)
 ALTER TABLE new_bot_contacts ALTER COLUMN started_at DROP NOT NULL;
 ALTER TABLE new_bot_contacts ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'start';
+-- آخر مرة اتبعتله رسالة جماعية عن طريق بوت طفرة نفسه — يُستخدم في فلتر "استبعاد من أُرسل له اليوم"
+ALTER TABLE new_bot_contacts ADD COLUMN IF NOT EXISTS last_broadcast_at TIMESTAMPTZ;
 
 -- حالة فحص "الوصول الفعلي" لطلاب طفرة المرتبطين على بوت طفرة (اللي لسه مش مسجّلين في new_bot_contacts)
 CREATE TABLE IF NOT EXISTS new_bot_reachability_sync_status (

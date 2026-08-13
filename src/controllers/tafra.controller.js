@@ -366,29 +366,27 @@ async function getNewBotInfo(req, res) {
 // نفسه (مش من بوت المتابعة)، زي مثلًا رسالة فيها رابط بوت المتابعة لو محتاجين يرجعوله.
 // بنعمل LEFT JOIN بـ tafra_students وcontacts (عن طريق chat_id) عشان نقدر نستخدم نفس فلاتر
 // الباب/النوع/حالة بوت المتابعة المستخدمة في تاب التوجيه، ونعرض نفس أسلوب العرض (اسم + كود + هاتف)
-async function listNewBotContacts(req, res) {
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = 50;
-  const offset = (page - 1) * limit;
-  const search = String(req.query.search || '').trim();
+// مشتركة بين قائمة العرض (listNewBotContacts) وقائمة كل المعرّفات المطابقة (listNewBotContactIds)
+function buildNewBotContactFilters(query) {
+  const search = String(query.search || '').trim();
   const params = [];
   const conditions = [];
   if (search) {
     params.push(`%${search}%`);
     conditions.push(`(nbc.first_name ILIKE $${params.length} OR nbc.last_name ILIKE $${params.length} OR nbc.telegram_username ILIKE $${params.length} OR s.name ILIKE $${params.length})`);
   }
-  if (req.query.gender === 'male' || req.query.gender === 'female') {
-    params.push(req.query.gender);
+  if (query.gender === 'male' || query.gender === 'female') {
+    params.push(query.gender);
     conditions.push(`s.gender = $${params.length}`);
-  } else if (req.query.gender === 'unknown') {
+  } else if (query.gender === 'unknown') {
     conditions.push('s.gender IS NULL');
   }
-  if (req.query.telegram === 'started') {
+  if (query.telegram === 'started') {
     conditions.push('c.last_contacted_at IS NOT NULL');
-  } else if (req.query.telegram === 'linked_not_started') {
+  } else if (query.telegram === 'linked_not_started') {
     conditions.push('c.last_contacted_at IS NULL');
   }
-  const bootcampIds = parseFilterList(req.query.bootcamp).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  const bootcampIds = parseFilterList(query.bootcamp).map(Number).filter((id) => Number.isInteger(id) && id > 0);
   if (bootcampIds.length) {
     params.push(bootcampIds);
     conditions.push(`EXISTS (
@@ -397,11 +395,23 @@ async function listNewBotContacts(req, res) {
         AND e.tafra_bootcamp_id = ANY($${params.length}::bigint[])
     )`);
   }
+  // استبعاد من اتبعتله رسالة عن طريق بوت طفرة نفسه اليوم بالفعل — لتفادي تكرار الإرسال لنفس المشترك مرتين
+  if (query.exclude_sent_today === 'true') {
+    conditions.push('(nbc.last_broadcast_at IS NULL OR nbc.last_broadcast_at < CURRENT_DATE)');
+  }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const joins = `
     LEFT JOIN tafra_students s ON s.telegram_chat_id = nbc.chat_id
     LEFT JOIN contacts c ON c.chat_id = nbc.chat_id
   `;
+  return { where, params, joins };
+}
+
+async function listNewBotContacts(req, res) {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = 50;
+  const offset = (page - 1) * limit;
+  const { where, params, joins } = buildNewBotContactFilters(req.query);
   try {
     const countResult = await pool.query(
       `SELECT COUNT(*)::int AS count FROM new_bot_contacts nbc ${joins} ${where}`, params
@@ -422,6 +432,22 @@ async function listNewBotContacts(req, res) {
   } catch (error) {
     console.error('Failed to list new-bot contacts:', error.message);
     res.status(500).json({ error: 'تعذر تحميل قائمة مشتركي بوت طفرة' });
+  }
+}
+
+// كل chat_id بتاع المشتركين المطابقين لنفس فلاتر listNewBotContacts بالظبط، بدون تقسيم صفحات —
+// عشان زرار "تحديد كل النتائج" يقدر يحدد كل المشتركين المطابقين مش بس الصفحة المعروضة
+async function listNewBotContactIds(req, res) {
+  const { where, params, joins } = buildNewBotContactFilters(req.query);
+  try {
+    const result = await pool.query(
+      `SELECT nbc.chat_id FROM new_bot_contacts nbc ${joins} ${where} ORDER BY nbc.started_at DESC NULLS LAST`,
+      params
+    );
+    res.json({ chat_ids: result.rows.map((row) => Number(row.chat_id)) });
+  } catch (error) {
+    console.error('Failed to list new-bot contact ids:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل معرّفات المشتركين' });
   }
 }
 
@@ -455,16 +481,24 @@ async function sendNewBotBroadcast(req, res) {
 
   let sent = 0;
   let failed = 0;
+  const sentChatIds = [];
   for (const contact of contactsResult.rows) {
     try {
       const personalized = message.replaceAll('الاسم', contact.first_name || 'صديقنا');
       await bot.telegram.sendMessage(contact.chat_id, personalized, { reply_markup: replyMarkup });
       sent += 1;
+      sentChatIds.push(contact.chat_id);
     } catch (error) {
       failed += 1;
       console.error(`❌ Failed to send new-bot broadcast to chat ${contact.chat_id}:`, error.message);
     }
     await new Promise((resolve) => setTimeout(resolve, 60));
+  }
+  if (sentChatIds.length) {
+    await pool.query(
+      'UPDATE new_bot_contacts SET last_broadcast_at = NOW() WHERE chat_id = ANY($1::bigint[])',
+      [sentChatIds]
+    );
   }
   res.json({ sent, failed, total: contactsResult.rows.length });
 }
@@ -1281,6 +1315,6 @@ module.exports = {
   getStatus, saveCredentials, syncStudents, syncEnrollments, syncBootcampNames, listStudents, getStudentFilters,
   syncExams, getExamSyncStatus, exportStudentsReport, listStudentContactIds, buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL,
   triggerAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
-  getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, sendNewBotBroadcast,
+  getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
   syncNewBotReachability, getNewBotReachabilitySyncStatus,
 };

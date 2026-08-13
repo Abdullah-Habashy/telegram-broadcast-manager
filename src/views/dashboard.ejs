@@ -773,6 +773,10 @@
             <option value="started">بدأ بوت المتابعة (يمكن مراسلته منه)</option>
             <option value="linked_not_started">لم يبدأ بوت المتابعة</option>
           </select>
+          <label class="row" style="gap:8px; cursor:pointer; white-space:nowrap; flex-wrap:nowrap" title="استبعاد من اتبعتله رسالة عن طريق بوت طفرة اليوم بالفعل، لتفادي تكرار الإرسال لنفس المشترك مرتين في نفس اليوم">
+            <input type="checkbox" id="newbot-sub-exclude-sent-today" style="width:auto">
+            <span>استبعاد من أُرسل له اليوم</span>
+          </label>
           <button type="button" class="btn btn-ghost" id="clear-newbot-sub-filters">مسح الفلاتر</button>
           <button type="button" class="btn btn-ghost" id="refresh-newbot-subs-btn">تحديث</button>
         </div>
@@ -784,6 +788,7 @@
           <div class="row-between audience-actions">
             <div class="row">
               <button type="button" class="btn btn-ghost btn-sm" id="select-page-newbot-sub-btn">تحديد نتائج هذه الصفحة</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="select-all-newbot-sub-btn">تحديد كل النتائج (الفلتر الحالي)</button>
               <button type="button" class="btn btn-ghost btn-sm" id="clear-selected-newbot-sub-btn">إلغاء التحديد</button>
             </div>
             <span id="selected-newbot-sub-count" class="badge badge-muted">المحدد: 0</span>
@@ -3781,6 +3786,7 @@
       if (bootcamp) params.set('bootcamp', bootcamp);
       if (gender) params.set('gender', gender);
       if (telegram) params.set('telegram', telegram);
+      if (document.getElementById('newbot-sub-exclude-sent-today').checked) params.set('exclude_sent_today', 'true');
       return params.toString();
     }
 
@@ -3887,11 +3893,15 @@
       document.getElementById('newbot-sub-telegram-filter').addEventListener('change', () => {
         newBotSubPage = 1; loadNewBotSubscribers();
       });
+      document.getElementById('newbot-sub-exclude-sent-today').addEventListener('change', () => {
+        newBotSubPage = 1; loadNewBotSubscribers();
+      });
       document.getElementById('clear-newbot-sub-filters').addEventListener('click', () => {
         document.getElementById('newbot-sub-search').value = '';
         document.getElementById('newbot-sub-gender-filter').value = '';
         document.getElementById('newbot-sub-telegram-filter').value = '';
         document.getElementById('newbot-sub-bootcamp-filter').value = '';
+        document.getElementById('newbot-sub-exclude-sent-today').checked = false;
         multiSelectControllers['newbot-sub-bootcamp-filter']?.refresh();
         newBotSubPage = 1;
         loadNewBotSubscribers();
@@ -3911,6 +3921,23 @@
           selectedNewBotSubChatIds.add(Number(checkbox.value));
         });
         updateSelectedNewBotSubUi();
+      });
+      document.getElementById('select-all-newbot-sub-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('select-all-newbot-sub-btn');
+        btn.disabled = true;
+        try {
+          const result = await api('/api/tafra/new-bot-contacts/ids?' + newBotSubQuery());
+          result.chat_ids.forEach((id) => selectedNewBotSubChatIds.add(id));
+          document.querySelectorAll('.newbot-sub-selector').forEach((checkbox) => {
+            if (selectedNewBotSubChatIds.has(Number(checkbox.value))) checkbox.checked = true;
+          });
+          updateSelectedNewBotSubUi();
+          showToast(`تم تحديد ${result.chat_ids.length} مشترك من كل النتائج المطابقة للفلتر`);
+        } catch (error) {
+          showToast(error.message);
+        } finally {
+          btn.disabled = false;
+        }
       });
       document.getElementById('clear-selected-newbot-sub-btn').addEventListener('click', () => {
         selectedNewBotSubChatIds.clear();
