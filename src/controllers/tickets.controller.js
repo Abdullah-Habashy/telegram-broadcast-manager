@@ -225,9 +225,14 @@ async function getTicket(req, res) {
       }
     }
 
+    // الأدمن بيفتح الشات للمتابعة بس من غير ما يمسح فقاعة "غير مقروء" — عشان الموظف المسؤول يفضل
+    // شايفها ويرجعلها هو بنفسه عادي. الموظف المسؤول لسه بيمسحها زي ما هو متوقع لما يفتح التذكرة
+    const updatedCte = req.session.userRole === 'admin'
+      ? 'SELECT * FROM tickets WHERE id = $1'
+      : 'UPDATE tickets SET unread_count = 0 WHERE id = $1 RETURNING *';
     const ticketResult = await pool.query(
       `WITH updated AS (
-         UPDATE tickets SET unread_count = 0 WHERE id = $1 RETURNING *
+         ${updatedCte}
        )
        SELECT updated.*, c.chat_id, c.telegram_username, c.first_name, c.last_name, c.phone,
          ts.name AS subtitle_name,
