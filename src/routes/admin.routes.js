@@ -6,6 +6,7 @@ const { requireAuthApi, requireAdminApi } = require('../middleware/requireAuth')
 // متاحة لأي مستخدم مسجّل دخول (مش أدمن بس) — كل موظف يقدر يشوف متابعة أدائه هو بس، مش أداء غيره.
 // requireAdminApi اللي تحت مش بيغطّيها لأنها اتسجّلت هنا قبله
 router.get('/staff-activity', requireAuthApi, adminController.getStaffActivityLog);
+router.get('/staff-response-stats', requireAuthApi, adminController.getStaffResponseStats);
 
 router.use(requireAdminApi);
 router.get('/users', adminController.listUsers);

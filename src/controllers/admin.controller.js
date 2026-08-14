@@ -254,6 +254,139 @@ async function getStaffStats(req, res) {
   }
 }
 
+// ملخص أداء الرد على الشات لكل موظف — رقمين أساسيين:
+//   1) تذاكر مسندة له لسه محتاجة رد دلوقتي (نفس تعريف فلتر "مفتوحة ولم يُرد عليها" في صندوق الدعم
+//      بالظبط، عشان الرقم هنا يطابق اللي الأدمن بيشوفه في الصندوق لما يفلتر)
+//   2) متوسط (ووسيط) مدة الرد على الرسائل الجديدة — بيتحسب على "موجات" مش على كل رسالة لوحدها:
+//      لو الطالب بعت ٥ رسائل ورا بعض والموظف رد مرة، دي موجة واحدة بتتقاس من أول رسالة فيها لحد
+//      أول رد، مش ٥ مرات. الرد بيتحسب لصاحبه الفعلي (اللي بعته) مش للمسند له التذكرة
+const RESPONSE_STATS_SQL = `
+  -- الردود الحقيقية بس: الإرسال الجماعي والرسائل التلقائية (sent_by IS NULL) مش رد على كلام الطالب
+  WITH agent_replies AS (
+    SELECT sm.ticket_id, sm.sent_by, sm.sent_at
+    FROM support_messages sm
+    WHERE sm.deleted_at IS NULL AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL
+  ),
+  -- لكل رسالة واردة: آخر رد اتبعت قبلها. الرسائل اللي ليها نفس "آخر رد قبلها" بتبقى موجة واحدة
+  inbound AS (
+    SELECT t.id AS ticket_id, im.received_at,
+      (SELECT MAX(r.sent_at) FROM agent_replies r
+        WHERE r.ticket_id = t.id AND r.sent_at < im.received_at) AS prev_reply_at
+    FROM incoming_messages im
+    JOIN tickets t ON t.contact_id = im.contact_id
+    WHERE ($1::date IS NULL OR im.received_at >= $1::date - INTERVAL '2 days')
+      AND ($2::date IS NULL OR im.received_at < $2::date + INTERVAL '1 day')
+  ),
+  waves AS (
+    SELECT ticket_id, MIN(received_at) AS started_at
+    FROM inbound
+    GROUP BY ticket_id, prev_reply_at
+  ),
+  responses AS (
+    SELECT r.sent_by AS user_id, EXTRACT(EPOCH FROM (r.sent_at - w.started_at)) AS seconds
+    FROM waves w
+    -- أول رد بعد بداية الموجة. الموجات اللي لسه من غير رد مالهاش صف هنا (بتتحسب في رقم "مستنية رد")
+    JOIN LATERAL (
+      SELECT ar.sent_by, ar.sent_at FROM agent_replies ar
+      WHERE ar.ticket_id = w.ticket_id AND ar.sent_at > w.started_at
+      ORDER BY ar.sent_at LIMIT 1
+    ) r ON TRUE
+    -- الفلترة النهائية بحدود التاريخ المضبوطة (التوسيع فوق كان عشان الموجة تتجمّع صح على الحدود بس)
+    WHERE ($1::date IS NULL OR w.started_at >= $1::date)
+      AND ($2::date IS NULL OR w.started_at < $2::date + INTERVAL '1 day')
+      AND ($3::int IS NULL OR r.sent_by = $3::int)
+  )
+  SELECT user_id, COUNT(*)::int AS responses_count,
+    ROUND(AVG(seconds))::int AS avg_seconds,
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY seconds))::int AS median_seconds
+  FROM responses
+  GROUP BY GROUPING SETS ((user_id), ())
+`;
+
+// تذاكر مستنية رد دلوقتي لكل موظف + أطول واحدة مستنية (بالثواني) — حالة اللحظة دي، مش متأثرة
+// بفلتر التاريخ لأن السؤال هنا "إيه اللي متعلّق عليه دلوقتي؟" مش "إيه اللي حصل الفترة الفلانية؟"
+const AWAITING_SQL = `
+  SELECT t.assigned_to AS user_id, COUNT(*)::int AS awaiting_tickets,
+    ROUND(MAX(EXTRACT(EPOCH FROM (NOW() - (
+      SELECT MAX(im.received_at) FROM incoming_messages im WHERE im.contact_id = t.contact_id
+    )))))::int AS oldest_waiting_seconds
+  FROM tickets t
+  WHERE t.assigned_to IS NOT NULL
+    AND ($1::int IS NULL OR t.assigned_to = $1::int)
+    AND t.status NOT IN ('resolved', 'closed')
+    AND (
+      NOT EXISTS (SELECT 1 FROM support_messages sm WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL)
+      OR (SELECT MAX(im.received_at) FROM incoming_messages im WHERE im.contact_id = t.contact_id) >
+         (SELECT MAX(sm.sent_at) FROM support_messages sm WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL)
+    )
+  GROUP BY t.assigned_to
+`;
+
+async function getStaffResponseStats(req, res) {
+  // نفس قاعدة الصلاحيات بتاعة لوج النشاط: الموظف مقفول على حسابه هو مهما بعت user_id في الـ query
+  const userId = req.session.userRole === 'admin'
+    ? (/^\d+$/.test(String(req.query.user_id || '')) ? Number(req.query.user_id) : null)
+    : Number(req.session.userId);
+  const from = req.query.from && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : null;
+  const to = req.query.to && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to) ? req.query.to : null;
+
+  try {
+    const [responseResult, awaitingResult, usersResult] = await Promise.all([
+      pool.query(RESPONSE_STATS_SQL, [from, to, userId]),
+      pool.query(AWAITING_SQL, [userId]),
+      // مش بنقصر على is_active — موظف اتوقف حسابه وسايب وراه تذاكر متعلّقة لازم يفضل ظاهر،
+      // عشان إجمالي الفريق يفضل مطابق لمجموع الصفوف والتذاكر دي ماتضيعش من عين الأدمن
+      pool.query(
+        `SELECT id, name, role, can_view_tickets, is_active FROM users
+         WHERE ($1::int IS NULL OR id = $1::int) ORDER BY name`,
+        [userId]
+      ),
+    ]);
+
+    // صف الـ GROUPING SETS اللي user_id فيه NULL هو إجمالي الفريق كله
+    const teamRow = responseResult.rows.find((row) => row.user_id === null) || null;
+    const responseByUser = new Map(
+      responseResult.rows.filter((row) => row.user_id !== null).map((row) => [Number(row.user_id), row])
+    );
+    const awaitingByUser = new Map(awaitingResult.rows.map((row) => [Number(row.user_id), row]));
+
+    const staff = usersResult.rows
+      .map((user) => {
+        const response = responseByUser.get(user.id);
+        const awaiting = awaitingByUser.get(user.id);
+        return {
+          id: user.id,
+          name: user.name,
+          is_active: user.is_active,
+          awaiting_tickets: awaiting?.awaiting_tickets || 0,
+          oldest_waiting_seconds: awaiting?.oldest_waiting_seconds ?? null,
+          responses_count: response?.responses_count || 0,
+          avg_response_seconds: response?.avg_seconds ?? null,
+          median_response_seconds: response?.median_seconds ?? null,
+          has_tickets_access: user.role === 'admin' || user.can_view_tickets,
+        };
+      })
+      // موظف شغّال وعنده صلاحية الصندوق بيظهر حتى لو أصفار، وأي حد تاني (أدمن أو حساب موقوف)
+      // بيظهر بس لو عنده أرقام فعلية
+      .filter((row) => (row.is_active && row.has_tickets_access)
+        || row.awaiting_tickets > 0 || row.responses_count > 0)
+      .sort((a, b) => b.awaiting_tickets - a.awaiting_tickets || a.name.localeCompare(b.name, 'ar'));
+
+    res.json({
+      staff,
+      team: {
+        awaiting_tickets: awaitingResult.rows.reduce((sum, row) => sum + row.awaiting_tickets, 0),
+        responses_count: teamRow?.responses_count || 0,
+        avg_response_seconds: teamRow?.avg_seconds ?? null,
+        median_response_seconds: teamRow?.median_seconds ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Failed to load staff response stats:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل ملخص أداء الرد' });
+  }
+}
+
 // لوج نشاط الموظفين — مجمّع من مصدرين موجودين أصلًا (مكالمات اتسجّلت + أرقام أفكار اتحدّثت)،
 // من غير أي جدول جديد. كل صف بيرجّع آخر موعد متابعة معروف (مش سجل تاريخي كامل لكل تغيير)
 async function getStaffActivityLog(req, res) {
@@ -388,5 +521,5 @@ async function generateStaffTelegramLinkCode(req, res) {
 
 module.exports = {
   listUsers, createUser, updateUser, deleteUser, listSessions, getStaffStats, impersonateUser,
-  generateStaffTelegramLinkCode, getStaffActivityLog,
+  generateStaffTelegramLinkCode, getStaffActivityLog, getStaffResponseStats,
 };

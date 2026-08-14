@@ -47,6 +47,7 @@
           <div class="account-menu-name">👋 <%= userName %></div>
           <% if (canViewTickets) { %>
             <button type="button" class="btn btn-ghost btn-sm" id="mobile-open-activity-btn" style="width:100%">متابعة الأداء</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="mobile-open-response-btn" style="width:100%">سرعة الرد</button>
           <% } %>
           <button type="button" class="btn btn-ghost btn-sm" id="mobile-open-change-password-btn" style="width:100%">تغيير كلمة المرور</button>
           <form method="POST" action="/logout">
@@ -132,6 +133,7 @@
             <button type="button" class="subtab-btn" data-subtab="staff">الفريق</button>
           <% } %>
           <button type="button" class="subtab-btn" data-subtab="activity">متابعة الأداء</button>
+          <button type="button" class="subtab-btn" data-subtab="response">سرعة الرد</button>
           <% if (userRole === 'admin') { %>
             <button type="button" class="subtab-btn" data-subtab="flagged">الرسائل المميزة</button>
           <% } %>
@@ -284,6 +286,32 @@
               <button type="button" class="btn btn-ghost btn-sm" id="activity-prev">السابق</button>
               <button type="button" class="btn btn-ghost btn-sm" id="activity-next">التالي</button>
             </div>
+          </div>
+        </div>
+
+        <div class="subtab-section" data-subtab="response" style="display:none">
+          <div class="card" style="padding-block:12px">
+            <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
+              <% if (userRole === 'admin') { %>
+                <select id="response-user-filter" class="compact-select"><option value="">كل الموظفين</option></select>
+              <% } %>
+              <input type="date" id="response-from-filter" class="compact-input" title="من تاريخ">
+              <input type="date" id="response-to-filter" class="compact-input" title="إلى تاريخ">
+              <button type="button" class="btn btn-ghost btn-sm" id="clear-response-filters">مسح الفلاتر</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="refresh-response-btn">تحديث</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row-between" style="margin-bottom:12px">
+              <b>ملخص الرد على الشات</b>
+              <span id="response-stats-note" class="ticket-muted"></span>
+            </div>
+            <div id="response-stats-list"><div class="empty-state">بيتحمّل...</div></div>
+            <p class="card-desc" style="margin-top:10px">
+              مدة الرد بتتقاس على "موجات": لو الطالب بعت كذا رسالة ورا بعض والموظف رد مرة، بتتحسب مرة واحدة
+              من أول رسالة لحد أول رد. الرد بيتحسب لصاحبه الفعلي مش للمسند له التذكرة، والإرسال الجماعي
+              والرسائل التلقائية مش بتتحسب ردود.
+            </p>
           </div>
         </div>
 
@@ -1201,6 +1229,22 @@
       return new Date(iso).toLocaleDateString('ar-EG', { dateStyle: 'medium' });
     }
 
+    // مدة بالثواني → أوضح وحدة تعبّر عنها (ثانية/دقيقة/ساعة/يوم) من غير كسور مالهاش لازمة
+    function fmtDuration(seconds) {
+      if (seconds === null || seconds === undefined) return '—';
+      const value = Math.max(0, Math.round(Number(seconds)));
+      if (value < 60) return `${value} ثانية`;
+      if (value < 3600) return `${Math.round(value / 60)} دقيقة`;
+      if (value < 86400) {
+        const hours = Math.floor(value / 3600);
+        const minutes = Math.round((value % 3600) / 60);
+        return minutes ? `${hours} ساعة و${minutes} دقيقة` : `${hours} ساعة`;
+      }
+      const days = Math.floor(value / 86400);
+      const hours = Math.round((value % 86400) / 3600);
+      return hours ? `${days} يوم و${hours} ساعة` : `${days} يوم`;
+    }
+
     function toDateTimeLocal(iso) {
       if (!iso) return '';
       const date = new Date(iso);
@@ -1444,6 +1488,88 @@
     }
     initStaffActivity();
 
+    // ---------- سرعة الرد (تبويب مستقل: تذاكر مستنية رد + متوسط/وسيط مدة الرد على الرسائل الجديدة) ----------
+    async function initResponseStats() {
+      const list = document.getElementById('response-stats-list');
+      if (!list) return;
+      const note = document.getElementById('response-stats-note');
+      // فلتر "كل الموظفين" للأدمن بس — الموظف بيشوف أرقامه هو بس، مش محتاج يختار حد
+      const userFilter = document.getElementById('response-user-filter');
+      if (userFilter) {
+        await ensureTicketsMeta();
+        userFilter.innerHTML = '<option value="">كل الموظفين</option>' +
+          ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+      }
+
+      // فلتر التاريخ بيأثر على أرقام مدة الرد بس، أما "مستنية رد" و"أقدم انتظار" فحالة اللحظة دي
+      // مهما كان الفلتر — عشان كده بنكتب ده صريح في السطر اللي جنب عنوان الكارت
+      async function loadResponseStats() {
+        list.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+        const from = document.getElementById('response-from-filter').value;
+        const to = document.getElementById('response-to-filter').value;
+        try {
+          const params = new URLSearchParams();
+          const userId = userFilter ? userFilter.value : '';
+          if (userId) params.set('user_id', userId);
+          if (from) params.set('from', from);
+          if (to) params.set('to', to);
+          const data = await api('/api/admin/staff-response-stats?' + params.toString());
+          if (note) {
+            note.textContent = from || to
+              ? `مدة الرد محسوبة من ${from || 'البداية'} لـ ${to || 'النهاية'} — "مستنية رد" دلوقتي`
+              : 'مدة الرد على كل الفترة — "مستنية رد" دلوقتي';
+          }
+          if (!data.staff.length) {
+            list.innerHTML = '<div class="empty-state">مفيش بيانات رد لعرضها</div>';
+            return;
+          }
+          const teamRow = data.staff.length > 1 ? `
+            <div class="staff-card" style="background:var(--surface-sunken)">
+              <b style="min-width:120px">👥 الفريق كله</b>
+              <div class="staff-card-body">
+                <span class="stat-pill ${data.team.awaiting_tickets > 0 ? 'stat-warning' : 'stat-success'}" title="تذاكر مفتوحة آخر رسالة فيها من الطالب ولسه محدش رد">🟠 مستنية رد: ${data.team.awaiting_tickets}</span>
+                <span class="stat-pill" title="متوسط الوقت بين أول رسالة جديدة من الطالب وأول رد من الفريق">⏱️ متوسط الرد: ${fmtDuration(data.team.avg_response_seconds)}</span>
+                <span class="stat-pill" title="نص الردود كانت أسرع من كده — مؤشر أدق من المتوسط لأنه مابيتأثرش بالحالات الشاذة">📊 الوسيط: ${fmtDuration(data.team.median_response_seconds)}</span>
+                <span class="stat-pill stat-muted" title="عدد الردود اللي المتوسط اتحسب عليها">💬 ${data.team.responses_count} رد</span>
+              </div>
+            </div>` : '';
+          list.innerHTML = `<div class="staff-cards">${teamRow}${data.staff.map((row) => {
+            const oldest = row.oldest_waiting_seconds !== null
+              ? `<span class="stat-pill stat-warning" title="أقدم تذكرة مستنية رد من إمتى">⌛ أقدم انتظار: ${fmtDuration(row.oldest_waiting_seconds)}</span>` : '';
+            return `
+              <div class="staff-card">
+                <b style="min-width:120px">${escapeHtml(row.name)}${row.is_active ? '' : ' <span class="ticket-muted" title="الحساب موقوف لكن لسه وراه أرقام">(موقوف)</span>'}</b>
+                <div class="staff-card-body">
+                  <span class="stat-pill ${row.awaiting_tickets > 0 ? 'stat-warning' : 'stat-success'}" title="تذاكر مسندة له، مفتوحة، وآخر رسالة فيها من الطالب من غير رد">🟠 مستنية رد: ${row.awaiting_tickets}</span>
+                  ${oldest}
+                  <span class="stat-pill" title="متوسط الوقت بين أول رسالة جديدة من الطالب وأول رد منه هو">⏱️ متوسط الرد: ${fmtDuration(row.avg_response_seconds)}</span>
+                  <span class="stat-pill" title="نص ردوده كانت أسرع من كده — مؤشر أدق من المتوسط لأنه مابيتأثرش بالحالات الشاذة">📊 الوسيط: ${fmtDuration(row.median_response_seconds)}</span>
+                  <span class="stat-pill stat-muted" title="عدد الردود اللي المتوسط اتحسب عليها">💬 ${row.responses_count} رد</span>
+                </div>
+              </div>`;
+          }).join('')}</div>`;
+        } catch (error) {
+          list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+        }
+      }
+
+      if (userFilter) userFilter.addEventListener('change', loadResponseStats);
+      document.getElementById('response-from-filter').addEventListener('change', loadResponseStats);
+      document.getElementById('response-to-filter').addEventListener('change', loadResponseStats);
+      document.getElementById('refresh-response-btn').addEventListener('click', loadResponseStats);
+      document.getElementById('clear-response-filters').addEventListener('click', () => {
+        if (userFilter) userFilter.value = '';
+        document.getElementById('response-from-filter').value = '';
+        document.getElementById('response-to-filter').value = '';
+        loadResponseStats();
+      });
+
+      // بيتحمّل أول ما التبويب يتفتح بس — مش مع كل فتح للوحة، عشان الاستعلام تقيل شوية
+      document.querySelector('#tickets-subtabs .subtab-btn[data-subtab="response"]')
+        ?.addEventListener('click', loadResponseStats);
+    }
+    initResponseStats();
+
     // ---------- الرسائل المميزة (رسائل حلوة/شكاوى مجمّعة من كل التذاكر — أدمن فقط) ----------
     function initFlaggedMessages() {
       const typeFilter = document.getElementById('flagged-type-filter');
@@ -1559,6 +1685,14 @@
         accountMenuDropdown.style.display = 'none';
         document.querySelector('.nav-item[data-tab="tickets"]')?.click();
         document.querySelector('#tickets-subtabs .subtab-btn[data-subtab="activity"]')?.click();
+      });
+    }
+    const mobileOpenResponseBtn = document.getElementById('mobile-open-response-btn');
+    if (mobileOpenResponseBtn) {
+      mobileOpenResponseBtn.addEventListener('click', () => {
+        accountMenuDropdown.style.display = 'none';
+        document.querySelector('.nav-item[data-tab="tickets"]')?.click();
+        document.querySelector('#tickets-subtabs .subtab-btn[data-subtab="response"]')?.click();
       });
     }
     changePasswordOverlay.querySelectorAll('[data-toggle-for]').forEach((toggleBtn) => {
