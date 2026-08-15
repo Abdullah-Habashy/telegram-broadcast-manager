@@ -39,6 +39,7 @@ router.patch('/incoming-messages/:messageId/react', ticketsController.reactToInc
 router.get('/', ticketsController.listTickets);
 router.get('/ids', ticketsController.listTicketIds);
 router.patch('/bulk-assign', requireAdminApi, ticketsController.bulkAssignTickets);
+router.patch('/bulk-assign-by-contact', requireAdminApi, ticketsController.bulkAssignTicketsByContact);
 router.get('/:id', ticketsController.getTicket);
 router.patch('/:id', ticketsController.updateTicket);
 router.post('/:id/reply', upload.single('image'), ticketsController.replyToTicket);

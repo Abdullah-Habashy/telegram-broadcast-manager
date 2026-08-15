@@ -747,8 +747,10 @@
               </span>
               <button type="button" class="btn btn-ghost btn-sm" id="clear-selected-tafra-students-btn">إلغاء التحديد</button>
             </div>
-            <div class="row">
+            <div class="row" style="gap:8px; flex-wrap:wrap">
               <span id="selected-tafra-students-count" class="badge badge-muted">المحدد: 0</span>
+              <select id="tafra-assign-to-select" class="compact-select"><option value="">إسناد المحددين لـ...</option></select>
+              <button type="button" class="btn btn-ghost btn-sm" id="assign-selected-tafra-students-btn" style="width:auto" disabled>إسناد</button>
               <button type="button" class="btn btn-primary btn-sm" id="message-selected-tafra-students-btn" style="width:auto" disabled>مراسلة المحددين</button>
             </div>
           </div>
@@ -3814,6 +3816,9 @@
       document.getElementById('message-selected-btn').disabled = count === 0;
       document.getElementById('selected-tafra-students-count').textContent = `المحدد: ${count}`;
       document.getElementById('message-selected-tafra-students-btn').disabled = count === 0;
+      const tafraAssignSelect = document.getElementById('tafra-assign-to-select');
+      const tafraAssignBtn = document.getElementById('assign-selected-tafra-students-btn');
+      if (tafraAssignBtn) tafraAssignBtn.disabled = count === 0 || !tafraAssignSelect.value;
 
       const selectedOption = document.querySelector('#broadcast-tag option[value="__selected__"]');
       if (selectedOption) selectedOption.textContent = `الجهات المحددة (${count})`;
@@ -3979,6 +3984,44 @@
       updateSelectedContactsUi();
     });
     document.getElementById('message-selected-tafra-students-btn').addEventListener('click', goToComposeWithSelection);
+
+    // ---------- إسناد الطلاب المحددين لموظف (نفس التحديد اللي بيتعمل للمراسلة) ----------
+    (async function initTafraBulkAssign() {
+      const assignSelect = document.getElementById('tafra-assign-to-select');
+      const assignBtn = document.getElementById('assign-selected-tafra-students-btn');
+      if (!assignSelect || !assignBtn) return;
+      await ensureTicketsMeta();
+      assignSelect.innerHTML = '<option value="">إسناد المحددين لـ...</option>' +
+        ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+      assignSelect.addEventListener('change', updateSelectedContactsUi);
+
+      assignBtn.addEventListener('click', async () => {
+        const assignedTo = assignSelect.value;
+        if (!selectedContactIds.size || !assignedTo) return;
+        const assigneeName = assignSelect.options[assignSelect.selectedIndex].textContent;
+        if (!confirm(`إسناد ${selectedContactIds.size} طالب إلى ${assigneeName}؟\n\nالطالب اللي عنده محادثة هتتحول لـ${assigneeName}، واللي لسه مالوش تذكرة هتتعمل له واحدة جديدة.`)) return;
+        assignBtn.disabled = true;
+        try {
+          const result = await api('/api/tickets/bulk-assign-by-contact', {
+            method: 'PATCH',
+            body: JSON.stringify({ contact_ids: Array.from(selectedContactIds), assigned_to: Number(assignedTo) }),
+          });
+          // بنوضّح التلاتة أرقام صراحةً: اتحوّل، واتعملّه تذكرة جديدة، واتخطّى لأنه لسه ما كلّمش البوت
+          const parts = [`تم إسناد ${result.updated + result.created} طالب إلى ${assigneeName}`];
+          if (result.created) parts.push(`(${result.created} اتعملّهم تذاكر جديدة)`);
+          if (result.skipped) parts.push(`— ${result.skipped} اتخطّوا لأنهم لسه ما بدأوش محادثة مع البوت`);
+          showToast(parts.join(' '));
+          selectedContactIds.clear();
+          assignSelect.value = '';
+          updateSelectedContactsUi();
+          loadTafraStudents();
+        } catch (error) {
+          showToast(error.message);
+        } finally {
+          assignBtn.disabled = false;
+        }
+      });
+    })();
 
     // ---------- فحص "الوصول الفعلي" لطلاب طفرة المرتبطين اللي ضغطوا Start على بوت طفرة قبل كده
     // (بوت طفرة هو نفس بوت منصة طفرة الرسمي) من غير ما يظهروا في new_bot_contacts ----------

@@ -383,6 +383,72 @@ async function bulkAssignTickets(req, res) {
   }
 }
 
+// إسناد بالجملة انطلاقًا من جهات الاتصال مش من التذاكر — بتستخدمه صفحة طلاب المنصة، لأن التحديد
+// هناك بيبقى على الطالب (contact) مش على التذكرة. الطالب اللي عنده تذكرة بتتحدّث، واللي مالوش
+// بتتعملّه واحدة جديدة بنفس شكل اللي start.js بيعملها.
+// شرط مهم: التذكرة الجديدة بتتعمل بس لطالب فعلاً بدأ محادثة مع البوت (last_contacted_at موجود) —
+// من غير الشرط ده، إسناد بفلتر واسع كان هيعمل آلاف التذاكر الفاضية لطلاب عمرهم ما كلموا البوت
+async function bulkAssignTicketsByContact(req, res) {
+  const contactIds = Array.isArray(req.body.contact_ids)
+    ? [...new Set(req.body.contact_ids.map(Number).filter(Number.isInteger))]
+    : [];
+  const assignedTo = req.body.assigned_to === null || req.body.assigned_to === undefined || req.body.assigned_to === ''
+    ? null
+    : Number(req.body.assigned_to);
+
+  if (!contactIds.length) return res.status(400).json({ error: 'اختر طالبًا واحدًا على الأقل' });
+  if (assignedTo !== null && !Number.isInteger(assignedTo)) {
+    return res.status(400).json({ error: 'اختر الموظف المسؤول' });
+  }
+
+  const client = await pool.connect();
+  try {
+    if (assignedTo !== null) {
+      const userCheck = await pool.query('SELECT id FROM users WHERE id = $1 AND is_active = TRUE', [assignedTo]);
+      if (!userCheck.rows[0]) return res.status(400).json({ error: 'الموظف غير موجود أو غير مفعّل' });
+    }
+
+    await client.query('BEGIN');
+    const updated = await client.query(
+      `UPDATE tickets SET assigned_to = $1, updated_at = NOW() WHERE contact_id = ANY($2::int[]) RETURNING id`,
+      [assignedTo, contactIds]
+    );
+    const created = await client.query(
+      `INSERT INTO tickets (contact_id, status, subtitle_id, unread_count, last_message_at, updated_at, assigned_to)
+       SELECT c.id, 'new', (SELECT id FROM ticket_subtitles WHERE name = 'مطلوب المتابعة'), 0, NOW(), NOW(), $1
+       FROM contacts c
+       WHERE c.id = ANY($2::int[]) AND c.last_contacted_at IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.contact_id = c.id)
+       ON CONFLICT (contact_id) DO NOTHING
+       RETURNING id`,
+      [assignedTo, contactIds]
+    );
+    await client.query('COMMIT');
+
+    const ticketIds = [...updated.rows, ...created.rows].map((row) => row.id);
+    res.json({
+      updated: updated.rows.length,
+      created: created.rows.length,
+      // طلاب اتخطّوا لأنهم لسه ما بدأوش محادثة مع البوت، فمالهمش شات يتسند أصلًا
+      skipped: contactIds.length - ticketIds.length,
+    });
+
+    if (assignedTo !== null) {
+      ticketIds.forEach((id) => {
+        notifyTicketAssignment(id, assignedTo).catch((err) =>
+          console.error('❌ Failed to send bulk assignment push notification:', err.message)
+        );
+      });
+    }
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('❌ Failed to bulk-assign tickets by contact:', error.message);
+    res.status(500).json({ error: 'حصل خطأ في إسناد الطلاب' });
+  } finally {
+    client.release();
+  }
+}
+
 // إشعار الموظف على تليفونه لما يتحدد كمسؤول عن تذكرة، حتى لو المتصفح مقفول
 async function notifyTicketAssignment(ticketId, userId) {
   if (!push.enabled) return;
@@ -914,7 +980,8 @@ function streamEvents(req, res) {
 }
 
 module.exports = {
-  listTickets, listTicketIds, getTicket, updateTicket, bulkAssignTickets, replyToTicket, getTicketMeta,
+  listTickets, listTicketIds, getTicket, updateTicket, bulkAssignTickets, bulkAssignTicketsByContact,
+  replyToTicket, getTicketMeta,
   editSupportMessage, deleteSupportMessage, getRecentExamMarks, getCourseExamMarks,
   createTicketSubtitle, updateIdeaProgress, getIdeaProgressLog, streamEvents,
   flagIncomingMessage, listFlaggedMessages, reactToIncomingMessage,
