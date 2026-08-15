@@ -199,6 +199,7 @@
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-awaiting-reply-filter"> مفتوحة ولم يُرد عليها</label>
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-unassigned-filter"> غير مسندة لأي موظف</label>
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-never-replied-filter"> لم يُرد على أي رسائل سابقة</label>
+          <button type="button" class="btn btn-ghost btn-sm" id="clear-ticket-filters">مسح الفلاتر</button>
           </div>
           <button class="btn btn-ghost btn-sm" id="refresh-tickets-btn">تحديث</button>
           <% if (userRole === 'agent') { %>
@@ -326,6 +327,7 @@
                 <option value="complaint">❌ شكاوى</option>
               </select>
               <button type="button" class="btn btn-ghost btn-sm" id="refresh-flagged-btn">تحديث</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="clear-flagged-filters">مسح الفلاتر</button>
             </div>
           </div>
           <div class="card">
@@ -547,6 +549,7 @@
           </details>
           <div class="row-between audience-actions">
             <div class="row">
+              <button type="button" class="btn btn-ghost btn-sm" id="clear-contact-filters">مسح الفلاتر</button>
               <button type="button" class="btn btn-ghost btn-sm" id="select-filtered-contacts-btn">تحديد كل النتائج المفلترة</button>
               <span class="select-first-n-group">
                 <input type="number" id="select-first-n-contacts" class="compact-input" min="1" value="10" title="عدد النتائج">
@@ -1236,6 +1239,73 @@
       return new Date(iso).toLocaleDateString('ar-EG', { dateStyle: 'medium' });
     }
 
+    // ---------- حفظ الفلاتر واسترجاعها بعد الريفريش ----------
+    // كل شاشة ليها مجموعة فلاتر بتتخزن في localStorage تحت مفتاح خاص بيها. الاسترجاع لازم يتنادى
+    // بعد ما قوايم الاختيارات تتملى (الموظفين/العناوين/الأبواب...)، لأن select مابيقبلش قيمة
+    // لخيار لسه مش موجود. بيرجّع hasSaved عشان الشاشة تعرف تتجاهل قيمها الافتراضية لو المستخدم
+    // كان ضابط فلاتره بنفسه قبل كده.
+    const FILTER_STORE_PREFIX = 'tbm.filters.';
+    const CONTACT_FILTER_IDS = ['contact-status-filter','contact-subtitle-filter','contact-priority-filter','contact-category-filter','contact-assignee-filter','contact-bootcamp-filter','contact-enrolled-from','contact-enrolled-to','contact-exam-filter','contact-exam-attendance-filter','contact-exam-mark-range-filter','contact-follow-up-filter','filter-sent','filter-received','filter-start-status','contact-unread-filter'];
+    const filterGroups = {};
+
+    function readFilterElements(ids) {
+      return ids.map((id) => document.getElementById(id)).filter(Boolean);
+    }
+
+    function registerFilterGroup(key, ids, { onReset } = {}) {
+      const elements = readFilterElements(ids);
+      if (!elements.length) return { hasSaved: false, reset: () => {} };
+
+      const storageKey = FILTER_STORE_PREFIX + key;
+      const snapshot = () => {
+        const state = {};
+        elements.forEach((el) => { state[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+        return state;
+      };
+      const save = () => {
+        try { localStorage.setItem(storageKey, JSON.stringify(snapshot())); } catch (_) { /* الخزنة مليانة أو متقفلة */ }
+      };
+
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch (_) { saved = null; }
+      if (saved && typeof saved === 'object') {
+        elements.forEach((el) => {
+          if (!Object.prototype.hasOwnProperty.call(saved, el.id)) return;
+          if (el.type === 'checkbox') el.checked = Boolean(saved[el.id]);
+          else el.value = saved[el.id] ?? '';
+          // الفلاتر متعددة الاختيار عبارة عن input مخفي + واجهة منفصلة، فمحتاجة تحديث يدوي للعرض
+          multiSelectControllers[el.id]?.refresh();
+        });
+      }
+
+      elements.forEach((el) => {
+        el.addEventListener('change', save);
+        if (el.type === 'search' || el.type === 'text') el.addEventListener('input', save);
+      });
+
+      const group = {
+        hasSaved: Boolean(saved),
+        save,
+        reset: () => {
+          try { localStorage.removeItem(storageKey); } catch (_) { /* تجاهل */ }
+          if (onReset) onReset();
+        },
+      };
+      filterGroups[key] = group;
+      return group;
+    }
+
+    // بيرجّع الفلاتر لقيمها الافتراضية وبيمسح المحفوظ — بيستخدمه زرار "إعادة ضبط الفلاتر"
+    function resetFilterGroup(key, ids, reload, defaults = {}) {
+      readFilterElements(ids).forEach((el) => {
+        if (el.type === 'checkbox') el.checked = Boolean(defaults[el.id]);
+        else el.value = defaults[el.id] ?? '';
+        multiSelectControllers[el.id]?.refresh();
+      });
+      filterGroups[key]?.reset();
+      if (reload) reload();
+    }
+
     // مدة بالثواني → أوضح وحدة تعبّر عنها (ثانية/دقيقة/ساعة/يوم) من غير كسور مالهاش لازمة
     function fmtDuration(seconds) {
       if (seconds === null || seconds === undefined) return '—';
@@ -1418,6 +1488,8 @@
           ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
       }
 
+      registerFilterGroup('activity', ['activity-user-filter','activity-from-filter','activity-to-filter']);
+
       function activityQuery() {
         const params = new URLSearchParams({ page: activityPage });
         const userId = userFilter ? userFilter.value : '';
@@ -1475,6 +1547,7 @@
       document.getElementById('activity-to-filter').addEventListener('change', () => { activityPage = 1; loadStaffActivity(); });
       document.getElementById('refresh-activity-btn').addEventListener('click', loadStaffActivity);
       document.getElementById('clear-activity-filters').addEventListener('click', () => {
+        filterGroups.activity?.reset();
         if (userFilter) userFilter.value = '';
         document.getElementById('activity-from-filter').value = '';
         document.getElementById('activity-to-filter').value = '';
@@ -1510,6 +1583,8 @@
 
       // فلتر التاريخ بيأثر على أرقام مدة الرد بس، أما "مستنية رد" و"أقدم انتظار" فحالة اللحظة دي
       // مهما كان الفلتر — عشان كده بنكتب ده صريح في السطر اللي جنب عنوان الكارت
+      registerFilterGroup('response', ['response-user-filter','response-from-filter','response-to-filter']);
+
       async function loadResponseStats() {
         list.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
         const from = document.getElementById('response-from-filter').value;
@@ -1565,6 +1640,7 @@
       document.getElementById('response-to-filter').addEventListener('change', loadResponseStats);
       document.getElementById('refresh-response-btn').addEventListener('click', loadResponseStats);
       document.getElementById('clear-response-filters').addEventListener('click', () => {
+        filterGroups.response?.reset();
         if (userFilter) userFilter.value = '';
         document.getElementById('response-from-filter').value = '';
         document.getElementById('response-to-filter').value = '';
@@ -1625,6 +1701,11 @@
         }
       }
 
+      registerFilterGroup('flagged', ['flagged-type-filter']);
+      document.getElementById('clear-flagged-filters')?.addEventListener('click', () => {
+        flaggedPage = 1;
+        resetFilterGroup('flagged', ['flagged-type-filter'], loadFlaggedMessages);
+      });
       typeFilter.addEventListener('change', () => { flaggedPage = 1; loadFlaggedMessages(); });
       document.getElementById('refresh-flagged-btn').addEventListener('click', loadFlaggedMessages);
       document.getElementById('flagged-prev').addEventListener('click', () => {
@@ -2106,6 +2187,9 @@
       }
 
       renderTafraEnrollmentSync(filters.enrollment_sync);
+      // بيتنادى بعد ما القوايم والافتراضيات تتظبط، فالمحفوظ بتاع المستخدم بيغلب الافتراضي
+      registerFilterGroup('tafra', ['tafra-student-search','tafra-level-filter','tafra-education-type-filter','tafra-gender-filter','tafra-telegram-filter','tafra-conversation-filter','tafra-assignee-filter','tafra-status-filter','tafra-bootcamp-filter','tafra-exam-filter','tafra-exam-attendance-filter','tafra-exam-mark-range-filter','tafra-idea-filter','tafra-enrolled-from','tafra-enrolled-to','tafra-broadcast-status-filter','tafra-last-sent-from','tafra-last-sent-to','tafra-last-received-from','tafra-last-received-to','tafra-exclude-sent-today']);
+      registerFilterGroup('report', ['report-student-search','report-level-filter','report-education-type-filter','report-gender-filter','report-telegram-filter','report-conversation-filter','report-status-filter','report-bootcamp-filter','report-exam-filter','report-exam-attendance-filter','report-exam-mark-range-filter','report-idea-filter']);
       tafraFiltersLoaded = true;
     }
 
@@ -2325,6 +2409,7 @@
     }
 
     function clearCallsFilters() {
+      filterGroups.calls?.reset();
       Object.values(CALLS_FILTER_FIELDS).forEach((id) => { document.getElementById(id).value = ''; });
       ['calls-level-filter', 'calls-status-filter', 'calls-bootcamp-filter', 'calls-exam-filter']
         .forEach((id) => multiSelectControllers[id]?.refresh());
@@ -2652,6 +2737,7 @@
         if (!callOutcomes.length) await loadCallOutcomes();
         // بنجيب قائمة الموظفين من جديد في كل مرة (مش بس أول مرة) عشان أي موظف اتضاف حديثًا يظهر فورًا
         if (currentUserRole === 'admin' || canAssignCalls) await loadCallAssignees();
+        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter']);
         callsPage = 1;
         await loadCalls();
       } catch (error) { showToast(error.message); }
@@ -2885,6 +2971,8 @@
     bindFilterSync('tafra-student-search', 'report-student-search', 'input');
 
     function clearTafraReportFilters() {
+      filterGroups.tafra?.reset();
+      filterGroups.report?.reset();
       TAFRA_REPORT_FILTER_SUFFIXES.forEach((suffix) => {
         document.getElementById(`tafra-${suffix}`).value = '';
         document.getElementById(`report-${suffix}`).value = '';
@@ -3113,6 +3201,13 @@
       } catch (error) {
         return showToast(error.message);
       }
+      // الاسترجاع هنا بالذات: بعد ما قوايم الموظفين/العناوين/الأفكار اتملت، وقبل أول تحميل
+      const TICKET_FILTER_IDS = ['ticket-search','ticket-status-filter','ticket-subtitle-filter','ticket-priority-filter','ticket-category-filter','ticket-assignee-filter','ticket-follow-up-filter','ticket-sent-filter','ticket-received-filter','ticket-idea-filter','ticket-unread-filter','ticket-awaiting-reply-filter','ticket-unassigned-filter','ticket-never-replied-filter'];
+      registerFilterGroup('tickets', TICKET_FILTER_IDS);
+      document.getElementById('clear-ticket-filters')?.addEventListener('click', () => {
+        ticketsPage = 1;
+        resetFilterGroup('tickets', TICKET_FILTER_IDS, loadTickets);
+      });
       loadTickets();
       if (currentUserRole === 'admin') loadAdminUsers();
       if (pendingDeepLinkTicketId) {
@@ -3787,6 +3882,7 @@
           '<option value="">كل العناوين الفرعية</option>' +
           ticketsMeta.subtitles.map((subtitle) => `<option value="${subtitle.id}">${escapeHtml(subtitle.name)}</option>`).join('');
         loadBootcampsIntoContactFilter();
+        registerFilterGroup('contacts', CONTACT_FILTER_IDS);
         await Promise.all([loadContacts(), loadTagsIntoSelect(), loadBroadcasts()]);
       } catch (error) { showToast(error.message); }
     }
@@ -3911,6 +4007,10 @@
       'contact-exam-attendance-filter', 'contact-exam-mark-range-filter', 'contact-follow-up-filter',
       'filter-sent', 'filter-received', 'filter-start-status', 'contact-unread-filter'
     ].forEach((id) => document.getElementById(id).addEventListener('change', loadContacts));
+
+    document.getElementById('clear-contact-filters')?.addEventListener('click', () => {
+      resetFilterGroup('contacts', CONTACT_FILTER_IDS, loadContacts, { 'contact-exam-attendance-filter': 'entered' });
+    });
 
     document.getElementById('select-filtered-contacts-btn').addEventListener('click', () => {
       currentFilteredContactIds.forEach((id) => selectedContactIds.add(id));
@@ -4143,6 +4243,7 @@
       await loadTafraStudentFilters(); // بيجهّز خيارات وافتراضي فلتر الباب (الباب الأول + المنهج كاملا)
       loadNewBotReachabilitySyncStatus();
       loadNewBotWebhookStatus();
+      registerFilterGroup('newbot', ['newbot-sub-search','newbot-sub-bootcamp-filter','newbot-sub-gender-filter','newbot-sub-telegram-filter','newbot-sub-exclude-sent-today']);
       loadNewBotSubscribers();
       // نجهّز آخر رسالة وزرار اتبعتوا فعليًا كقيم افتراضية (لو لسه فاضيين) — وإلا رابط بوت المتابعة
       // كافتراضي احتياطي للزرار لو معندناش إرسال سابق أصلًا
@@ -4229,6 +4330,7 @@
         newBotSubPage = 1; loadNewBotSubscribers();
       });
       document.getElementById('clear-newbot-sub-filters').addEventListener('click', () => {
+        filterGroups.newbot?.reset();
         document.getElementById('newbot-sub-search').value = '';
         document.getElementById('newbot-sub-gender-filter').value = '';
         document.getElementById('newbot-sub-telegram-filter').value = '';
