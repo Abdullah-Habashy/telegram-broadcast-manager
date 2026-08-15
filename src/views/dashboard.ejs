@@ -213,6 +213,7 @@
             <div class="row-between audience-actions">
               <div class="row">
                 <button type="button" class="btn btn-ghost btn-sm" id="select-all-tickets-btn">تحديد كل التذاكر المعروضة</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="select-all-filtered-tickets-btn">تحديد كل النتائج (الفلتر الحالي)</button>
                 <span class="select-first-n-group">
                   <input type="number" id="select-first-n-tickets" class="compact-input" min="1" value="10" title="عدد النتائج">
                   <button type="button" class="btn btn-ghost btn-sm" id="select-first-n-tickets-btn">تحديد أول عدد</button>
@@ -681,6 +682,10 @@
             <option value="start_only">ضغط Start بس (لسه مفيش محادثة)</option>
             <option value="chatted">تمت محادثة (بدون موعد متابعة)</option>
             <option value="chatted_with_follow_up">تمت محادثة + موعد متابعة محدد</option>
+          </select>
+          <select id="tafra-assignee-filter" class="compact-select" title="الموظف المسؤول عن تذكرة الطالب في صندوق الدعم">
+            <option value="">كل الموظفين</option>
+            <option value="unassigned">غير مسند</option>
           </select>
           <input type="hidden" id="tafra-status-filter" value="">
           <input type="hidden" id="tafra-bootcamp-filter" value="">
@@ -2086,6 +2091,18 @@
         });
       }
 
+      // فلتر الموظف المسؤول موجود في صفحة طلاب المنصة بس (أدمن فقط)، وبياخد أسماء الموظفين من meta
+      // بتاعة صندوق الدعم — عشان كده بنتأكد إنه موجود فعلاً قبل ما نطلبها، لأن شاشة المتابعة
+      // التليفونية بتنادي الدالة دي كمان لموظفين ممكن ما يكونش عندهم صلاحية الصندوق أصلًا
+      const assigneeFilter = document.getElementById('tafra-assignee-filter');
+      if (assigneeFilter && currentUserRole === 'admin') {
+        await ensureTicketsMeta();
+        const previousAssignee = assigneeFilter.value;
+        assigneeFilter.innerHTML = '<option value="">كل الموظفين</option><option value="unassigned">غير مسند</option>' +
+          ticketsMeta.users.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+        assigneeFilter.value = previousAssignee;
+      }
+
       renderTafraEnrollmentSync(filters.enrollment_sync);
       tafraFiltersLoaded = true;
     }
@@ -2110,7 +2127,7 @@
       const fields = {
         search: 'tafra-student-search', level: 'tafra-level-filter',
         education_type: 'tafra-education-type-filter', gender: 'tafra-gender-filter', telegram: 'tafra-telegram-filter',
-        conversation_status: 'tafra-conversation-filter',
+        conversation_status: 'tafra-conversation-filter', assigned_to: 'tafra-assignee-filter',
         status: 'tafra-status-filter', bootcamp: 'tafra-bootcamp-filter', exam: 'tafra-exam-filter',
         idea_number: 'tafra-idea-filter',
         enrolled_from: 'tafra-enrolled-from', enrolled_to: 'tafra-enrolled-to',
@@ -2161,6 +2178,26 @@
       return { html: fmtDate(value), sortValue: new Date(value).getTime() };
     }
 
+    // زرار فتح الشات التفصيلي للطالب في صندوق الدعم — بيظهر في كل صف من نتائج البحث/الفلترة.
+    // الطالب اللي لسه مالوش تذكرة (عمره ما كلّم البوت) مالوش شات يتفتح، فبنوضّح السبب بدل زرار ميّت
+    function openChatButtonHtml(student) {
+      if (student.ticket_id) {
+        return `<button type="button" class="btn btn-ghost btn-sm open-student-chat-btn" data-ticket-id="${student.ticket_id}"
+          title="فتح محادثة الطالب في صندوق الدعم">💬 فتح الشات</button>`;
+      }
+      return '<span class="tafra-student-sub" title="الطالب ده لسه مفيش له محادثة في صندوق الدعم">💬 لا يوجد شات</span>';
+    }
+
+    // بيربط زراير "فتح الشات" بعد ما الجدول يترسم — بينقل لتاب صندوق الدعم ويفتح التذكرة على طول
+    function bindOpenStudentChatButtons(container) {
+      container.querySelectorAll('.open-student-chat-btn').forEach((button) => {
+        button.addEventListener('click', () => {
+          pendingDeepLinkTicketId = Number(button.dataset.ticketId);
+          document.querySelector('.nav-item[data-tab="tickets"]')?.click();
+        });
+      });
+    }
+
     function buildStudentsTableHtml(students, { showExamMark, showCheckbox, showEnrollmentDates, sort }) {
       const headerCells = (showCheckbox ? '<th class="select-cell"><input type="checkbox" id="select-all-tafra-students" aria-label="تحديد الكل"></th>' : '')
         + `<th>الطالب</th><th>الباب</th><th>الهاتف</th><th>هاتف ولي الأمر</th><th>الصف</th><th>التعليم</th><th>الحالة</th><th>الفكرة الحالية</th>${showExamMark ? '<th>درجة الاختبار</th>' : ''}${showEnrollmentDates ? `<th data-sort-key="enrollment"${sortThAttrs('enrollment', sort)}>تاريخ الاشتراك</th>` : ''}<th data-sort-key="last_sent"${sortThAttrs('last_sent', sort)}>آخر إرسال</th><th data-sort-key="last_received"${sortThAttrs('last_received', sort)}>آخر استقبال</th><th>تيليجرام</th>`;
@@ -2168,7 +2205,11 @@
         ${showCheckbox ? `<td class="select-cell">${canMessageStudent(student)
           ? `<input type="checkbox" class="contact-selector" value="${student.contact_id}" ${selectedContactIds.has(Number(student.contact_id)) ? 'checked' : ''} aria-label="تحديد الطالب">`
           : ''}</td>` : ''}
-        <td><div class="tafra-student-name">${escapeHtml(student.name || 'بدون اسم')}</div><div class="tafra-student-sub">رقم الطالب: ${escapeHtml(student.tafra_student_id)} — الكود: ${escapeHtml(student.student_code || '—')}</div></td>
+        <td>
+          <div class="tafra-student-name">${escapeHtml(student.name || 'بدون اسم')}</div>
+          <div class="tafra-student-sub">رقم الطالب: ${escapeHtml(student.tafra_student_id)} — الكود: ${escapeHtml(student.student_code || '—')}</div>
+          ${openChatButtonHtml(student)}
+        </td>
         <td>${bootcampMarksHtml(student, 'sm') || '<span class="badge badge-muted">—</span>'}</td>
         <td>${escapeHtml(student.phone || '—')}</td>
         <td>${escapeHtml(student.parent_phone || '—')}</td>
@@ -2212,6 +2253,7 @@
         // حتى لو ربط حسابه على منصة طفرة نفسها
         currentFilteredTafraStudentContactIds = result.students.filter(canMessageStudent).map((s) => Number(s.contact_id));
         wrap.innerHTML = buildStudentsTableHtml(result.students, { showExamMark, showCheckbox: true, showEnrollmentDates, sort: tafraSort });
+        bindOpenStudentChatButtons(wrap);
         enableTableSort(wrap, {
           onSort: async (key, dir) => {
             tafraSort = { key, dir };
@@ -2853,6 +2895,7 @@
       document.getElementById('report-student-search').value = '';
       document.getElementById('tafra-exam-attendance-filter').value = 'entered';
       document.getElementById('report-exam-attendance-filter').value = 'entered';
+      document.getElementById('tafra-assignee-filter').value = '';
       document.getElementById('tafra-broadcast-status-filter').value = '';
       document.getElementById('tafra-last-sent-from').value = '';
       document.getElementById('tafra-last-sent-to').value = '';
@@ -2913,6 +2956,7 @@
         const showExamMark = document.getElementById('report-exam-filter').value.split(',').filter(Boolean).length === 1;
         const showEnrollmentDates = document.getElementById('report-bootcamp-filter').value.split(',').filter(Boolean).length > 0;
         wrap.innerHTML = buildStudentsTableHtml(result.students, { showExamMark, showCheckbox: false, showEnrollmentDates, sort: reportSort });
+        bindOpenStudentChatButtons(wrap);
         enableTableSort(wrap, {
           onSort: async (key, dir) => {
             reportSort = { key, dir };
@@ -2957,7 +3001,7 @@
       window.location.href = '/api/tafra/students/export?format=pdf&' + reportQueryString();
     });
 
-    ['tafra-level-filter', 'tafra-education-type-filter', 'tafra-gender-filter', 'tafra-telegram-filter', 'tafra-conversation-filter', 'tafra-status-filter', 'tafra-bootcamp-filter', 'tafra-exam-filter', 'tafra-exam-attendance-filter', 'tafra-exam-mark-range-filter', 'tafra-idea-filter', 'tafra-enrolled-from', 'tafra-enrolled-to', 'tafra-broadcast-status-filter', 'tafra-last-sent-from', 'tafra-last-sent-to', 'tafra-last-received-from', 'tafra-last-received-to', 'tafra-exclude-sent-today'].forEach((id) => {
+    ['tafra-level-filter', 'tafra-education-type-filter', 'tafra-gender-filter', 'tafra-telegram-filter', 'tafra-conversation-filter', 'tafra-assignee-filter', 'tafra-status-filter', 'tafra-bootcamp-filter', 'tafra-exam-filter', 'tafra-exam-attendance-filter', 'tafra-exam-mark-range-filter', 'tafra-idea-filter', 'tafra-enrolled-from', 'tafra-enrolled-to', 'tafra-broadcast-status-filter', 'tafra-last-sent-from', 'tafra-last-sent-to', 'tafra-last-received-from', 'tafra-last-received-to', 'tafra-exclude-sent-today'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
         tafraStudentsPage = 1;
         loadTafraStudents();
@@ -3196,6 +3240,26 @@
           selectedTicketIds.add(Number(checkbox.value));
         });
         updateSelectedTicketsUi();
+      });
+
+      document.getElementById('select-all-filtered-tickets-btn').addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          // بيجيب معرّفات كل التذاكر المطابقة للفلتر/البحث الحالي من كل الصفحات، مش الصفحة المعروضة بس
+          const result = await api('/api/tickets/ids?' + ticketQueryString());
+          if (!result.ids.length) return showToast('لا يوجد نتائج لتحديدها');
+          result.ids.forEach((id) => selectedTicketIds.add(id));
+          document.querySelectorAll('#ticket-list .ticket-selector').forEach((checkbox) => {
+            if (selectedTicketIds.has(Number(checkbox.value))) checkbox.checked = true;
+          });
+          updateSelectedTicketsUi();
+          showToast(`تم تحديد ${result.ids.length} تذكرة من كل الصفحات المطابقة للفلتر`);
+        } catch (error) {
+          showToast(error.message);
+        } finally {
+          button.disabled = false;
+        }
       });
 
       document.getElementById('select-first-n-tickets-btn').addEventListener('click', () => {

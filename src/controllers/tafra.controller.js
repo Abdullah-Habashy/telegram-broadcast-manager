@@ -157,6 +157,14 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   } else if (query.conversation_status === 'chatted_with_follow_up') {
     conditions.push(`EXISTS (SELECT 1 FROM incoming_messages im WHERE im.contact_id = c.id) AND t.next_follow_up_at IS NOT NULL`);
   }
+  // فلتر الموظف المسؤول — بيتاخد من تذكرة الطالب في صندوق الدعم (t جاي من LEFT JOIN فوق).
+  // "unassigned" بيغطي الحالتين اللي معناهم واحد: طالب عنده تذكرة لسه مش مسندة لحد، وطالب مالوش
+  // تذكرة أصلًا (الـ LEFT JOIN بيخلّي t.assigned_to = NULL في الحالتين) — الاتنين مفيش موظف مسؤول عنهم
+  if (query.assigned_to === 'unassigned') {
+    conditions.push('t.assigned_to IS NULL');
+  } else if (/^\d+$/.test(String(query.assigned_to || ''))) {
+    addCondition(Number(query.assigned_to), 't.assigned_to = ?');
+  }
   // فلتر حالة المراسلة الجماعية — بيفرّق بين "بدأ محادثة بس لسه ما اتبعتلوش رسالة جماعية" و"اتبعتله
   // رسالة جماعية قبل كده ولسه ما ردش"، عشان يسهّل استبعاد الطلاب اللي اتبعتلهم رسالة أصلًا وقت تجميع
   // جمهور جديد من فلاتر مختلفة (تفادي تكرار الإرسال لنفس الطالب مرتين في نفس اليوم)
@@ -322,6 +330,8 @@ async function listStudents(req, res) {
         s.telegram_linked, s.telegram_username, s.telegram_chat_id,
         s.registration_review_status, s.last_seen_at,
         c.id AS contact_id, t.current_idea_number,
+        -- بيتستخدم في زرار "فتح الشات" اللي بينقل من قائمة الطلاب لمحادثة الطالب في صندوق الدعم
+        t.id AS ticket_id, t.assigned_to,
         -- تيليجرام مايسمحش للبوت يبعت لطالب لسه ما بدأش معاه محادثة، حتى لو ربط حسابه على منصة طفرة
         (c.last_contacted_at IS NOT NULL) AS can_message,
         last_sent.last_sent_at, last_received.last_received_at,
