@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const pool = require('../config/db');
 const { sendBroadcast, getFirstName } = require('../bot/broadcastSender');
 const botManager = require('../bot/botManager');
+const { isPermanentSendError } = require('../utils/telegramErrors');
 
 let followUpJobRunning = false;
 
@@ -66,11 +67,18 @@ async function sendDueTicketFollowUps() {
         );
         console.log(`✅ Automatic follow-up sent for ticket #${claimed.id}.`);
       } catch (error) {
-        await pool.query(
-          "UPDATE tickets SET next_follow_up_at = NOW() + INTERVAL '5 minutes', updated_at = NOW() WHERE id = $1",
-          [claimed.id]
-        );
-        console.error(`❌ Automatic follow-up failed for ticket #${claimed.id}; retrying in 5 minutes:`, error.message);
+        // الأخطاء الدائمة (الطالب حاظر البوت، حسابه محذوف، المحادثة مش موجودة) مش بتنحل بإعادة
+        // المحاولة، فبنسيب next_follow_up_at فاضي زي ما خلّته جملة الحجز فوق ونوقف عند كده. لو
+        // أعدنا جدولتها كانت التذكرة هتفضل تحاول كل 5 دقايق للأبد وتملّي اللوج وتستهلك كوتة تليجرام
+        if (isPermanentSendError(error)) {
+          console.error(`⛔ Automatic follow-up for ticket #${claimed.id} stopped permanently:`, error.message);
+        } else {
+          await pool.query(
+            "UPDATE tickets SET next_follow_up_at = NOW() + INTERVAL '5 minutes', updated_at = NOW() WHERE id = $1",
+            [claimed.id]
+          );
+          console.error(`❌ Automatic follow-up failed for ticket #${claimed.id}; retrying in 5 minutes:`, error.message);
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 60));
     }
