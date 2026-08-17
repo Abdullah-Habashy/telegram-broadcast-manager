@@ -656,6 +656,21 @@ CREATE TABLE IF NOT EXISTS call_logs (
     called_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_call_logs_student ON call_logs (tafra_student_id, called_at DESC);
+
+-- سجل رسايل SMS اللي الموظف بعتها للطالب. جدول منفصل عن call_logs عن قصد: فلاتر نتيجة المكالمة
+-- و"معرفناش نوصله" بتعدّ صفوف call_logs، فأي صف SMS جواه كان هيفسد حسابها. النص بيتخزن نسخة
+-- مستقلة (مش إشارة للقالب) عشان السجل يفضل صحيح لو الأدمن عدّل القالب بعد كده.
+-- ملحوظة: ده بيسجّل إن الموظف ضغط الزرار وتطبيق الرسائل اتفتح بالنص ده — تليجرام مش في الصورة
+-- وإحنا مش بنبعت من السيرفر، فمفيش تأكيد توصيل من شبكة المحمول
+CREATE TABLE IF NOT EXISTS sms_logs (
+    id SERIAL PRIMARY KEY,
+    tafra_student_id BIGINT NOT NULL REFERENCES tafra_students(tafra_student_id) ON DELETE CASCADE,
+    sent_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    phone VARCHAR(20) NOT NULL,
+    body TEXT NOT NULL,
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sms_logs_student ON sms_logs (tafra_student_id, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_call_logs_follow_up ON call_logs (next_follow_up_at) WHERE next_follow_up_at IS NOT NULL;
 
 -- تحويل التوكن القديم تلقائيًا إلى أول ملف بوت محفوظ عند ترقية مشروع قائم

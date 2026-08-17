@@ -342,8 +342,10 @@ async function listStudentsForAssignment(req, res) {
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       listParams
     );
+    const buildSms = await buildSmsFactory();
+    const students = await decorateWithSms(result.rows, buildSms);
     const total = countResult.rows[0].count;
-    res.json({ students: result.rows, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+    res.json({ students, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (error) {
     console.error('❌ Failed to list students for call assignment:', error.message);
     res.status(500).json({ error: 'تعذر تحميل قائمة الطلاب' });
@@ -392,8 +394,10 @@ async function listMyStudents(req, res) {
       listParams
     );
     const countResult = await pool.query(`SELECT COUNT(*)::int AS count ${fromSql} ${finalWhere}`, params);
+    const buildSms = await buildSmsFactory();
+    const students = await decorateWithSms(result.rows, buildSms);
     const total = countResult.rows[0].count;
-    res.json({ students: result.rows, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+    res.json({ students, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (error) {
     console.error('❌ Failed to list my call students:', error.message);
     res.status(500).json({ error: 'تعذر تحميل قائمتك' });
@@ -439,26 +443,105 @@ async function getStudentProfile(req, res) {
 
     // الـ SMS بتتحسب هنا وترجع جاهزة مع البروفايل، مش في الواجهة — لأن /api/settings محجوز
     // للأدمن والموظف مش بيقدر يقراه، وكمان عشان الاستبدال يفضل في مكان واحد زي باقي الرسايل
-    const smsResult = await pool.query(
-      "SELECT key, value FROM settings WHERE key IN ('sms_template_enabled', 'sms_template_text')"
+    const buildSms = await buildSmsFactory();
+    const smsLogsResult = await pool.query(
+      `SELECT sl.id, sl.phone, sl.body, sl.sent_at, u.name AS sent_by_name
+       FROM sms_logs sl LEFT JOIN users u ON u.id = sl.sent_by
+       WHERE sl.tafra_student_id = $1 ORDER BY sl.sent_at DESC`,
+      [studentId]
     );
-    const smsSettings = Object.fromEntries(smsResult.rows.map((row) => [row.key, row.value]));
-    const smsPhone = toEgyptianMobileE164(student.phone);
-    const sms = (smsSettings.sms_template_enabled === 'true' && smsSettings.sms_template_text && smsPhone)
-      ? {
-          phone: smsPhone,
-          body: smsSettings.sms_template_text.replaceAll('الاسم', getFirstName({
-            tafra_name: student.name,
-            first_name: student.name,
-            telegram_username: student.telegram_username,
-          })),
-        }
-      : null;
 
-    res.json({ student, calls: logsResult.rows, sms });
+    res.json({
+      student,
+      calls: logsResult.rows,
+      sms: buildSms(student),
+      sms_logs: smsLogsResult.rows,
+    });
   } catch (error) {
     console.error('❌ Failed to load call student profile:', error.message);
     res.status(500).json({ error: 'تعذر تحميل بيانات الطالب' });
+  }
+}
+
+// ---------- رسالة SMS ----------
+// القالب واحد لكل الطلاب، فبنقراه مرة واحدة للطلب كله وبنستبدل الاسم لكل طالب. بيرجع دالة
+// عشان القائمة (50 طالب) ماتعملش 50 استعلام إعدادات
+async function buildSmsFactory() {
+  const result = await pool.query(
+    "SELECT key, value FROM settings WHERE key IN ('sms_template_enabled', 'sms_template_text')"
+  );
+  const settings = Object.fromEntries(result.rows.map((row) => [row.key, row.value]));
+  if (settings.sms_template_enabled !== 'true' || !settings.sms_template_text) return () => null;
+  const template = settings.sms_template_text;
+  return (student) => {
+    const phone = toEgyptianMobileE164(student.phone);
+    if (!phone) return null;
+    return {
+      phone,
+      body: template.replaceAll('الاسم', getFirstName({
+        tafra_name: student.name,
+        first_name: student.name,
+        telegram_username: student.telegram_username,
+      })),
+    };
+  };
+}
+
+// بتزوّد صفوف القائمة بالـ SMS الجاهزة وبآخر مرة اتبعتت للطالب. آخر مرة بتتجاب باستعلام واحد
+// لكل الصفحة (مش استعلام لكل طالب) — بتظهر جنب الزرار عشان الموظف مايبعتش لنفس الطالب مرتين
+async function decorateWithSms(rows, buildSms) {
+  if (!rows.length) return rows;
+  const ids = rows.map((row) => Number(row.tafra_student_id));
+  const lastSent = await pool.query(
+    `SELECT tafra_student_id, MAX(sent_at) AS last_sms_at, COUNT(*)::int AS sms_count
+     FROM sms_logs WHERE tafra_student_id = ANY($1::bigint[]) GROUP BY tafra_student_id`,
+    [ids]
+  );
+  const byStudent = new Map(lastSent.rows.map((row) => [Number(row.tafra_student_id), row]));
+  return rows.map((row) => {
+    const history = byStudent.get(Number(row.tafra_student_id));
+    return {
+      ...row,
+      sms: buildSms(row),
+      last_sms_at: history ? history.last_sms_at : null,
+      sms_count: history ? history.sms_count : 0,
+    };
+  });
+}
+
+// بيتنادى أول ما الموظف يضغط الزرار — قبل ما تطبيق الرسائل يفتح. النص بيتحسب في السيرفر مش
+// بيتقبل من العميل، عشان السجل يبقى مطابق للقالب الفعلي ومحدش يقدر يسجّل نص من عنده
+async function logSmsSend(req, res) {
+  const studentId = Number(req.params.id);
+  if (!Number.isInteger(studentId)) return res.status(400).json({ error: 'الطالب غير صالح' });
+
+  try {
+    const studentResult = await pool.query(
+      `SELECT s.tafra_student_id, s.name, s.phone, s.telegram_username, sca.assigned_to
+       FROM tafra_students s
+       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+       WHERE s.tafra_student_id = $1`,
+      [studentId]
+    );
+    const student = studentResult.rows[0];
+    if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+    if (req.session.userRole !== 'admin' && Number(student.assigned_to) !== Number(req.session.userId)) {
+      return res.status(403).json({ error: 'الطالب ده مش مسند لك' });
+    }
+
+    const buildSms = await buildSmsFactory();
+    const sms = buildSms(student);
+    if (!sms) return res.status(400).json({ error: 'رسالة الـ SMS غير مفعّلة أو رقم الطالب غير صالح' });
+
+    const inserted = await pool.query(
+      `INSERT INTO sms_logs (tafra_student_id, sent_by, phone, body)
+       VALUES ($1, $2, $3, $4) RETURNING id, sent_at`,
+      [studentId, req.session.userId, sms.phone, sms.body]
+    );
+    res.status(201).json({ ok: true, ...inserted.rows[0] });
+  } catch (error) {
+    console.error('❌ Failed to log an SMS send:', error.message);
+    res.status(500).json({ error: 'تعذر تسجيل إرسال الرسالة' });
   }
 }
 
@@ -738,6 +821,7 @@ module.exports = {
   listMyStudents,
   getStudentProfile,
   getStudentExams,
+  logSmsSend,
   logCall,
   editCallLog,
   updateStudentGrade,

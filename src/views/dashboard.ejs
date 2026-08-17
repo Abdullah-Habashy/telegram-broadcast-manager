@@ -2472,6 +2472,18 @@
         : '<span class="badge badge-muted">لسه ما تمّش الاتصال</span>';
     }
 
+    // بيسجّل إن الموظف ضغط زرار الـ SMS. مش بننتظر الرد (await) عن قصد — الضغطة نفسها بتفتح
+    // تطبيق الرسائل، ولو استنينا كان ممكن يتأخر الفتح. الرابط مالوش دعوة بنتيجة التسجيل
+    function recordSmsSend(studentId) {
+      api('/api/calls/student/' + studentId + '/sms-log', { method: 'POST' })
+        .then(() => {
+          // لو البروفايل مفتوح لنفس الطالب بنحدّثه عشان السجل يبان فورًا
+          if (Number(currentCallStudentId) === Number(studentId)) openCallProfile(studentId);
+          else loadCalls();
+        })
+        .catch((error) => showToast('اتفتح تطبيق الرسائل بس التسجيل فشل: ' + error.message));
+    }
+
     function buildCallsListHtml(students) {
       if (!students.length) return '<div class="empty-state">لا يوجد طلاب مطابقون</div>';
       const showCheckbox = currentUserRole === 'admin' || canAssignCalls;
@@ -2501,7 +2513,16 @@
             }</div>
             <div class="ticket-list-meta">
               <span>${student.last_called_at ? 'آخر مكالمة: ' + fmtDate(student.last_called_at) : 'لسه محصلش اتصال'}</span>
+              <!-- الاسم data-sms-student مش data-student-id عن قصد: loadCalls بيختار
+                   [data-student-id] ويربطه بفتح البروفايل، فلو استخدمناه هنا الرابط كان هياخد
+                   نفس المُعالج ويفتح البروفايل بدل ما يفتح تطبيق الرسائل -->
+              ${student.sms ? `<a class="btn btn-ghost btn-sm sms-row-btn" style="width:auto; padding:2px 10px"
+                  data-sms-student="${id}"
+                  href="sms:${student.sms.phone}?body=${encodeURIComponent(student.sms.body)}"
+                  title="${student.last_sms_at ? 'آخر رسالة: ' + escapeHtml(fmtDate(student.last_sms_at)) : 'لسه ماتبعتلهوش رسالة'}"
+                >✉️ SMS${student.sms_count ? ` (${student.sms_count})` : ''}</a>` : ''}
             </div>
+            ${student.last_sms_at ? `<div class="ticket-muted" style="font-size:12px">✉️ آخر رسالة: ${fmtDate(student.last_sms_at)}</div>` : ''}
             ${student.next_follow_up_at ? `<div class="follow-up-badge ${followUpDue ? 'due' : ''}">📅 ${followUpDue ? 'حان موعد المتابعة: ' : 'المتابعة: '}${fmtDate(student.next_follow_up_at)}</div>` : ''}
           </div>`;
       }).join('');
@@ -2523,6 +2544,13 @@
           row.addEventListener('click', (event) => {
             if (event.target.tagName === 'INPUT') return;
             openCallProfile(Number(row.dataset.studentId));
+          });
+        });
+        list.querySelectorAll('.sms-row-btn').forEach((link) => {
+          link.addEventListener('click', (event) => {
+            // من غير كده الضغطة بتطلع للصف وتفتح بروفايل الطالب فوق تطبيق الرسائل
+            event.stopPropagation();
+            recordSmsSend(Number(link.dataset.smsStudent));
           });
         });
         list.querySelectorAll('.call-student-selector').forEach((checkbox) => {
@@ -2690,7 +2718,7 @@
             <!-- الرقم بيتحط زي ما هو من غير encodeURIComponent عن قصد: الـ + حرف صالح في sms:
                  حسب RFC 5724، وبعض تطبيقات الرسائل مابتفكّش %2B فبتحاول تبعت لرقم غلط. الرقم
                  خارج من toEgyptianMobileE164 فمضمون إنه + وكود مصر و10 أرقام بس -->
-            ${data.sms ? `<a class="btn btn-ghost btn-sm" style="width:auto" href="sms:${data.sms.phone}?body=${encodeURIComponent(data.sms.body)}" title="بيفتح تطبيق الرسائل على تليفونك والنص جاهز — تدوس إرسال وخلاص">✉️ رسالة SMS</a>` : ''}
+            ${data.sms ? `<a class="btn btn-ghost btn-sm" style="width:auto" id="profile-sms-btn" href="sms:${data.sms.phone}?body=${encodeURIComponent(data.sms.body)}" title="بيفتح تطبيق الرسائل على تليفونك والنص جاهز — تدوس إرسال وخلاص">✉️ رسالة SMS</a>` : ''}
             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والدرجات</button>
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
@@ -2698,6 +2726,19 @@
         <div class="card" id="student-exams-panel" style="display:none; margin-block:12px">
           <div class="empty-state">جارٍ التحميل...</div>
         </div>
+        ${(data.sms_logs && data.sms_logs.length) ? `
+        <div class="card" style="margin-block:12px">
+          <b style="display:block; margin-bottom:8px">📨 رسايل SMS المُرسلة (${data.sms_logs.length})</b>
+          ${data.sms_logs.map((log) => `
+            <div class="call-log-entry">
+              <div class="row-between">
+                <span class="ticket-muted">${escapeHtml(log.phone)}</span>
+                <span class="ticket-muted">${fmtDate(log.sent_at)}</span>
+              </div>
+              <div style="white-space:pre-wrap">${escapeHtml(log.body)}</div>
+              <div class="ticket-muted">بواسطة: ${escapeHtml(log.sent_by_name || '—')}</div>
+            </div>`).join('')}
+        </div>` : ''}
         <div class="ticket-controls" style="grid-template-columns: repeat(2, 1fr)">
           ${(currentUserRole === 'admin' || canAssignCalls) ? `
             <label>الموظف المسؤول عن الاتصال
@@ -2742,6 +2783,10 @@
       `;
 
       document.getElementById('mobile-call-back').addEventListener('click', closeMobileCallProfile);
+
+      document.getElementById('profile-sms-btn')?.addEventListener('click', () => {
+        recordSmsSend(student.tafra_student_id);
+      });
 
       // الاختبارات بتتحمّل أول مرة يفتح الموظف اللوحة بس، وبعدها الزرار بيطوي ويفتح من غير طلب جديد
       document.getElementById('toggle-student-exams-btn').addEventListener('click', async () => {
