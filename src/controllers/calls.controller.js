@@ -244,20 +244,31 @@ function buildCallStudentFilters(query) {
   if (query.call_outcome && /^\d+$/.test(query.call_outcome)) {
     conditions.push(`last_call.outcome_id = ${add(Number(query.call_outcome))}`);
   }
-  // عدد مرات "لم يرد" في تاريخ الطالب كله — مختلف عن فلتر النتيجة فوق اللي بيشوف آخر مكالمة بس.
-  // الاتنين بيكمّلوا بعض: طالب ماردش مرتين وبعدها رد، نتيجته الأخيرة "تم الرد" لكنه لسه محتاج
-  // متابعة مختلفة عن اللي رد من أول مرة. الشرط على الإجمالي مش المتتالي (كلمة "مرتين" معناها
-  // مرتين في تاريخه). بنجيب المعرّف بالاسم مش برقم ثابت — الاسم فريد ومصفوف في schema.sql
-  // والـ API مافيهاش endpoint لتعديل أو حذف النتايج (إضافة بس)، فالاسم مستقر
-  const NO_ANSWER_COUNT_SQL = `(
-    SELECT COUNT(*) FROM call_logs cl_na
-    JOIN call_outcomes co_na ON co_na.id = cl_na.outcome_id
-    WHERE cl_na.tafra_student_id = s.tafra_student_id AND co_na.name = 'لم يرد'
+  // عدد المحاولات المتتالية اللي "معرفناش نوصله" فيها — يعني آخر كام مكالمة ورا بعض ماوصلناهوش.
+  // "معرفناش نوصله" = 'لم يرد' أو 'الخط مشغول'؛ الاتنين نتيجتهم واحدة عمليًا (مكلمناهوش) فمفيش
+  // معنى نفرّق بينهم في المتابعة. أي نتيجة تانية بتكسر السلسلة، بما فيها 'هيرجع يتصل لاحقًا'
+  // لأننا اتكلمنا معاه فعلًا، و'رقم غير صحيح' لأنها مشكلة مختلفة (الرقم غلط، مش إنه مش بيرد).
+  //
+  // الحساب: بنعدّ محاولات عدم الوصول اللي حصلت **بعد** آخر مكالمة وصلناه فيها فعلًا. لو عمرنا
+  // ما وصلناه، بنعدّ الكل. ده بيطلّع طول السلسلة الأخيرة بالظبط من غير window functions.
+  // مهم: السلسلة لازم تنتهي عند آخر مكالمة — اللي رد في آخر مكالمة سلسلته صفر ومايظهرش في الفلتر.
+  const UNREACHED_NAMES = `('لم يرد', 'الخط مشغول')`;
+  const UNREACHED_STREAK_SQL = `(
+    SELECT COUNT(*) FROM call_logs cl_un
+    JOIN call_outcomes co_un ON co_un.id = cl_un.outcome_id
+    WHERE cl_un.tafra_student_id = s.tafra_student_id
+      AND co_un.name IN ${UNREACHED_NAMES}
+      AND cl_un.called_at > COALESCE((
+        SELECT MAX(cl_ok.called_at) FROM call_logs cl_ok
+        JOIN call_outcomes co_ok ON co_ok.id = cl_ok.outcome_id
+        WHERE cl_ok.tafra_student_id = s.tafra_student_id
+          AND co_ok.name NOT IN ${UNREACHED_NAMES}
+      ), '-infinity'::timestamptz)
   )`;
-  if (query.no_answer_count === '1' || query.no_answer_count === '2') {
-    conditions.push(`${NO_ANSWER_COUNT_SQL} = ${add(Number(query.no_answer_count))}`);
-  } else if (query.no_answer_count === '3plus') {
-    conditions.push(`${NO_ANSWER_COUNT_SQL} >= 3`);
+  if (query.unreached_streak === '1' || query.unreached_streak === '2') {
+    conditions.push(`${UNREACHED_STREAK_SQL} = ${add(Number(query.unreached_streak))}`);
+  } else if (query.unreached_streak === '3plus') {
+    conditions.push(`${UNREACHED_STREAK_SQL} >= 3`);
   }
 
   return {
