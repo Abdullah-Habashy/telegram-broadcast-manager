@@ -57,14 +57,14 @@ Telegram Broadcast Manager هو نظام لإدارة التواصل مع مست
 - استقبال تحديثات Telegram باستخدام Webhook آمن.
 - حماية Webhook باستخدام `X-Telegram-Bot-Api-Secret-Token`.
 - دعم رابط HTTPS عام من خلال `PUBLIC_URL`.
-- إمكانية استخدام Cloudflare Tunnel أثناء التجربة المحلية.
+- الرابط العام ثابت عبر Cloudflare Named Tunnel: `https://support.arabiccoders.com`.
 
 ### متطلبات عمل Webhook
 
-- يجب أن يكون السيرفر قيد التشغيل.
-- يجب أن يكون رابط `PUBLIC_URL` متاحًا عبر HTTPS.
-- روابط `trycloudflare.com` مؤقتة وتتغير عند إعادة تشغيل Tunnel.
-- للاستخدام الفعلي يجب نشر التطبيق على استضافة دائمة أو استخدام Cloudflare Named Tunnel ثابت.
+- يجب أن يكون السيرفر قيد التشغيل على الـ VPS (خدمة `telegram-broadcast-manager`).
+- يجب أن تكون خدمة `cloudflared-tunnel` شغّالة حتى يبقى الدومين متاحًا.
+- `PUBLIC_URL` في `.env` على السيرفر يساوي `https://support.arabiccoders.com` ولا يُغيَّر.
+- الرابط ثابت ولا يتغيّر عند إعادة التشغيل، فلا حاجة لإعادة تسجيل Webhook بعد كل Restart.
 
 ---
 
@@ -606,7 +606,52 @@ chat_id,username,first_name,last_name,phone
 
 ---
 
-## 21. التشغيل المحلي المختصر
+## 21. التشغيل والنشر
+
+### الوضع الحالي: سيرفر أونلاين برابط ثابت
+
+التطبيق منشور ويعمل بشكل دائم على VPS، والرابط العام ثابت:
+
+```text
+https://support.arabiccoders.com
+```
+
+الرابط مربوط بالسيرفر عن طريق Cloudflare Named Tunnel، فلا يحتاج فتح أي منفذ على السيرفر ولا يتغيّر عند إعادة التشغيل.
+
+الخدمات على السيرفر تُدار بواسطة `systemd`:
+
+| الخدمة | الوظيفة |
+|---|---|
+| `telegram-broadcast-manager` | تطبيق Node نفسه (`/root/app`) |
+| `cloudflared-tunnel` | التانل الذي يربط الدومين بالسيرفر |
+| `postgresql` | قاعدة البيانات |
+
+أوامر الإدارة الشائعة:
+
+```bash
+systemctl status telegram-broadcast-manager
+systemctl restart telegram-broadcast-manager
+journalctl -u telegram-broadcast-manager -n 100 --no-pager
+```
+
+### طريقة النشر الحالية
+
+> ⚠️ `/root/app` **ليس** مستودع git. النشر يتم بنسخ الملفات يدويًا من جهاز التطوير إلى السيرفر، ثم إعادة تشغيل الخدمة. لا يوجد `git pull` على السيرفر.
+
+```bash
+# من جهاز التطوير
+scp -i <path-to-key> -r src/ root@<server-ip>:/root/app/
+
+# على السيرفر عند تغيّر dependencies أو schema
+cd /root/app && npm install --omit=dev && npm run migrate
+systemctl restart telegram-broadcast-manager
+```
+
+الخدمة مُعرَّفة في `/etc/systemd/system/telegram-broadcast-manager.service` مع `Restart=always`، وتكتب مخرجاتها بالإلحاق إلى `/root/app/service-out.log` و `service-err.log`.
+
+**نتيجة مهمة:** لأن النشر يدوي، فالنسخة المنشورة قد تسبق ما هو متكوميت في git. تم التحقق في 2026-08-17 أن ملفات السيرفر مطابقة تمامًا لنسخة العمل المحلية غير المتكوميتة، أي أن الإنتاج **يعمل بكود غير محفوظ في git**. التحقق يتم بمقارنة `md5sum` على السيرفر مع `Get-FileHash` محليًا.
+
+### التشغيل المحلي للتطوير فقط
 
 ```powershell
 npm install
@@ -614,43 +659,13 @@ npm run migrate
 npm run dev
 ```
 
-يفتح التطبيق على:
+يفتح التطبيق على `http://localhost:3000`.
 
-```text
-http://localhost:3000
-```
+> **مهم:** التشغيل المحلي للتطوير وقراءة الواجهات فقط. لا تسجّل Webhook من الجهاز المحلي ولا تضع فيه رابطًا عامًا، لأن Telegram يسمح بـ Webhook واحد فقط للبوت — أي تسجيل محلي **يسحب البوت من السيرفر** ويوقف استقبال الرسائل على الموقع الفعلي.
 
-لتشغيل Webhook محلي مؤقت:
+### ملاحظة تاريخية: Cloudflare Quick Tunnel (متوقف)
 
-```powershell
-& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:3000
-```
-
-بعد الحصول على الرابط، يوضع في `.env`:
-
-```env
-PUBLIC_URL=https://example.trycloudflare.com
-```
-
-ثم يعاد تشغيل السيرفر لتسجيل Webhook.
-
-### التشغيل التلقائي عبر Quick Tunnel
-
-يمكن تشغيل الملف التالي بالنقر المزدوج:
-
-```text
-START_QUICK_TUNNEL.bat
-```
-
-يقوم تلقائيًا بإيقاف Quick Tunnel السابق، وإنشاء رابط `trycloudflare.com` جديد، وقراءة الرابط من سجل `cloudflared`، وتحديث `PUBLIC_URL` في `.env`، ثم إعادة تشغيل السيرفر وانتظار المنفذ `3000`. يظهر في النهاية رابط الموظفين الجاهز للمشاركة، وتُحفظ سجلات التشغيل داخل `.runtime`.
-
-بعد نجاح التشغيل يرسل السكربت الرابط الجديد تلقائيًا عبر البوت المفعّل إلى الحسابات المحددة في متغير البيئة:
-
-```env
-TUNNEL_NOTIFY_CHAT_IDS=411966667,792154250
-```
-
-يمكن إضافة أكثر من `chat_id` مع الفصل بينها بفاصلة. فشل إرسال الإشعار إلى حساب لا يوقف السيرفر أو Quick Tunnel.
+كان النظام يعتمد سابقًا على Quick Tunnel يولّد رابط `trycloudflare.com` مؤقتًا عند كل تشغيل، مع سكربت `START_QUICK_TUNNEL.bat` يحدّث `PUBLIC_URL` ويُشعر الحسابات بالرابط الجديد عبر `TUNNEL_NOTIFY_CHAT_IDS`. هذه الطريقة **ألغيت بالكامل** بعد الانتقال إلى السيرفر والرابط الثابت، وحُذفت سكربتاتها من المشروع.
 
 ---
 
@@ -660,7 +675,7 @@ TUNNEL_NOTIFY_CHAT_IDS=411966667,792154250
 
 ### المرحلة الأولى: الاستقرار والأمان
 
-1. نشر التطبيق على استضافة دائمة برابط HTTPS وWebhook ثابت بدل Cloudflare Quick Tunnel.
+1. ~~نشر التطبيق على استضافة دائمة برابط HTTPS وWebhook ثابت بدل Cloudflare Quick Tunnel.~~ **تم** — الآن على VPS برابط ثابت `https://support.arabiccoders.com` (راجع القسم 21).
 2. استخدام Redis وBullMQ أو Queue مماثلة لمعالجة الإرسال الجماعي.
 3. التحكم في سرعة الإرسال واحترام `retry_after` وإعادة المحاولة عند أخطاء Telegram و`429`.
 4. إضافة إيقاف واستكمال الحملات ومنع التعارض بين حملتين متزامنتين.

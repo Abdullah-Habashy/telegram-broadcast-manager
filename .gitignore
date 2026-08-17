@@ -1,5 +1,10 @@
 node_modules/
 .env
+# أي نسخة احتياطية أو محلية من .env — فيها نفس الأسرار (.env.example وحده مسموح ومتتبَّع)
+.env.bak*
+.env.backup*
+.env.local
+.env.*.local
 *.log
 npm-debug.log*
 .DS_Store
