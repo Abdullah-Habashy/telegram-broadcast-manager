@@ -415,6 +415,11 @@
             <option value="none">لسه متعملهاش مكالمة</option>
             <option value="called">تم الاتصال بهم</option>
           </select>
+          <!-- بره بلوك صلاحيات الإسناد عن قصد — الموظف محتاج يفلتر قايمته بنتيجة آخر مكالمة زي الأدمن.
+               الخيارات بتتملى من جدول call_outcomes في loadCallOutcomes() مش مكتوبة هنا -->
+          <select id="calls-outcome-filter" class="compact-select" title="نتيجة آخر مكالمة اتسجّلت للطالب">
+            <option value="">كل نتائج المكالمات</option>
+          </select>
           <button type="button" class="btn btn-ghost" id="clear-calls-filters">مسح الفلاتر</button>
           <button type="button" class="btn btn-ghost btn-sm" id="refresh-calls-btn">تحديث</button>
         </div>
@@ -2384,6 +2389,7 @@
       status: 'calls-status-filter', bootcamp: 'calls-bootcamp-filter',
       exam: 'calls-exam-filter', idea_number: 'calls-idea-filter',
       enrolled_from: 'calls-enrolled-from', enrolled_to: 'calls-enrolled-to',
+      call_outcome: 'calls-outcome-filter',
     };
 
     function callsQuery() {
@@ -2508,6 +2514,18 @@
 
     async function loadCallOutcomes() {
       callOutcomes = await api('/api/calls/outcomes');
+    }
+
+    // بيتنادى من initCalls بعد ما النتايج تتحمّل — منفصل عن loadCallOutcomes عشان التعبئة تحصل
+    // في كل مرة الشاشة تتفتح حتى لو النتايج كانت متحمّلة قبل كده من بروفايل طالب
+    function populateCallOutcomeFilter() {
+      const select = document.getElementById('calls-outcome-filter');
+      const previous = select.value;
+      select.innerHTML = '<option value="">كل نتائج المكالمات</option>' +
+        callOutcomes.map((outcome) =>
+          `<option value="${outcome.id}">${escapeHtml(outcome.name)}</option>`).join('');
+      // بنرجّع اللي كان مختار (لو لسه موجود) عشان تحديث الشاشة ما يصفّرش فلتر الموظف من تحت إيده
+      if (previous && select.querySelector(`option[value="${previous}"]`)) select.value = previous;
     }
 
     async function loadCallAssignees() {
@@ -2736,9 +2754,10 @@
       try {
         await loadTafraStudentFilters();
         if (!callOutcomes.length) await loadCallOutcomes();
+        populateCallOutcomeFilter();
         // بنجيب قائمة الموظفين من جديد في كل مرة (مش بس أول مرة) عشان أي موظف اتضاف حديثًا يظهر فورًا
         if (currentUserRole === 'admin' || canAssignCalls) await loadCallAssignees();
-        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter']);
+        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter']);
         callsPage = 1;
         await loadCalls();
       } catch (error) { showToast(error.message); }
@@ -2750,7 +2769,7 @@
     });
     ['calls-level-filter', 'calls-education-type-filter', 'calls-gender-filter', 'calls-telegram-filter', 'calls-conversation-filter', 'calls-status-filter',
       'calls-bootcamp-filter', 'calls-exam-filter', 'calls-exam-attendance-filter', 'calls-exam-mark-range-filter',
-      'calls-idea-filter', 'calls-follow-up-filter'].forEach((id) => {
+      'calls-idea-filter', 'calls-follow-up-filter', 'calls-outcome-filter'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => { callsPage = 1; loadCalls(); });
     });
     ['calls-enrolled-from', 'calls-enrolled-to'].forEach((id) => {

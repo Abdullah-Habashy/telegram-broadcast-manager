@@ -237,6 +237,13 @@ function buildCallStudentFilters(query) {
       SELECT 1 FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id AND cl.called_by = ${add(Number(query.called_by))}
     )`);
   }
+  // نتيجة **آخر** مكالمة (مش أي مكالمة في التاريخ) — عشان يطابق عمود النتيجة الظاهر في القائمة نفسه.
+  // طالب اتصلنا بيه تلات مرات وما ردش وفي الرابعة رد، حالته الحالية "تم الرد" ومش منطقي يطلع في
+  // فلتر "لم يرد". بيعتمد على last_call اللاتيرال الموجودة في CALL_ASSIGNMENT_JOIN_SQL، وهي متضمّنة
+  // في كل الاستعلامات اللي بتستخدم الباني ده. الفلترة بالـ id مش بالاسم عشان تفضل صح لو الاسم اتعدّل
+  if (query.call_outcome && /^\d+$/.test(query.call_outcome)) {
+    conditions.push(`last_call.outcome_id = ${add(Number(query.call_outcome))}`);
+  }
 
   return {
     where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -259,7 +266,7 @@ const CALL_ASSIGNMENT_JOIN_SQL = `
   LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
   LEFT JOIN users au ON au.id = sca.assigned_to
   LEFT JOIN LATERAL (
-    SELECT co.name AS outcome_name, cl.called_at, cl.next_follow_up_at
+    SELECT co.name AS outcome_name, cl.outcome_id, cl.called_at, cl.next_follow_up_at
     FROM call_logs cl
     LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
     WHERE cl.tafra_student_id = s.tafra_student_id
