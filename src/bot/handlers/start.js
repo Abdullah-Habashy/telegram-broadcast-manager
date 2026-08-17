@@ -1,6 +1,7 @@
 const pool = require('../../config/db');
 const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
 const { notifyEmployeesOfIncomingMessage } = require('./message');
+const { sendOutsideHoursAck } = require('../outsideHoursAck');
 
 // عند /start: تسجيل تلقائي لجهة الاتصال (أو تحديث بياناتها لو كانت مسجّلة قبل كده). "أول مرة
 // مطلقًا" بيتحدد بوجود تذكرة من عدمه (مش بوجود صف جهة الاتصال) — لأن طلاب منصة طفرة عندهم صف
@@ -78,6 +79,19 @@ module.exports = function registerStartHandler(bot) {
       if (!isNewTicket) {
         await ctx.reply('أهلاً بيك تاني! ✅');
         return;
+      }
+
+      // لو دخل خارج مواعيد العمل، رسالة الترحيب هتستنى لبكرة — فبنطمّنه دلوقتي إنه اتسجّل
+      // وبنقوله هيتواصلوا معاه امتى، بدل ما يقعد من غير أي رد
+      if (welcomeEnabled) {
+        try {
+          await sendOutsideHoursAck(ctx, {
+            ticketId,
+            contact: { first_name, telegram_username: username },
+          });
+        } catch (ackError) {
+          console.error('❌ Failed to send the outside-hours acknowledgement on /start:', ackError.message);
+        }
       }
 
       if (!welcomeEnabled) {

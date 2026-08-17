@@ -1099,6 +1099,16 @@
             <span>تفعيل رسالة الترحيب</span>
           </label>
           <div class="field"><label>نص الترحيب</label><textarea id="welcome-message-text" maxlength="4096"></textarea></div>
+
+          <hr style="border:0; border-top:1px solid var(--border); margin:18px 0">
+          <h3 style="margin:0 0 6px; font-size:15px">رد فوري لو دخل خارج مواعيد العمل</h3>
+          <p class="card-desc">رسالة الترحيب فوق بتستنى وقت العمل، فالطالب اللي يدخل بالليل مايوصلهوش أي رد لحد الصبح. الرد ده بيتبعت له فورًا يطمّنه إنه اتسجّل ويقوله هيتم التواصل معاه امتى. استخدم <b>{when}</b> فتُستبدل بأول موعد فتح جاي (مثلاً «بكرة الساعة 9:00 صباحًا»)، وكلمة "الاسم" فتُستبدل باسم الطالب. مايتبعتش لو الطالب دخل جوه مواعيد العمل، لأن الترحيب نفسه بيوصله خلال دقيقتين.</p>
+          <label class="row" style="gap:8px; margin-bottom:14px; cursor:pointer">
+            <input type="checkbox" id="outside-hours-ack-enabled" style="width:auto" />
+            <span>تفعيل الرد الفوري خارج مواعيد العمل</span>
+          </label>
+          <div class="field"><label>نص الرد الفوري</label><textarea id="outside-hours-ack-text" maxlength="4096"></textarea></div>
+
           <button class="btn btn-primary" id="save-welcome-message-btn" style="width:auto; padding-inline:24px">حفظ</button>
         </div>
         </div>
@@ -4805,6 +4815,8 @@
         document.getElementById('auto-reply-message').value = s.auto_reply_message || '';
         document.getElementById('welcome-message-enabled').checked = s.welcome_message_enabled === 'true';
         document.getElementById('welcome-message-text').value = s.welcome_message_text || '';
+        document.getElementById('outside-hours-ack-enabled').checked = s.outside_hours_ack_enabled === 'true';
+        document.getElementById('outside-hours-ack-text').value = s.outside_hours_ack_text || '';
         document.getElementById('working-hours-enabled').checked = s.working_hours_enabled === 'true';
         document.getElementById('working-hours-start').value = s.working_hours_start || '09:00';
         document.getElementById('working-hours-end').value = s.working_hours_end || '22:00';
@@ -5273,10 +5285,14 @@
     document.getElementById('save-welcome-message-btn').addEventListener('click', async () => {
       const enabled = document.getElementById('welcome-message-enabled').checked;
       const message = document.getElementById('welcome-message-text').value.trim();
+      const ackEnabled = document.getElementById('outside-hours-ack-enabled').checked;
+      const ackMessage = document.getElementById('outside-hours-ack-text').value.trim();
       if (enabled && !message) return showToast('اكتب نص رسالة الترحيب قبل التفعيل');
+      if (ackEnabled && !ackMessage) return showToast('اكتب نص الرد الفوري خارج مواعيد العمل قبل التفعيل');
       try {
         await api('/api/settings/welcome-message', {
-          method: 'POST', body: JSON.stringify({ enabled, message })
+          method: 'POST',
+          body: JSON.stringify({ enabled, message, ack_enabled: ackEnabled, ack_message: ackMessage })
         });
         showToast('تم حفظ رسالة الترحيب');
         loadSettings();

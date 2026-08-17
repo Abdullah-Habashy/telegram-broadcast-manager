@@ -188,7 +188,17 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
     // ورسالة الترحيب مفعّلة، بلاش رد تاني هنا عشان الطالب مايستقبلش رسالتين مع بعض — رسالة
     // الترحيب هي اللي هتوصله من welcomeMessageSender.js
     if (isNewTicket && welcomeEnabled) {
-      // متعمّد نسيبه فاضي — رسالة الترحيب كافية
+      // رسالة الترحيب هي اللي هتوصله، فمفيش رد عادي هنا. بس لو دخل خارج مواعيد العمل فالترحيب
+      // هيستنى لبكرة، وساعتها بنبعتله إشعار انتظار يقوله اتسجّل وهيتواصلوا معاه امتى
+      try {
+        const { sendOutsideHoursAck } = require('../outsideHoursAck');
+        await sendOutsideHoursAck(ctx, {
+          ticketId: ticketRow.id,
+          contact: { first_name: ctx.from?.first_name, telegram_username: ctx.from?.username },
+        });
+      } catch (ackError) {
+        console.error('❌ Failed to send the outside-hours acknowledgement on first message:', ackError.message);
+      }
     } else if (isOutsideWorkingHours(settings) && settings.outside_hours_reply_message) {
       try {
         const message = settings.outside_hours_reply_message

@@ -156,22 +156,31 @@ async function updateFollowUpAutomation(req, res) {
   }
 }
 
+// بيحفظ رسالة الترحيب والرد الفوري خارج مواعيد العمل مع بعض — الاتنين جزء من نفس التدفق
+// (أول ارتباط بالبوت)، والرد الفوري مالوش معنى من غير رسالة ترحيب مفعّلة بتستنى وقت العمل
 async function updateWelcomeMessage(req, res) {
-  const { enabled, message } = req.body;
+  const { enabled, message, ack_enabled: ackEnabled, ack_message: ackMessage } = req.body;
   const normalizedMessage = String(message || '').trim();
+  const normalizedAck = String(ackMessage || '').trim();
   if (Boolean(enabled) && !normalizedMessage) {
     return res.status(400).json({ error: 'اكتب نص رسالة الترحيب قبل التفعيل' });
   }
   if (normalizedMessage.length > 4096) {
     return res.status(400).json({ error: 'رسالة الترحيب أطول من الحد المسموح' });
   }
+  if (Boolean(ackEnabled) && !normalizedAck) {
+    return res.status(400).json({ error: 'اكتب نص الرد الفوري خارج مواعيد العمل قبل التفعيل' });
+  }
+  if (normalizedAck.length > 4096) {
+    return res.status(400).json({ error: 'الرد الفوري خارج مواعيد العمل أطول من الحد المسموح' });
+  }
   try {
     await pool.query(
-      `UPDATE settings SET value = CASE key
-        WHEN 'welcome_message_enabled' THEN $1
-        WHEN 'welcome_message_text' THEN $2
-       END WHERE key IN ('welcome_message_enabled', 'welcome_message_text')`,
-      [String(Boolean(enabled)), normalizedMessage]
+      `INSERT INTO settings (key, value) VALUES
+        ('welcome_message_enabled', $1), ('welcome_message_text', $2),
+        ('outside_hours_ack_enabled', $3), ('outside_hours_ack_text', $4)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [String(Boolean(enabled)), normalizedMessage, String(Boolean(ackEnabled)), normalizedAck]
     );
     res.json({ ok: true });
   } catch (err) {
