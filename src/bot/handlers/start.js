@@ -81,20 +81,22 @@ module.exports = function registerStartHandler(bot) {
         return;
       }
 
-      // لو دخل خارج مواعيد العمل، رسالة الترحيب هتستنى لبكرة — فبنطمّنه دلوقتي إنه اتسجّل
-      // وبنقوله هيتواصلوا معاه امتى، بدل ما يقعد من غير أي رد
-      if (welcomeEnabled) {
-        try {
-          await sendOutsideHoursAck(ctx, {
-            ticketId,
-            contact: { first_name, telegram_username: username },
-          });
-        } catch (ackError) {
-          console.error('❌ Failed to send the outside-hours acknowledgement on /start:', ackError.message);
-        }
+      // رد "خارج مواعيد العمل" مستقل تمامًا عن رسالة الترحيب — كل واحد له مفتاح تفعيل ونص لوحده،
+      // فينفع تشغّل أي واحد فيهم بدون التاني. الدالة نفسها هي اللي بتقرر: بترجع false لو مقفول
+      // أو لو دلوقتي جوه مواعيد العمل، و true لو بعتت فعلاً
+      let ackSent = false;
+      try {
+        ackSent = await sendOutsideHoursAck(ctx, {
+          ticketId,
+          contact: { first_name, telegram_username: username },
+        });
+      } catch (ackError) {
+        console.error('❌ Failed to send the outside-hours acknowledgement on /start:', ackError.message);
       }
 
-      if (!welcomeEnabled) {
+      // الرد البسيط القديم بيشتغل بس لو مفيش أي رد تاني وصل للطالب: لا ترحيب مفعّل (وقتها الترحيب
+      // هو اللي هيوصله) ولا رد خارج المواعيد اتبعت (وقتها الطالب استلم رسالة أوضح منه أصلاً)
+      if (!welcomeEnabled && !ackSent) {
         // السلوك القديم — رد فوري بسيط لحد ما حد يفعّل رسالة الترحيب الموحدة من الإعدادات
         const messageText = 'أهلاً بيك! ✅ تم تسجيلك بنجاح.';
         const telegramMessage = await ctx.reply(messageText);

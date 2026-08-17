@@ -187,18 +187,25 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
     // خارج مواعيد العمل بيطغى على الرد العادي — رسالة واحدة بس في كل مرة. لو التذكرة دي جديدة
     // ورسالة الترحيب مفعّلة، بلاش رد تاني هنا عشان الطالب مايستقبلش رسالتين مع بعض — رسالة
     // الترحيب هي اللي هتوصله من welcomeMessageSender.js
-    if (isNewTicket && welcomeEnabled) {
-      // رسالة الترحيب هي اللي هتوصله، فمفيش رد عادي هنا. بس لو دخل خارج مواعيد العمل فالترحيب
-      // هيستنى لبكرة، وساعتها بنبعتله إشعار انتظار يقوله اتسجّل وهيتواصلوا معاه امتى
+    // رد "خارج مواعيد العمل" مستقل عن رسالة الترحيب وله مفتاح تفعيل لوحده، فبنجرّبه لأي تذكرة
+    // جديدة بغض النظر عن حالة الترحيب. بيرجع false لو مقفول أو لو دلوقتي جوه مواعيد العمل
+    let ackSent = false;
+    if (isNewTicket) {
       try {
         const { sendOutsideHoursAck } = require('../outsideHoursAck');
-        await sendOutsideHoursAck(ctx, {
+        ackSent = await sendOutsideHoursAck(ctx, {
           ticketId: ticketRow.id,
           contact: { first_name: ctx.from?.first_name, telegram_username: ctx.from?.username },
         });
       } catch (ackError) {
         console.error('❌ Failed to send the outside-hours acknowledgement on first message:', ackError.message);
       }
+    }
+
+    if (ackSent) {
+      // الطالب استلم رد خارج المواعيد — أي رد إضافي هيبقى رسالتين ورا بعض
+    } else if (isNewTicket && welcomeEnabled) {
+      // رسالة الترحيب هي اللي هتوصله، فمفيش رد عادي هنا
     } else if (isOutsideWorkingHours(settings) && settings.outside_hours_reply_message) {
       try {
         const message = settings.outside_hours_reply_message
