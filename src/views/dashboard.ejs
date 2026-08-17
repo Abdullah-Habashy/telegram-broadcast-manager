@@ -420,6 +420,13 @@
           <select id="calls-outcome-filter" class="compact-select" title="نتيجة آخر مكالمة اتسجّلت للطالب">
             <option value="">كل نتائج المكالمات</option>
           </select>
+          <!-- بيعدّ مرات "لم يرد" في تاريخ الطالب كله — مكمّل لفلتر النتيجة اللي فوق (بيشوف الأخيرة بس) -->
+          <select id="calls-no-answer-filter" class="compact-select" title="عدد مرات عدم الرد في تاريخ الطالب كله">
+            <option value="">كل مرات عدم الرد</option>
+            <option value="1">لم يرد مرة واحدة</option>
+            <option value="2">لم يرد مرتين</option>
+            <option value="3plus">لم يرد ٣ مرات أو أكثر</option>
+          </select>
           <button type="button" class="btn btn-ghost" id="clear-calls-filters">مسح الفلاتر</button>
           <button type="button" class="btn btn-ghost btn-sm" id="refresh-calls-btn">تحديث</button>
         </div>
@@ -2389,7 +2396,7 @@
       status: 'calls-status-filter', bootcamp: 'calls-bootcamp-filter',
       exam: 'calls-exam-filter', idea_number: 'calls-idea-filter',
       enrolled_from: 'calls-enrolled-from', enrolled_to: 'calls-enrolled-to',
-      call_outcome: 'calls-outcome-filter',
+      call_outcome: 'calls-outcome-filter', no_answer_count: 'calls-no-answer-filter',
     };
 
     function callsQuery() {
@@ -2757,7 +2764,7 @@
         populateCallOutcomeFilter();
         // بنجيب قائمة الموظفين من جديد في كل مرة (مش بس أول مرة) عشان أي موظف اتضاف حديثًا يظهر فورًا
         if (currentUserRole === 'admin' || canAssignCalls) await loadCallAssignees();
-        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter']);
+        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter','calls-no-answer-filter']);
         callsPage = 1;
         await loadCalls();
       } catch (error) { showToast(error.message); }
@@ -2769,7 +2776,7 @@
     });
     ['calls-level-filter', 'calls-education-type-filter', 'calls-gender-filter', 'calls-telegram-filter', 'calls-conversation-filter', 'calls-status-filter',
       'calls-bootcamp-filter', 'calls-exam-filter', 'calls-exam-attendance-filter', 'calls-exam-mark-range-filter',
-      'calls-idea-filter', 'calls-follow-up-filter', 'calls-outcome-filter'].forEach((id) => {
+      'calls-idea-filter', 'calls-follow-up-filter', 'calls-outcome-filter', 'calls-no-answer-filter'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => { callsPage = 1; loadCalls(); });
     });
     ['calls-enrolled-from', 'calls-enrolled-to'].forEach((id) => {

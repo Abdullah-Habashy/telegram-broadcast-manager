@@ -244,6 +244,21 @@ function buildCallStudentFilters(query) {
   if (query.call_outcome && /^\d+$/.test(query.call_outcome)) {
     conditions.push(`last_call.outcome_id = ${add(Number(query.call_outcome))}`);
   }
+  // عدد مرات "لم يرد" في تاريخ الطالب كله — مختلف عن فلتر النتيجة فوق اللي بيشوف آخر مكالمة بس.
+  // الاتنين بيكمّلوا بعض: طالب ماردش مرتين وبعدها رد، نتيجته الأخيرة "تم الرد" لكنه لسه محتاج
+  // متابعة مختلفة عن اللي رد من أول مرة. الشرط على الإجمالي مش المتتالي (كلمة "مرتين" معناها
+  // مرتين في تاريخه). بنجيب المعرّف بالاسم مش برقم ثابت — الاسم فريد ومصفوف في schema.sql
+  // والـ API مافيهاش endpoint لتعديل أو حذف النتايج (إضافة بس)، فالاسم مستقر
+  const NO_ANSWER_COUNT_SQL = `(
+    SELECT COUNT(*) FROM call_logs cl_na
+    JOIN call_outcomes co_na ON co_na.id = cl_na.outcome_id
+    WHERE cl_na.tafra_student_id = s.tafra_student_id AND co_na.name = 'لم يرد'
+  )`;
+  if (query.no_answer_count === '1' || query.no_answer_count === '2') {
+    conditions.push(`${NO_ANSWER_COUNT_SQL} = ${add(Number(query.no_answer_count))}`);
+  } else if (query.no_answer_count === '3plus') {
+    conditions.push(`${NO_ANSWER_COUNT_SQL} >= 3`);
+  }
 
   return {
     where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
