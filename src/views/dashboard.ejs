@@ -1092,6 +1092,19 @@
         </div>
 
         <div class="card">
+          <h2>رسالة SMS للطالب اللي مردّش</h2>
+          <p class="card-desc">بتظهر كزرار <b>«✉️ رسالة SMS»</b> في بروفايل الطالب داخل المتابعة التليفونية، جنب زرار الاتصال. الموظف يدوس فيفتح تطبيق الرسائل على تليفونه ورقم الطالب والنص جاهزين — يدوس إرسال وخلاص.<br>
+          بتتبعت من <b>رقم الموظف نفسه</b>، فالطالب يقدر يرد عليها عادي، ومفيش أي تكلفة على النظام. الزرار مايظهرش لو الطالب مالوش رقم صالح.<br>
+          استخدم كلمة "الاسم" فتُستبدل بالاسم الأول للطالب. خلي بالك إن الرسالة العربية بتتقسّم كل 153 حرف، فكل ما تطول بتتكلّف أكتر على الموظف.</p>
+          <label class="row" style="gap:8px; margin-bottom:14px; cursor:pointer">
+            <input type="checkbox" id="sms-template-enabled" style="width:auto" />
+            <span>تفعيل زرار رسالة SMS</span>
+          </label>
+          <div class="field"><label>نص الرسالة</label><textarea id="sms-template-text" maxlength="918"></textarea></div>
+          <button class="btn btn-primary" id="save-sms-template-btn" style="width:auto; padding-inline:24px">حفظ</button>
+        </div>
+
+        <div class="card">
           <h2>رسالة الترحيب عند أول ارتباط بالبوت</h2>
           <p class="card-desc">تُرسل مرة واحدة بس لكل طالب، أول ما يضغط Start لأول مرة مطلقًا — وبتُنشئ له تذكرة في صندوق الدعم فورًا وتُسندها لأحد الموظفين بالتبادل. استخدم كلمة "الاسم" فتُستبدل باسم الطالب، وكلمة "الموظف" فتُستبدل باسم الموظف المُسند له تلقائيًا.<br>
           فيه <b>رسالتين مستقلتين</b> هنا: دي للطالب اللي يدخل <b>جوه</b> مواعيد العمل، واللي تحتها للي يدخل <b>خارجها</b>. كل واحدة بمفتاح ونص لوحدها.</p>
@@ -2674,6 +2687,10 @@
           </div>
           <div class="row" style="gap:8px">
             ${student.phone ? `<a class="btn btn-primary btn-sm" style="width:auto" href="tel:${escapeHtml(student.phone)}">📞 اتصال</a>` : ''}
+            <!-- الرقم بيتحط زي ما هو من غير encodeURIComponent عن قصد: الـ + حرف صالح في sms:
+                 حسب RFC 5724، وبعض تطبيقات الرسائل مابتفكّش %2B فبتحاول تبعت لرقم غلط. الرقم
+                 خارج من toEgyptianMobileE164 فمضمون إنه + وكود مصر و10 أرقام بس -->
+            ${data.sms ? `<a class="btn btn-ghost btn-sm" style="width:auto" href="sms:${data.sms.phone}?body=${encodeURIComponent(data.sms.body)}" title="بيفتح تطبيق الرسائل على تليفونك والنص جاهز — تدوس إرسال وخلاص">✉️ رسالة SMS</a>` : ''}
             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والدرجات</button>
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
@@ -4822,6 +4839,8 @@
         document.getElementById('welcome-message-text').value = s.welcome_message_text || '';
         document.getElementById('outside-hours-ack-enabled').checked = s.outside_hours_ack_enabled === 'true';
         document.getElementById('outside-hours-ack-text').value = s.outside_hours_ack_text || '';
+        document.getElementById('sms-template-enabled').checked = s.sms_template_enabled === 'true';
+        document.getElementById('sms-template-text').value = s.sms_template_text || '';
         document.getElementById('working-hours-enabled').checked = s.working_hours_enabled === 'true';
         document.getElementById('working-hours-start').value = s.working_hours_start || '09:00';
         document.getElementById('working-hours-end').value = s.working_hours_end || '22:00';
@@ -5300,6 +5319,19 @@
           body: JSON.stringify({ enabled, message, ack_enabled: ackEnabled, ack_message: ackMessage })
         });
         showToast('تم حفظ رسالة الترحيب');
+        loadSettings();
+      } catch (error) { showToast(error.message); }
+    });
+
+    document.getElementById('save-sms-template-btn').addEventListener('click', async () => {
+      const enabled = document.getElementById('sms-template-enabled').checked;
+      const message = document.getElementById('sms-template-text').value.trim();
+      if (enabled && !message) return showToast('اكتب نص رسالة SMS قبل التفعيل');
+      try {
+        await api('/api/settings/sms-template', {
+          method: 'POST', body: JSON.stringify({ enabled, message })
+        });
+        showToast('تم حفظ نص الـ SMS');
         loadSettings();
       } catch (error) { showToast(error.message); }
     });

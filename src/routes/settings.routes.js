@@ -15,6 +15,7 @@ router.post('/working-hours', settingsController.updateWorkingHours);
 router.post('/forwarding', settingsController.updateForwarding);
 router.post('/follow-up-automation', settingsController.updateFollowUpAutomation);
 router.post('/welcome-message', settingsController.updateWelcomeMessage);
+router.post('/sms-template', settingsController.updateSmsTemplate);
 router.post('/agent-introduction', settingsController.updateAgentIntroduction);
 router.post('/idea-settings', settingsController.updateMaxIdeaNumber);
 router.post('/tafra-auto-sync', settingsController.updateTafraAutoSyncInterval);

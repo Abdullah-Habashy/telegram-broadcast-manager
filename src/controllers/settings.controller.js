@@ -189,6 +189,30 @@ async function updateWelcomeMessage(req, res) {
   }
 }
 
+// قالب الـ SMS اللي الموظف يبعته للطالب اللي مردّش. الحد 918 حرف = 6 رسايل SMS بالعربي
+// (الترميز اليوناني 153 حرف للرسالة في الرسايل المتصلة) — أطول من كده بيبقى غالي ومش مقروء
+async function updateSmsTemplate(req, res) {
+  const { enabled, message } = req.body;
+  const normalizedMessage = String(message || '').trim();
+  if (Boolean(enabled) && !normalizedMessage) {
+    return res.status(400).json({ error: 'اكتب نص رسالة SMS قبل التفعيل' });
+  }
+  if (normalizedMessage.length > 918) {
+    return res.status(400).json({ error: 'نص الـ SMS أطول من الحد المسموح (918 حرف)' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ('sms_template_enabled', $1), ('sms_template_text', $2)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [String(Boolean(enabled)), normalizedMessage]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('❌ Failed to update the SMS template:', err.message);
+    res.status(500).json({ error: 'حصل خطأ في حفظ نص الـ SMS' });
+  }
+}
+
 async function updateAgentIntroduction(req, res) {
   const { enabled, message } = req.body;
   const normalizedMessage = String(message || '').trim();
@@ -319,6 +343,7 @@ module.exports = {
   updateForwarding,
   updateFollowUpAutomation,
   updateWelcomeMessage,
+  updateSmsTemplate,
   updateAgentIntroduction,
   createBotProfile,
   activateBotProfile,

@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
 const { buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL } = require('./tafra.controller');
+const { toEgyptianMobileE164 } = require('../utils/phone');
+const { getFirstName } = require('../utils/messagePersonalization');
 
 // ---------- نتائج المكالمات ----------
 async function listOutcomes(req, res) {
@@ -435,7 +437,25 @@ async function getStudentProfile(req, res) {
       [studentId]
     );
 
-    res.json({ student, calls: logsResult.rows });
+    // الـ SMS بتتحسب هنا وترجع جاهزة مع البروفايل، مش في الواجهة — لأن /api/settings محجوز
+    // للأدمن والموظف مش بيقدر يقراه، وكمان عشان الاستبدال يفضل في مكان واحد زي باقي الرسايل
+    const smsResult = await pool.query(
+      "SELECT key, value FROM settings WHERE key IN ('sms_template_enabled', 'sms_template_text')"
+    );
+    const smsSettings = Object.fromEntries(smsResult.rows.map((row) => [row.key, row.value]));
+    const smsPhone = toEgyptianMobileE164(student.phone);
+    const sms = (smsSettings.sms_template_enabled === 'true' && smsSettings.sms_template_text && smsPhone)
+      ? {
+          phone: smsPhone,
+          body: smsSettings.sms_template_text.replaceAll('الاسم', getFirstName({
+            tafra_name: student.name,
+            first_name: student.name,
+            telegram_username: student.telegram_username,
+          })),
+        }
+      : null;
+
+    res.json({ student, calls: logsResult.rows, sms });
   } catch (error) {
     console.error('❌ Failed to load call student profile:', error.message);
     res.status(500).json({ error: 'تعذر تحميل بيانات الطالب' });
