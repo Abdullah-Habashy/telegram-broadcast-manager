@@ -437,8 +437,80 @@ async function getStudentProfile(req, res) {
 
     res.json({ student, calls: logsResult.rows });
   } catch (error) {
-    console.error('❌ Failed to load student call profile:', error.message);
-    res.status(500).json({ error: 'تعذر تحميل بروفايل الطالب' });
+    console.error('❌ Failed to load call student profile:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل بيانات الطالب' });
+  }
+}
+
+// ---------- اختبارات الطالب ودرجاته ----------
+// بيتحمّل عند الطلب (لما الموظف يضغط الزرار) مش مع البروفايل، عشان فتح كل طالب مايجيبش
+// عشرات الصفوف من غير حاجة. أهم حاجة هنا مش الدرجات اللي أخدها — دي ظاهرة على المنصة أصلًا —
+// لكن **الاختبارات المتاحة اللي لسه ماخدهاش**، لأن دي بالظبط سبب المكالمة
+async function getStudentExams(req, res) {
+  const studentId = Number(req.params.id);
+  if (!Number.isInteger(studentId)) return res.status(400).json({ error: 'الطالب غير صالح' });
+
+  try {
+    // نفس فحص الصلاحية بتاع البروفايل — الموظف يشوف الطلاب المسندين له بس
+    const accessResult = await pool.query(
+      `SELECT sca.assigned_to FROM tafra_students s
+       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+       WHERE s.tafra_student_id = $1`,
+      [studentId]
+    );
+    if (!accessResult.rows[0]) return res.status(404).json({ error: 'الطالب غير موجود' });
+    if (req.session.userRole !== 'admin' && Number(accessResult.rows[0].assigned_to) !== Number(req.session.userId)) {
+      return res.status(403).json({ error: 'الطالب ده مش مسند لك' });
+    }
+
+    // time_taken_seconds مش عمود مستقل — بييجي من المنصة جوه raw_data، وبيتعرض للمكتمل بس:
+    // للاختبارات غير المكتملة المنصة بتحسبه "الوقت المنقضي من البداية" فبيفضل يزيد للأبد (لقينا
+    // قيم لحد 342 يوم)، وكل الصفوف غير المكتملة end_at بتاعها فاضي. أما المكتملة فأقصى قيمة فيها
+    // 75 دقيقة ومنطقية تمامًا. وبنعمل cast لـ numeric مش int لأن القيمة بتيجي عشرية أحيانًا
+    const takenResult = await pool.query(
+      `SELECT e.name, e.bootcamp_name, e.exam_type, e.is_available,
+         m.mark, m.percentage, m.finished, m.attempt_number, m.taken_at,
+         CASE WHEN m.finished
+           THEN FLOOR(NULLIF(m.raw_data ->> 'time_taken_seconds', '')::numeric)::int
+         END AS time_taken_seconds
+       FROM tafra_exam_marks m
+       JOIN tafra_exams e ON e.exam_type = m.exam_type AND e.tafra_exam_id = m.tafra_exam_id
+       WHERE m.tafra_student_id = $1
+       ORDER BY m.taken_at DESC NULLS LAST, e.name`,
+      [studentId]
+    );
+
+    // الاختبارات المتاحة حاليًا ومفيش لها درجة للطالب ده
+    const missedResult = await pool.query(
+      `SELECT e.name, e.bootcamp_name, e.exam_type
+       FROM tafra_exams e
+       WHERE e.is_available
+         AND NOT EXISTS (
+           SELECT 1 FROM tafra_exam_marks m
+           WHERE m.exam_type = e.exam_type AND m.tafra_exam_id = e.tafra_exam_id
+             AND m.tafra_student_id = $1
+         )
+       ORDER BY e.name`,
+      [studentId]
+    );
+
+    const taken = takenResult.rows;
+    const scored = taken.filter((row) => row.percentage !== null);
+    res.json({
+      taken,
+      missed: missedResult.rows,
+      summary: {
+        taken_count: taken.length,
+        finished_count: taken.filter((row) => row.finished).length,
+        missed_count: missedResult.rows.length,
+        average_percentage: scored.length
+          ? Math.round((scored.reduce((sum, row) => sum + Number(row.percentage), 0) / scored.length) * 10) / 10
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Failed to load student exams:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل اختبارات الطالب' });
   }
 }
 
@@ -645,6 +717,7 @@ module.exports = {
   getAssignmentLog,
   listMyStudents,
   getStudentProfile,
+  getStudentExams,
   logCall,
   editCallLog,
   updateStudentGrade,

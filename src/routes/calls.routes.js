@@ -21,6 +21,7 @@ router.get('/auto-assign-log', requireAdminApi, callsController.getAutoAssignLog
 
 router.get('/my-list', callsController.listMyStudents);
 router.get('/student/:id', callsController.getStudentProfile);
+router.get('/student/:id/exams', callsController.getStudentExams);
 router.post('/student/:id/log', callsController.logCall);
 router.patch('/logs/:logId', callsController.editCallLog);
 router.patch('/student/:id/grade', callsController.updateStudentGrade);

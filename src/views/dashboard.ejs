@@ -2575,6 +2575,66 @@
       }
     }
 
+    // ثواني -> "٥ د ٢٠ ث" — الوقت اللي الطالب استغرقه في الاختبار بييجي بالثواني من المنصة
+    function fmtExamDuration(seconds) {
+      if (!seconds && seconds !== 0) return '—';
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return mins ? `${mins} د${secs ? ` ${secs} ث` : ''}` : `${secs} ث`;
+    }
+
+    function examPercentBadge(percentage) {
+      if (percentage === null || percentage === undefined) return '<span class="badge badge-muted">بدون درجة</span>';
+      const value = Number(percentage);
+      const tone = value >= 75 ? 'badge-success' : value >= 50 ? 'badge-warning' : 'badge-danger';
+      return `<span class="badge ${tone}">${Math.round(value * 10) / 10}%</span>`;
+    }
+
+    function renderStudentExams(data) {
+      const { taken, missed, summary } = data;
+      const summaryRow = `
+        <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px">
+          <span class="badge badge-muted">اختبارات مأخوذة: ${summary.taken_count}</span>
+          <span class="badge badge-muted">مكتملة: ${summary.finished_count}</span>
+          ${summary.average_percentage !== null ? `<span class="badge badge-muted">المتوسط: ${summary.average_percentage}%</span>` : ''}
+          ${summary.missed_count ? `<span class="badge badge-danger">متاح ولم يدخله: ${summary.missed_count}</span>` : '<span class="badge badge-success">مدخّل كل المتاح</span>'}
+        </div>`;
+
+      // المتاح-ولم-يدخله فوق الدرجات عن قصد: ده اللي الموظف بيكلّم الطالب بسببه
+      const missedBlock = missed.length ? `
+        <b style="display:block; margin-bottom:6px">اختبارات متاحة لم يدخلها</b>
+        <div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:16px">
+          ${missed.map((exam) => `<span class="badge badge-danger" title="${escapeHtml(exam.bootcamp_name || '')}">${escapeHtml(exam.name)}</span>`).join('')}
+        </div>` : '';
+
+      const takenBlock = taken.length ? `
+        <b style="display:block; margin-bottom:6px">الدرجات</b>
+        <div class="tafra-students-table-wrap">
+          <!-- الـ wrap بيجيب التمرير الأفقي، بس min-width الافتراضي بتاعه 980px وده كتير على
+               لوحة جانبية بسبعة أعمدة، فبنقلّله عشان الجدول يبان كامل من غير تمرير لو فيه مساحة -->
+          <table style="min-width:720px">
+            <thead><tr>
+              <th>الاختبار</th><th>الكورس</th><th>الدرجة</th><th>النسبة</th>
+              <th>المحاولة</th><th>الوقت</th><th>التاريخ</th>
+            </tr></thead>
+            <tbody>
+              ${taken.map((exam) => `
+                <tr>
+                  <td>${escapeHtml(exam.name)}${exam.finished ? '' : ' <span class="ticket-muted">(لم يكملها)</span>'}</td>
+                  <td class="ticket-muted">${escapeHtml(exam.bootcamp_name || '—')}</td>
+                  <td>${exam.mark === null ? '—' : escapeHtml(String(exam.mark))}</td>
+                  <td>${examPercentBadge(exam.percentage)}</td>
+                  <td>${exam.attempt_number ?? '—'}</td>
+                  <td class="ticket-muted">${fmtExamDuration(exam.time_taken_seconds)}</td>
+                  <td class="ticket-muted">${exam.taken_at ? fmtDate(exam.taken_at) : '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>` : '<div class="empty-state">الطالب ده لسه ماخدش أي اختبار.</div>';
+
+      return summaryRow + missedBlock + takenBlock;
+    }
+
     function renderCallProfile(data) {
       const panel = document.getElementById('calls-profile-panel');
       const student = data.student;
@@ -2599,8 +2659,12 @@
           </div>
           <div class="row" style="gap:8px">
             ${student.phone ? `<a class="btn btn-primary btn-sm" style="width:auto" href="tel:${escapeHtml(student.phone)}">📞 اتصال</a>` : ''}
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والدرجات</button>
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
+        </div>
+        <div class="card" id="student-exams-panel" style="display:none; margin-block:12px">
+          <div class="empty-state">جارٍ التحميل...</div>
         </div>
         <div class="ticket-controls" style="grid-template-columns: repeat(2, 1fr)">
           ${(currentUserRole === 'admin' || canAssignCalls) ? `
@@ -2646,6 +2710,21 @@
       `;
 
       document.getElementById('mobile-call-back').addEventListener('click', closeMobileCallProfile);
+
+      // الاختبارات بتتحمّل أول مرة يفتح الموظف اللوحة بس، وبعدها الزرار بيطوي ويفتح من غير طلب جديد
+      document.getElementById('toggle-student-exams-btn').addEventListener('click', async () => {
+        const examsPanel = document.getElementById('student-exams-panel');
+        const isHidden = examsPanel.style.display === 'none';
+        examsPanel.style.display = isHidden ? '' : 'none';
+        if (!isHidden || examsPanel.dataset.loaded === '1') return;
+        try {
+          const exams = await api('/api/calls/student/' + student.tafra_student_id + '/exams');
+          examsPanel.innerHTML = renderStudentExams(exams);
+          examsPanel.dataset.loaded = '1';
+        } catch (error) {
+          examsPanel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+        }
+      });
 
       if (student.ticket_id) {
         document.getElementById('open-call-student-ticket')?.addEventListener('click', () => {
