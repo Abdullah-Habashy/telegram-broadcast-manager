@@ -711,10 +711,11 @@
           </select>
           <input type="date" id="tafra-enrolled-from" class="compact-input" title="تاريخ الاشتراك من">
           <input type="date" id="tafra-enrolled-to" class="compact-input" title="تاريخ الاشتراك إلى">
-          <select id="tafra-broadcast-status-filter" class="compact-select">
-            <option value="">كل حالات المراسلة الجماعية</option>
-            <option value="never_sent">بدأ محادثة ولم تُرسل له رسالة جماعية بعد</option>
-            <option value="sent_no_reply">أُرسلت له رسالة جماعية ولم يرد</option>
+          <select id="tafra-welcome-status-filter" class="compact-select" title="حالة رسالة الترحيب — الرد التلقائي عند أول دخول للبوت">
+            <option value="">كل حالات المراسلة</option>
+            <option value="no_welcome">بدأ محادثة ولم تُرسل له رسالة ترحيب</option>
+            <option value="welcome_no_reply">بدأ محادثة وتم إرسال رسالة ترحيب ولم يرد</option>
+            <option value="welcome_replied">بدأ محادثة وأُرسلت رسالة ترحيب وتم الرد</option>
           </select>
           <input type="date" id="tafra-last-sent-from" class="compact-input" title="آخر إرسال من">
           <input type="date" id="tafra-last-sent-to" class="compact-input" title="آخر إرسال إلى">
@@ -2188,7 +2189,7 @@
 
       renderTafraEnrollmentSync(filters.enrollment_sync);
       // بيتنادى بعد ما القوايم والافتراضيات تتظبط، فالمحفوظ بتاع المستخدم بيغلب الافتراضي
-      registerFilterGroup('tafra', ['tafra-student-search','tafra-level-filter','tafra-education-type-filter','tafra-gender-filter','tafra-telegram-filter','tafra-conversation-filter','tafra-assignee-filter','tafra-status-filter','tafra-bootcamp-filter','tafra-exam-filter','tafra-exam-attendance-filter','tafra-exam-mark-range-filter','tafra-idea-filter','tafra-enrolled-from','tafra-enrolled-to','tafra-broadcast-status-filter','tafra-last-sent-from','tafra-last-sent-to','tafra-last-received-from','tafra-last-received-to','tafra-exclude-sent-today']);
+      registerFilterGroup('tafra', ['tafra-student-search','tafra-level-filter','tafra-education-type-filter','tafra-gender-filter','tafra-telegram-filter','tafra-conversation-filter','tafra-assignee-filter','tafra-status-filter','tafra-bootcamp-filter','tafra-exam-filter','tafra-exam-attendance-filter','tafra-exam-mark-range-filter','tafra-idea-filter','tafra-enrolled-from','tafra-enrolled-to','tafra-welcome-status-filter','tafra-last-sent-from','tafra-last-sent-to','tafra-last-received-from','tafra-last-received-to','tafra-exclude-sent-today']);
       registerFilterGroup('report', ['report-student-search','report-level-filter','report-education-type-filter','report-gender-filter','report-telegram-filter','report-conversation-filter','report-status-filter','report-bootcamp-filter','report-exam-filter','report-exam-attendance-filter','report-exam-mark-range-filter','report-idea-filter']);
       tafraFiltersLoaded = true;
     }
@@ -2217,7 +2218,7 @@
         status: 'tafra-status-filter', bootcamp: 'tafra-bootcamp-filter', exam: 'tafra-exam-filter',
         idea_number: 'tafra-idea-filter',
         enrolled_from: 'tafra-enrolled-from', enrolled_to: 'tafra-enrolled-to',
-        broadcast_status: 'tafra-broadcast-status-filter',
+        welcome_status: 'tafra-welcome-status-filter',
         last_sent_from: 'tafra-last-sent-from', last_sent_to: 'tafra-last-sent-to',
         last_received_from: 'tafra-last-received-from', last_received_to: 'tafra-last-received-to',
       };
@@ -2986,7 +2987,7 @@
       document.getElementById('tafra-exam-attendance-filter').value = 'entered';
       document.getElementById('report-exam-attendance-filter').value = 'entered';
       document.getElementById('tafra-assignee-filter').value = '';
-      document.getElementById('tafra-broadcast-status-filter').value = '';
+      document.getElementById('tafra-welcome-status-filter').value = '';
       document.getElementById('tafra-last-sent-from').value = '';
       document.getElementById('tafra-last-sent-to').value = '';
       document.getElementById('tafra-last-received-from').value = '';
@@ -3091,7 +3092,7 @@
       window.location.href = '/api/tafra/students/export?format=pdf&' + reportQueryString();
     });
 
-    ['tafra-level-filter', 'tafra-education-type-filter', 'tafra-gender-filter', 'tafra-telegram-filter', 'tafra-conversation-filter', 'tafra-assignee-filter', 'tafra-status-filter', 'tafra-bootcamp-filter', 'tafra-exam-filter', 'tafra-exam-attendance-filter', 'tafra-exam-mark-range-filter', 'tafra-idea-filter', 'tafra-enrolled-from', 'tafra-enrolled-to', 'tafra-broadcast-status-filter', 'tafra-last-sent-from', 'tafra-last-sent-to', 'tafra-last-received-from', 'tafra-last-received-to', 'tafra-exclude-sent-today'].forEach((id) => {
+    ['tafra-level-filter', 'tafra-education-type-filter', 'tafra-gender-filter', 'tafra-telegram-filter', 'tafra-conversation-filter', 'tafra-assignee-filter', 'tafra-status-filter', 'tafra-bootcamp-filter', 'tafra-exam-filter', 'tafra-exam-attendance-filter', 'tafra-exam-mark-range-filter', 'tafra-idea-filter', 'tafra-enrolled-from', 'tafra-enrolled-to', 'tafra-welcome-status-filter', 'tafra-last-sent-from', 'tafra-last-sent-to', 'tafra-last-received-from', 'tafra-last-received-to', 'tafra-exclude-sent-today'].forEach((id) => {
       document.getElementById(id).addEventListener('change', () => {
         tafraStudentsPage = 1;
         loadTafraStudents();

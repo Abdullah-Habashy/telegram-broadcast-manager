@@ -252,6 +252,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_support_messages_broadcast_recipient
     WHERE broadcast_recipient_id IS NOT NULL;
 
 -- تعديل/حذف ردود الموظفين — الحذف soft delete عشان يفضل في سجل للمراجعة
+-- علامة صريحة على "رد أول دخول" (رسالة الترحيب). من غيرها الطريقة الوحيدة لمعرفتها كانت مطابقة نص
+-- الرسالة بقالب الترحيب الحالي — وده بيقع أول ما الأدمن يغيّر صيغة الترحيب، فالرسايل اللي اتبعتت
+-- بالصيغة القديمة تبقى مش متعرّف عليها. من هنا ورايح البوت هو اللي بيعلّمها وقت الإرسال.
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_welcome BOOLEAN NOT NULL DEFAULT FALSE;
+-- ترحيل لمرة واحدة للرسايل اللي اتبعتت قبل وجود العمود. الرسايل التلقائية (sent_by IS NULL) نوعين بس:
+-- رد أول دخول، ورسايل المتابعة التلقائية — فبنعلّم الأول وبنستثني التاني صراحةً.
+UPDATE support_messages sm
+SET is_welcome = TRUE
+WHERE sm.is_welcome = FALSE
+  AND sm.sent_by IS NULL
+  AND sm.broadcast_recipient_id IS NULL
+  -- بنستثني المتابعات بصيغتيها، واللي فاضل بعدها هو رد أول الدخول بأي صيغة اتبعت بيها عبر الوقت
+  -- (القالب بيتغيّر من الإعدادات، فمطابقة القالب الحالي كانت هتفوّت كل اللي اتبعت بصيغة قديمة)
+  AND sm.content NOT LIKE '%نذكّرك بموعد المتابعة%'
+  AND sm.content NOT LIKE '%كنا متفقين نخلص%';
+CREATE INDEX IF NOT EXISTS idx_support_messages_welcome
+    ON support_messages (ticket_id) WHERE is_welcome AND deleted_at IS NULL;
+
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS edited_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;

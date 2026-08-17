@@ -73,10 +73,20 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
     );
     imageStored = Boolean(imagePath);
 
+    // لو دي تذكرة جديدة تمامًا (أول تواصل حقيقي مع الطالب ده)، لازم نجهّز رسالة الترحيب الموحدة زيها
+    // زي بالظبط لو كان بدأ بـ /start — مش كل الطلاب بيبدأوا محادثتهم فعليًا بأمر /start (بعضهم بيكتب
+    // رسالة عادي كأول تواصل)، فمينفعش رسالة الترحيب تتسجّل جوه هاندلر /start بس
+    const welcomeSettingResult = await pool.query(
+      "SELECT value FROM settings WHERE key = 'welcome_message_enabled'"
+    );
+    const welcomeEnabled = welcomeSettingResult.rows[0]?.value === 'true';
+
     // بنستخدم transaction هنا (مش UPSERT عادي) عشان نفرّق بدقة بين "تذكرة جديدة تمامًا" (تاخد دور
-    // في توزيع صندوق الدعم بالتبادل) و"تذكرة موجودة بالفعل" (تتحدّث بس، تفضل عند نفس الموظف المسند لها)
+    // في توزيع صندوق الدعم بالتبادل، وتجهّز رسالة الترحيب لو مفعّلة) و"تذكرة موجودة بالفعل" (تتحدّث
+    // بس، تفضل عند نفس الموظف المسند لها)
     const ticketClient = await pool.connect();
     let ticketRow;
+    let isNewTicket = false;
     try {
       await ticketClient.query('BEGIN');
       const existingTicket = await ticketClient.query(
@@ -96,6 +106,7 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
         );
         ticketRow = updateResult.rows[0];
       } else {
+        isNewTicket = true;
         const nextAssignee = await getNextTicketAssignee(ticketClient);
         const insertResult = await ticketClient.query(
           `INSERT INTO tickets (contact_id, status, subtitle_id, unread_count, last_message_at, updated_at, assigned_to)
@@ -104,6 +115,15 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
           [contactId, nextAssignee]
         );
         ticketRow = insertResult.rows[0];
+
+        if (welcomeEnabled) {
+          // مفيش إرسال دلوقتي — بس بنسجّل في الطابور، وwelcomeMessageSender.js هو اللي هيبعت
+          // فعليًا لما يدخل وقت العمل (حتى لو خارج الوقت المسموح دلوقتي بالظبط)
+          await ticketClient.query(
+            'INSERT INTO pending_welcome_sends (contact_id, ticket_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+            [contactId, ticketRow.id]
+          );
+        }
       }
       await ticketClient.query('COMMIT');
     } catch (error) {
@@ -164,8 +184,12 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
       }
     }
 
-    // خارج مواعيد العمل بيطغى على الرد العادي — رسالة واحدة بس في كل مرة
-    if (isOutsideWorkingHours(settings) && settings.outside_hours_reply_message) {
+    // خارج مواعيد العمل بيطغى على الرد العادي — رسالة واحدة بس في كل مرة. لو التذكرة دي جديدة
+    // ورسالة الترحيب مفعّلة، بلاش رد تاني هنا عشان الطالب مايستقبلش رسالتين مع بعض — رسالة
+    // الترحيب هي اللي هتوصله من welcomeMessageSender.js
+    if (isNewTicket && welcomeEnabled) {
+      // متعمّد نسيبه فاضي — رسالة الترحيب كافية
+    } else if (isOutsideWorkingHours(settings) && settings.outside_hours_reply_message) {
       try {
         const message = settings.outside_hours_reply_message
           .replaceAll('{start}', settings.working_hours_start || '')

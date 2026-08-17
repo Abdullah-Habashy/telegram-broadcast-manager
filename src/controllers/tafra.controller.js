@@ -168,14 +168,27 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   // فلتر حالة المراسلة الجماعية — بيفرّق بين "بدأ محادثة بس لسه ما اتبعتلوش رسالة جماعية" و"اتبعتله
   // رسالة جماعية قبل كده ولسه ما ردش"، عشان يسهّل استبعاد الطلاب اللي اتبعتلهم رسالة أصلًا وقت تجميع
   // جمهور جديد من فلاتر مختلفة (تفادي تكرار الإرسال لنفس الطالب مرتين في نفس اليوم)
-  if (query.broadcast_status === 'never_sent') {
-    conditions.push(`c.last_contacted_at IS NOT NULL AND NOT EXISTS (
-      SELECT 1 FROM broadcast_recipients br WHERE br.contact_id = c.id AND br.status = 'sent'
-    )`);
-  } else if (query.broadcast_status === 'sent_no_reply') {
-    conditions.push(`c.last_contacted_at IS NOT NULL
-      AND EXISTS (SELECT 1 FROM broadcast_recipients br WHERE br.contact_id = c.id AND br.status = 'sent')
-      AND NOT EXISTS (SELECT 1 FROM incoming_messages im WHERE im.contact_id = c.id)`);
+  // حالة رسالة الترحيب (الرد التلقائي عند أول دخول للبوت) — التلات حالات بتبدأ كلها بشرط واحد:
+  // إن الطالب فعلاً بدأ محادثة مع البوت، لأن اللي ما دخلش أصلًا مالوش حالة ترحيب من الأساس.
+  // "تم الرد" معناها رسالة واردة **بعد** الترحيب مش أي رسالة واردة — الطالب ممكن يكون بعت قبلها
+  // (رسالة الترحيب بتستنى وقت العمل)، وساعتها ده مش رد عليها
+  const WELCOME_SENT = `EXISTS (
+    SELECT 1 FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+    WHERE t.contact_id = c.id AND sm.is_welcome AND sm.deleted_at IS NULL
+  )`;
+  const REPLIED_AFTER_WELCOME = `EXISTS (
+    SELECT 1 FROM incoming_messages im
+    WHERE im.contact_id = c.id AND im.received_at > (
+      SELECT MIN(sm.sent_at) FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+      WHERE t.contact_id = c.id AND sm.is_welcome AND sm.deleted_at IS NULL
+    )
+  )`;
+  if (query.welcome_status === 'no_welcome') {
+    conditions.push(`c.last_contacted_at IS NOT NULL AND NOT ${WELCOME_SENT}`);
+  } else if (query.welcome_status === 'welcome_no_reply') {
+    conditions.push(`c.last_contacted_at IS NOT NULL AND ${WELCOME_SENT} AND NOT ${REPLIED_AFTER_WELCOME}`);
+  } else if (query.welcome_status === 'welcome_replied') {
+    conditions.push(`c.last_contacted_at IS NOT NULL AND ${WELCOME_SENT} AND ${REPLIED_AFTER_WELCOME}`);
   }
   // استبعاد سريع لمن اتبعتله رسالة جماعية ناجحة اليوم بالفعل — أسرع طريقة لتفادي تكرار الإرسال لنفس
   // الطالب مرتين في نفس اليوم لما يتم تجميع جمهور جديد من فلاتر مختلفة

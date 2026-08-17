@@ -57,7 +57,8 @@ async function sendPendingWelcomeMessages() {
           .replaceAll('الموظف', row.agent_name || 'فريق المتابعة');
         const telegramMessage = await bot.telegram.sendMessage(row.chat_id, messageText);
         await pool.query(
-          `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id) VALUES ($1, NULL, $2, $3)`,
+          `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id, is_welcome)
+           VALUES ($1, NULL, $2, $3, TRUE)`,
           [row.ticket_id, messageText, telegramMessage.message_id]
         );
         await pool.query('DELETE FROM pending_welcome_sends WHERE contact_id = $1', [row.contact_id]);
