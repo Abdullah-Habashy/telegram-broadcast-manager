@@ -44,14 +44,16 @@ async function sendDueTicketFollowUps() {
            SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
          ) tafra_match ON true
          WHERE t.id = $1 AND t.contact_id = c.id AND t.next_follow_up_at <= NOW()
-         RETURNING t.id, t.current_idea_number, c.chat_id, c.first_name, c.telegram_username, tafra_match.name AS tafra_name`,
+         RETURNING t.id, t.current_idea_number, t.next_follow_up_message, c.chat_id, c.first_name, c.telegram_username, tafra_match.name AS tafra_name`,
         [ticket.id]
       );
       const claimed = claimResult.rows[0];
       if (!claimed) continue;
 
       try {
-        const personalizedMessage = personalizeFollowUpMessage(settings.follow_up_auto_message, claimed);
+        // النص المخصّص للتذكرة دي بيغلب القالب العام — والاستبدالات بتشتغل عليه بنفس الطريقة
+        const template = claimed.next_follow_up_message || settings.follow_up_auto_message;
+        const personalizedMessage = personalizeFollowUpMessage(template, claimed);
         const telegramMessage = await bot.telegram.sendMessage(claimed.chat_id, personalizedMessage);
         await pool.query(
           `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id)
@@ -61,7 +63,8 @@ async function sendDueTicketFollowUps() {
         await pool.query(
           `UPDATE tickets SET
             status = CASE WHEN status = 'new' THEN 'in_progress' ELSE status END,
-            last_message_at = NOW(), updated_at = NOW()
+            last_message_at = NOW(), updated_at = NOW(),
+            next_follow_up_message = NULL
            WHERE id = $1`,
           [claimed.id]
         );

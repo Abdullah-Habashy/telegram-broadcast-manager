@@ -42,6 +42,7 @@ router.patch('/bulk-assign', requireAdminApi, ticketsController.bulkAssignTicket
 router.patch('/bulk-assign-by-contact', requireAdminApi, ticketsController.bulkAssignTicketsByContact);
 router.get('/:id', ticketsController.getTicket);
 router.post('/:id/urgent', ticketsController.toggleTicketUrgent);
+router.patch('/:id/next-follow-up-message', ticketsController.updateNextFollowUpMessage);
 router.patch('/:id', ticketsController.updateTicket);
 router.post('/:id/reply', upload.single('image'), ticketsController.replyToTicket);
 router.patch('/:id/idea', ticketsController.updateIdeaProgress);

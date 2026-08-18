@@ -75,6 +75,10 @@ CREATE INDEX IF NOT EXISTS idx_contacts_last_contacted ON contacts (last_contact
 -- في المتابعة مالهمش صف في contacts (مش مرتبطين بتليجرام)، وفيه تذاكر لأشخاص مش طلاب منصة.
 -- التبديل بيكتب على الاتنين لو الربط موجود، والقراءة OR بينهم — فهي علامة واحدة منطقيًا
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS is_urgent BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- نص مخصّص لرسالة المتابعة التلقائية القادمة لهذه التذكرة وحدها. فاضي = استخدم القالب العام
+-- من الإعدادات. بيتمسح بعد الإرسال عشان يفضل "الرسالة القادمة" مش قالب دائم للطالب ده
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS next_follow_up_message TEXT;
 ALTER TABLE tafra_students ADD COLUMN IF NOT EXISTS is_urgent BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_contacts_urgent ON contacts (is_urgent) WHERE is_urgent;
 CREATE INDEX IF NOT EXISTS idx_tafra_students_urgent ON tafra_students (is_urgent) WHERE is_urgent;

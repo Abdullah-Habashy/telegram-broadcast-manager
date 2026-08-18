@@ -994,6 +994,26 @@ function streamEvents(req, res) {
   events.registerClient(req, res);
 }
 
+// نص مخصّص لرسالة المتابعة التلقائية القادمة لهذه التذكرة. فاضي = رجوع للقالب العام.
+// بيتمسح لوحده بعد ما الرسالة تتبعت، فهو للمرة الجاية بس مش قالب دائم للطالب
+async function updateNextFollowUpMessage(req, res) {
+  const ticketId = Number(req.params.id);
+  if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'التذكرة غير صالحة' });
+  const message = String(req.body.message || '').trim();
+  if (message.length > 4096) return res.status(400).json({ error: 'الرسالة أطول من الحد المسموح' });
+  try {
+    const result = await pool.query(
+      'UPDATE tickets SET next_follow_up_message = $2, updated_at = NOW() WHERE id = $1 RETURNING next_follow_up_message',
+      [ticketId, message || null]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+    res.json({ ok: true, next_follow_up_message: result.rows[0].next_follow_up_message });
+  } catch (error) {
+    console.error('❌ Failed to save the next follow-up message:', error.message);
+    res.status(500).json({ error: 'تعذر حفظ رسالة المتابعة' });
+  }
+}
+
 // تبديل علامة "عاجل" من صندوق الدعم — بتتزامن مع شاشة المتابعة تلقائيًا
 async function toggleTicketUrgent(req, res) {
   const ticketId = Number(req.params.id);
@@ -1011,6 +1031,7 @@ async function toggleTicketUrgent(req, res) {
 
 module.exports = {
   toggleTicketUrgent,
+  updateNextFollowUpMessage,
   listTickets, listTicketIds, getTicket, updateTicket, bulkAssignTickets, bulkAssignTicketsByContact,
   replyToTicket, getTicketMeta,
   editSupportMessage, deleteSupportMessage, getRecentExamMarks, getCourseExamMarks,

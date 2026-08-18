@@ -3701,6 +3701,8 @@ ${mark}${percent}`;
             </label>
             <button type="button" class="btn btn-primary btn-sm" id="save-ticket-follow-up" style="width:auto">حفظ الموعد</button>
             <button type="button" class="btn btn-ghost btn-sm" id="clear-ticket-follow-up" ${ticket.next_follow_up_at ? '' : 'disabled'}>تم التواصل / إلغاء الموعد</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="edit-next-follow-up-msg" style="width:auto"
+              title="تعديل نص رسالة المتابعة التلقائية القادمة لهذا الطالب وحده">✏️ ${ticket.next_follow_up_message ? 'رسالة مخصّصة ✓' : 'تعديل رسالة المتابعة'}</button>
             <div class="quick-follow-up-buttons">
               <span>اختيار سريع:</span>
               ${[1, 2, 3, 4, 5, 6, 7].map((days) => `
@@ -3773,6 +3775,25 @@ ${mark}${percent}`;
 
         // تعيين مفاتيح الرسائل الحالية لمنع التكرار عند التحديث التلقائي المباشر
         renderedMessageKeys = new Set((data.messages || []).map(messageKeyOf));
+        document.getElementById('edit-next-follow-up-msg')?.addEventListener('click', async () => {
+          // القالب العام بيتعرض كنقطة بداية عشان الموظف يعدّل عليه بدل ما يكتب من الصفر
+          const current = ticket.next_follow_up_message || '';
+          const edited = window.prompt(
+            `رسالة المتابعة التلقائية القادمة لهذا الطالب وحده.
+كلمة "الاسم" هتتحول لاسمه من المنصة، و"رقم الفكرة" لرقم فكرته.
+سيبها فاضية للرجوع للقالب العام.`,
+            current
+          );
+          if (edited === null) return;
+          try {
+            await api(`/api/tickets/${ticket.id}/next-follow-up-message`, {
+              method: 'PATCH', body: JSON.stringify({ message: edited })
+            });
+            showToast(edited.trim() ? 'تم حفظ رسالة المتابعة القادمة' : 'رجعت للقالب العام');
+            openTicket(ticket.id);
+          } catch (error) { showToast(error.message); }
+        });
+
         document.getElementById('ticket-urgent-toggle')?.addEventListener('click', async () => {
           try {
             await api(`/api/tickets/${ticket.id}/urgent`, {
