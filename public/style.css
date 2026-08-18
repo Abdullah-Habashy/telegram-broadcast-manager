@@ -667,12 +667,17 @@ tr:last-child td { border-bottom: none; }
   .ticket-follow-up-box { flex-shrink: 0; }
   .ticket-messages { flex: 1; min-height: 0; max-height: none; padding: 12px 2px; }
   .ticket-message { max-width: 90%; }
+  /* على التليفون الأزرار بتنزل صف لوحدها عشان صندوق الكتابة ياخد عرض الشاشة كامل — كانوا
+     جنبه في نفس الصف وبياكلوا حوالي 190px منه (أربع أزرار × 44px + المسافات) */
   .ticket-reply-box {
-    flex-shrink: 0; flex-direction: row; align-items: flex-end; margin: 0 -4px;
+    flex-shrink: 0; flex-direction: column; align-items: stretch; gap: 8px; margin: 0 -4px;
     padding: 10px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 18px rgba(23, 27, 43, 0.08);
   }
-  .ticket-reply-main textarea { min-height: 48px; max-height: 55vh; font-size: 16px; margin: 0; }
-  .ticket-reply-actions { gap: 4px; }
+  .ticket-reply-main { width: 100%; }
+  .ticket-reply-main textarea { min-height: 48px; max-height: 50vh; font-size: 16px; margin: 0; width: 100%; }
+  /* زرار الإرسال بياخد المساحة الفاضية بعد أزرار الأدوات — هدف أكبر للإصبع وأوضح */
+  .ticket-reply-actions { gap: 6px; width: 100%; }
+  .ticket-reply-actions .ticket-send-button { flex: 1; width: auto !important; }
   .icon-action-btn, .ticket-send-button { width: 44px !important; height: 44px; min-width: 44px; padding: 0; font-size: 18px; }
   .desktop-button-label, .quick-desktop-label { display: none; }
   .quick-mobile-label { display: inline; }
