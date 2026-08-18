@@ -31,12 +31,16 @@ async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
   // كان بيتنده باسمين مختلفين في رسالتين ورا بعض
   const chatId = ctx.chat?.id ?? ctx.from?.id;
   const tafraResult = await pool.query(
-    'SELECT name FROM tafra_students WHERE telegram_chat_id = $1 LIMIT 1',
+    'SELECT name, gender FROM tafra_students WHERE telegram_chat_id = $1 LIMIT 1',
     [chatId]
   );
   const text = settings.outside_hours_ack_text
     .replaceAll('{when}', nextWorkingWindowPhrase(start, now))
-    .replaceAll('الاسم', getFirstName({ ...contact, tafra_name: tafraResult.rows[0]?.name }));
+    .replaceAll('الاسم', getFirstName({
+      ...contact,
+      tafra_name: tafraResult.rows[0]?.name,
+      gender: tafraResult.rows[0]?.gender,
+    }));
 
   const telegramMessage = await ctx.reply(text);
   // بيتسجّل في المحادثة (بدون is_welcome) عشان الموظف يشوف الطالب استلم إيه ومايكرّرش نفس الكلام.

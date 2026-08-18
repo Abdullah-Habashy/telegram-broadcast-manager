@@ -36,7 +36,8 @@ async function sendPendingWelcomeMessages() {
 
     const pendingResult = await pool.query(
       `SELECT p.contact_id, p.ticket_id, c.chat_id, c.first_name, c.telegram_username, t.assigned_to, u.name AS agent_name,
-        (SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1) AS tafra_name
+        (SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1) AS tafra_name,
+        (SELECT gender FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1) AS tafra_gender
        FROM pending_welcome_sends p
        JOIN contacts c ON c.id = p.contact_id
        JOIN tickets t ON t.id = p.ticket_id
@@ -52,7 +53,7 @@ async function sendPendingWelcomeMessages() {
         const messageText = settings.welcome_message_text
           .replaceAll(
             'الاسم',
-            getFirstName({ tafra_name: row.tafra_name, first_name: row.first_name, telegram_username: row.telegram_username })
+            getFirstName({ tafra_name: row.tafra_name, gender: row.tafra_gender, first_name: row.first_name, telegram_username: row.telegram_username })
           )
           .replaceAll('الموظف', row.agent_name || 'فريق المتابعة');
         const telegramMessage = await bot.telegram.sendMessage(row.chat_id, messageText);
