@@ -62,10 +62,15 @@ function buildTicketFilters(query, { restrictToUserId } = {}) {
   // فلاتر الطلاب المشتركة (نفس التعريف المستخدم في طلاب المنصة والمتابعة التليفونية) بتتدمج هنا
   // عشان صندوق الدعم يفلتر بنفسها بالظبط. ترقيم الباراميترز بتاعها بيبدأ من $1 دايمًا، فبنزيحه
   // بعدد الباراميترز اللي اتضافت هنا قبله وإلا الاتنين هيتضاربوا على نفس الأرقام
-  // status بتتضارب: في التذاكر دي حالة التذكرة (new/in_progress)، وفي الطلاب حالة الطالب على
-  // المنصة. لو مرّرناها زي ما هي الشرطين بيتطبقوا مع بعض والنتيجة صفر دايمًا. فحالة التذكرة
-  // بتحتفظ باسمها هنا، وحالة الطالب بتتبعت باسم student_status
-  const studentFilters = buildTafraStudentFilters({ ...query, status: query.student_status });
+  // اسمين بيتضاربوا لأن معناهم مختلف في الشاشتين، فكل واحد بيتبعت باسم تاني من الواجهة:
+  //   status     — حالة التذكرة (new/in_progress) مقابل حالة الطالب على المنصة → student_status
+  //   follow_up  — موعد متابعة التذكرة مقابل موعد المتابعة التليفونية → student_follow_up
+  // لو اتمرروا زي ما هم الشرطين بيتطبقوا مع بعض بـ AND، والنتيجة بتقل غلط أو تبقى صفر دايمًا
+  const studentFilters = buildTafraStudentFilters({
+    ...query,
+    status: query.student_status,
+    follow_up: query.student_follow_up,
+  });
   if (studentFilters.where) {
     const offset = params.length;
     conditions.push(

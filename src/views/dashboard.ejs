@@ -199,6 +199,7 @@
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-awaiting-reply-filter"> مفتوحة ولم يُرد عليها</label>
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-unassigned-filter"> غير مسندة لأي موظف</label>
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-never-replied-filter"> لم يُرد على أي رسائل سابقة</label>
+          <div id="tickets-filter-bar"></div>
           <button type="button" class="btn btn-ghost btn-sm" id="clear-ticket-filters">مسح الفلاتر</button>
           </div>
           <button class="btn btn-ghost btn-sm" id="refresh-tickets-btn">تحديث</button>
@@ -1082,6 +1083,7 @@
     const currentUserRole = '<%= userRole %>';
     const currentUserId = Number('<%= userId %>');
     const canAssignCalls = <%- canAssignCalls ? 'true' : 'false' %>;
+    const canViewCalls = <%- canViewCalls ? 'true' : 'false' %>;
     const selectedContactIds = new Set();
     let currentFilteredContactIds = [];
     let currentFilteredTafraStudentContactIds = [];
@@ -1102,6 +1104,9 @@
     let tafraSort = { key: '', dir: 'desc' };
     let reportSort = { key: '', dir: 'desc' };
     let tafraFiltersLoaded = false;
+    // آخر نسخة من خيارات الفلاتر المشتركة — متخزّنة عشان شاشة بتتفتح بعد التانية تقدر تتعبّى منها،
+    // لأن loadTafraStudentFilters بيرجع من غير ما يعمل حاجة بعد أول نداء ناجح
+    let tafraFilterOptions = null;
     let pendingDeepLinkTicketId = new URLSearchParams(location.search).get('ticket');
     let callsPage = 1;
     let callsPages = 1;
@@ -1322,10 +1327,30 @@
 
     function filterId(def, prefix) { return (def.ids && def.ids[prefix]) || (prefix + '-' + def.key + '-filter'); }
 
+    // صندوق الدعم عنده فلاتر خاصة بيه بنفس المعنى بالظبط (البحث، الموظف المسؤول، رقم الفكرة)،
+    // فبنستبعد نظيرها من الفلاتر المشتركة — وإلا يبقى في نفس الشريط عنصرين بيعملوا نفس الحاجة
+    const TICKETS_SKIPPED_STUDENT_FILTERS = new Set(['search', 'assigned_to', 'idea_number']);
+    // اسمين معناهم مختلف في الشاشتين: status (حالة التذكرة مقابل حالة الطالب على المنصة) و
+    // follow_up (موعد متابعة التذكرة مقابل موعد آخر مكالمة). لو اتبعتوا بنفس الاسم الشرطين
+    // بيتطبقوا مع بعض والنتيجة بتقل غلط، فبيتبعتوا بأسماء مختلفة و buildTicketFilters بيرجّعهم
+    // لأسمائهم الأصلية قبل ما يمرّرهم للـ builder المشترك
+    const TICKETS_FILTER_PARAM_ALIASES = { status: 'student_status', follow_up: 'student_follow_up' };
+
+    function paramNameFor(prefix, def) {
+      return (prefix === 'tickets' && TICKETS_FILTER_PARAM_ALIASES[def.key]) || def.key;
+    }
+
+    // عنصر فلتر مشترك بمفتاحه في شاشة معيّنة — بيغني عن تكرار الـ id في كل مكان محتاجه
+    function studentFilterElement(prefix, key) {
+      const def = STUDENT_FILTER_DEFS.find((item) => item.key === key);
+      return def ? document.getElementById(filterId(def, prefix)) : null;
+    }
+
     // الفلاتر المتاحة لشاشة معيّنة بعد استبعاد اللي محتاج صلاحية إسناد
     function filtersFor(prefix) {
       const canAssign = currentUserRole === 'admin' || canAssignCalls;
-      return STUDENT_FILTER_DEFS.filter((def) => !def.adminOnly || canAssign);
+      return STUDENT_FILTER_DEFS.filter((def) => (!def.adminOnly || canAssign)
+        && !(prefix === 'tickets' && TICKETS_SKIPPED_STUDENT_FILTERS.has(def.key)));
     }
 
     // بيرسم بار الفلاتر لشاشة معيّنة من التعريف الموحّد
@@ -1352,8 +1377,10 @@
           '<option value="' + escapeHtml(pair[0]) + '">' + escapeHtml(pair[1]) + '</option>').join('');
         return '<select id="' + id + '" class="compact-select"' + title + '>' + options + '</select>';
       }).join('\n');
+      // صندوق الدعم شريطه فيه زراري "مسح الفلاتر" و"تحديث" بتوعه أصلًا، فمابنزودش نسخة تانية
       bar.innerHTML = html
-        + '\n<button type="button" class="btn btn-ghost" id="clear-' + prefix + '-filters">مسح الفلاتر</button>'
+        + (prefix === 'tickets' ? ''
+          : '\n<button type="button" class="btn btn-ghost" id="clear-' + prefix + '-filters">مسح الفلاتر</button>')
         + (prefix === 'calls' ? '\n<button type="button" class="btn btn-ghost btn-sm" id="refresh-calls-btn">تحديث</button>' : '');
     }
 
@@ -1364,17 +1391,17 @@
         const el = document.getElementById(filterId(def, prefix));
         if (!el) return;
         if (def.type === 'checkbox') {
-          if (el.checked) params.set(def.key, 'true');
+          if (el.checked) params.set(paramNameFor(prefix, def), 'true');
           return;
         }
         const value = String(el.value || '').trim();
         if (!value) return;
         // الحضور ومدى الدرجة مالهمش معنى من غير اختبار محدد
         if ((def.key === 'attendance' || def.key === 'mark_range')
-          && !String(document.getElementById(filterId({ key: 'exam', ids: { tafra: 'tafra-exam-filter', calls: 'calls-exam-filter' } }, prefix))?.value || '').trim()) return;
+          && !String(studentFilterElement(prefix, 'exam')?.value || '').trim()) return;
         if (def.key === 'mark_range'
-          && String(document.getElementById(filterId({ key: 'attendance', ids: { tafra: 'tafra-exam-attendance-filter', calls: 'calls-exam-attendance-filter' } }, prefix))?.value || '') === 'not_entered') return;
-        params.set(def.key, value);
+          && String(studentFilterElement(prefix, 'attendance')?.value || '') === 'not_entered') return;
+        params.set(paramNameFor(prefix, def), value);
       });
       return params;
     }
@@ -1406,6 +1433,7 @@
     // الشاشتين بيترسموا فورًا عند تحميل الصفحة — قبل أي تهيئة بتدوّر على العناصر بالـ id
     renderStudentFilterBar('tafra');
     renderStudentFilterBar('calls');
+    renderStudentFilterBar('tickets');
 
     function createMultiSelectFilter(hiddenInputId, placeholder) {
       if (multiSelectControllers[hiddenInputId]) return multiSelectControllers[hiddenInputId];
@@ -2193,30 +2221,37 @@
 
     // ---------- طلاب منصة طفرة ----------
     // صفحتي "طلاب المنصة" و"التقارير" بيستخدموا نفس خيارات الفلاتر — بنعبّي الاتنين مرة واحدة
+    // تعبئة قوايم الفلاتر لشاشة واحدة — منفصلة عن التحميل عشان شاشة بتتفتح بعد ما الخيارات
+    // اتحمّلت خلاص تقدر تتعبّى لوحدها من tafraFilterOptions من غير طلب جديد
+    function applyStudentFilterOptions(prefix, filters) {
+      const levelInput = document.getElementById(`${prefix}-level-filter`);
+      if (!filters || !levelInput) return;
+      const statusNames = { active: 'نشط', inactive: 'غير نشط', suspended: 'موقوف' };
+      createMultiSelectFilter(`${prefix}-level-filter`, 'الصف الدراسي')
+        .setOptions(filters.levels.map((value) => ({ value, label: value })));
+      createMultiSelectFilter(`${prefix}-status-filter`, 'الحالة')
+        .setOptions(filters.statuses.map((value) => ({ value, label: statusNames[value] || value })));
+      createMultiSelectFilter(`${prefix}-bootcamp-filter`, 'الباب/الكورس')
+        .setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
+      createMultiSelectFilter(`${prefix}-exam-filter`, 'الاختبار')
+        .setOptions(filters.exams.map((item) => ({ value: item.id, label: item.name })));
+      // صندوق الدعم فلتر الأفكار بتاعه اسمه ticket- مش tickets-، وبيتعبّى في initTickets
+      const ideaSelect = document.getElementById(`${prefix}-idea-filter`);
+      if (!ideaSelect) return;
+      const maxIdea = filters.max_idea_number || 20;
+      const previousIdeaValue = ideaSelect.value;
+      ideaSelect.innerHTML = '<option value="">كل الأفكار</option><option value="0">لم يُحدَّد بعد</option>' +
+        Array.from({ length: maxIdea }, (_, i) => i + 1)
+          .map((n) => `<option value="${n}">فكرة ${n}</option>`).join('');
+      ideaSelect.value = previousIdeaValue;
+    }
+
     async function loadTafraStudentFilters() {
       if (tafraFiltersLoaded) return;
       const filters = await api('/api/tafra/student-filters');
-      const statusNames = { active: 'نشط', inactive: 'غير نشط', suspended: 'موقوف' };
-      const maxIdea = filters.max_idea_number || 20;
+      tafraFilterOptions = filters;
 
-      ['tafra', 'report', 'calls'].forEach((prefix) => {
-        const levelInput = document.getElementById(`${prefix}-level-filter`);
-        const ideaSelect = document.getElementById(`${prefix}-idea-filter`);
-        if (!levelInput) return;
-        createMultiSelectFilter(`${prefix}-level-filter`, 'الصف الدراسي')
-          .setOptions(filters.levels.map((value) => ({ value, label: value })));
-        createMultiSelectFilter(`${prefix}-status-filter`, 'الحالة')
-          .setOptions(filters.statuses.map((value) => ({ value, label: statusNames[value] || value })));
-        createMultiSelectFilter(`${prefix}-bootcamp-filter`, 'الباب/الكورس')
-          .setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
-        createMultiSelectFilter(`${prefix}-exam-filter`, 'الاختبار')
-          .setOptions(filters.exams.map((item) => ({ value: item.id, label: item.name })));
-        const previousIdeaValue = ideaSelect.value;
-        ideaSelect.innerHTML = '<option value="">كل الأفكار</option><option value="0">لم يُحدَّد بعد</option>' +
-          Array.from({ length: maxIdea }, (_, i) => i + 1)
-            .map((n) => `<option value="${n}">فكرة ${n}</option>`).join('');
-        ideaSelect.value = previousIdeaValue;
-      });
+      ['tafra', 'report', 'calls', 'tickets'].forEach((prefix) => applyStudentFilterOptions(prefix, filters));
 
       // فلتر الباب لتاب "بوت طفرة" (مشتركين بوت طفرة) مستقل عن اللوب فوق (التاب ده معندوش صف دراسي/حالة/اختبار،
       // بس محتاج فلتر الباب بنفس الافتراضي)
@@ -2575,8 +2610,9 @@
 
     // بيتنادى من initCalls بعد ما النتايج تتحمّل — منفصل عن loadCallOutcomes عشان التعبئة تحصل
     // في كل مرة الشاشة تتفتح حتى لو النتايج كانت متحمّلة قبل كده من بروفايل طالب
-    function populateCallOutcomeFilter() {
-      const select = document.getElementById('calls-outcome-filter');
+    function populateCallOutcomeFilter(prefix = 'calls') {
+      const select = studentFilterElement(prefix, 'call_outcome');
+      if (!select) return;
       const previous = select.value;
       select.innerHTML = '<option value="">كل نتائج المكالمات</option>' +
         callOutcomes.map((outcome) =>
@@ -2598,6 +2634,26 @@
         callAssignees.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
       calledBySelect.innerHTML = '<option value="">أي موظف اتصل</option>' +
         callAssignees.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+    }
+
+    // نفس قايمة الموظفين بتتحط في فلاتر شاشة تانية (صندوق الدعم) — الشاشة دي معندهاش زراير
+    // إسناد، ففلترين بس. لازم تتنادى بعد loadCallAssignees عشان callAssignees تكون متحمّلة
+    function populateCallAssigneeFilters(prefix) {
+      if (!callAssignees.length) return;
+      const scopeSelect = studentFilterElement(prefix, 'assigned');
+      if (scopeSelect) {
+        const previous = scopeSelect.value;
+        scopeSelect.innerHTML = '<option value="">كل الطلاب</option><option value="unassigned">غير مسند</option>' +
+          callAssignees.map((user) => `<option value="${user.id}">${escapeHtml(user.name)} (${user.assigned_count})</option>`).join('');
+        scopeSelect.value = previous;
+      }
+      const calledBySelect = studentFilterElement(prefix, 'called_by');
+      if (calledBySelect) {
+        const previous = calledBySelect.value;
+        calledBySelect.innerHTML = '<option value="">أي موظف اتصل</option>' +
+          callAssignees.map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+        calledBySelect.value = previous;
+      }
     }
 
     function closeMobileCallProfile() {
@@ -3465,12 +3521,40 @@ ${mark}${percent}`;
       } catch (error) {
         return showToast(error.message);
       }
+      // خيارات فلاتر الطلاب المشتركة (الصف، الحالة، الباب، الاختبار، نتايج المكالمات، الموظفين).
+      // كل ده جوه try عشان لو أي منها فشل — مثلًا موظف مالوش صلاحية المتابعة التليفونية — الشاشة
+      // تفضل شغالة بفلاترها الأصلية بدل ما تقف من غير أي تذاكر
+      try {
+        // الترتيب مهم: التحميل بيتخطّى نفسه لو شاشة تانية سبقته، فالتعبئة بتتنادى صراحةً بعده
+        await loadTafraStudentFilters();
+        applyStudentFilterOptions('tickets', tafraFilterOptions);
+        if (canViewCalls) {
+          if (!callOutcomes.length) await loadCallOutcomes();
+          populateCallOutcomeFilter('tickets');
+        }
+        if (currentUserRole === 'admin' || canAssignCalls) {
+          if (!callAssignees.length) await loadCallAssignees();
+          populateCallAssigneeFilters('tickets');
+        }
+      } catch (error) {
+        console.warn('تعذر تحميل خيارات فلاتر الطلاب في صندوق الدعم:', error.message);
+      }
+
       // الاسترجاع هنا بالذات: بعد ما قوايم الموظفين/العناوين/الأفكار اتملت، وقبل أول تحميل
-      const TICKET_FILTER_IDS = ['ticket-search','ticket-status-filter','ticket-subtitle-filter','ticket-priority-filter','ticket-category-filter','ticket-assignee-filter','ticket-follow-up-filter','ticket-sent-filter','ticket-received-filter','ticket-idea-filter','ticket-unread-filter','ticket-awaiting-reply-filter','ticket-unassigned-filter','ticket-never-replied-filter'];
+      const SHARED_TICKET_FILTER_IDS = filtersFor('tickets').map((def) => filterId(def, 'tickets'));
+      const TICKET_FILTER_IDS = ['ticket-search','ticket-status-filter','ticket-subtitle-filter','ticket-priority-filter','ticket-category-filter','ticket-assignee-filter','ticket-follow-up-filter','ticket-sent-filter','ticket-received-filter','ticket-idea-filter','ticket-unread-filter','ticket-awaiting-reply-filter','ticket-unassigned-filter','ticket-never-replied-filter',
+        ...SHARED_TICKET_FILTER_IDS];
       registerFilterGroup('tickets', TICKET_FILTER_IDS);
+      bindStudentFilterEvents('tickets', () => {
+        ticketsPage = 1;
+        updateAgentFilterIndicator();
+        loadTickets();
+      });
+      // فلتر الحضور بيبدأ بـ "دخل الاختبار" مش فاضي، فالتصفير بيرجّعه لقيمته دي مش لفاضي
+      const ticketsAttendanceId = filterId(STUDENT_FILTER_DEFS.find((def) => def.key === 'attendance'), 'tickets');
       document.getElementById('clear-ticket-filters')?.addEventListener('click', () => {
         ticketsPage = 1;
-        resetFilterGroup('tickets', TICKET_FILTER_IDS, loadTickets);
+        resetFilterGroup('tickets', TICKET_FILTER_IDS, loadTickets, { [ticketsAttendanceId]: 'entered' });
       });
       loadTickets();
       if (currentUserRole === 'admin') loadAdminUsers();
@@ -4181,7 +4265,13 @@ ${mark}${percent}`;
         || document.getElementById('ticket-awaiting-reply-filter').checked
         || document.getElementById('ticket-unassigned-filter').checked
         || document.getElementById('ticket-never-replied-filter').checked;
-      agentFilterToggle.classList.toggle('has-filter', hasFilter);
+      // الفلاتر المشتركة بتتحسب كمان — ما عدا الحضور، لأنه بيبدأ بقيمة مش فاضية أصلًا
+      const sharedActive = filtersFor('tickets').some((def) => {
+        const el = document.getElementById(filterId(def, 'tickets'));
+        if (!el || def.key === 'attendance') return false;
+        return def.type === 'checkbox' ? el.checked : Boolean(String(el.value || '').trim());
+      });
+      agentFilterToggle.classList.toggle('has-filter', hasFilter || sharedActive);
     }
     document.getElementById('ticket-search').addEventListener('input', () => {
       clearTimeout(ticketSearchTimer);
