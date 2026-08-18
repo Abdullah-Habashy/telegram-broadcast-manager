@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { setUrgentFlag } = require('../utils/urgentFlag');
+const { buildTafraStudentFilters } = require('./tafra.controller');
 const fs = require('fs');
 const path = require('path');
 const botManager = require('../bot/botManager');
@@ -58,6 +59,21 @@ function buildTicketFilters(query, { restrictToUserId } = {}) {
   } else if (query.assigned_to && /^\d+$/.test(query.assigned_to)) {
     conditions.push(`t.assigned_to = ${add(Number(query.assigned_to))}`);
   }
+  // فلاتر الطلاب المشتركة (نفس التعريف المستخدم في طلاب المنصة والمتابعة التليفونية) بتتدمج هنا
+  // عشان صندوق الدعم يفلتر بنفسها بالظبط. ترقيم الباراميترز بتاعها بيبدأ من $1 دايمًا، فبنزيحه
+  // بعدد الباراميترز اللي اتضافت هنا قبله وإلا الاتنين هيتضاربوا على نفس الأرقام
+  // status بتتضارب: في التذاكر دي حالة التذكرة (new/in_progress)، وفي الطلاب حالة الطالب على
+  // المنصة. لو مرّرناها زي ما هي الشرطين بيتطبقوا مع بعض والنتيجة صفر دايمًا. فحالة التذكرة
+  // بتحتفظ باسمها هنا، وحالة الطالب بتتبعت باسم student_status
+  const studentFilters = buildTafraStudentFilters({ ...query, status: query.student_status });
+  if (studentFilters.where) {
+    const offset = params.length;
+    conditions.push(
+      studentFilters.where.replace(/^WHERE /, '').replace(/\$(\d+)/g, (_, n) => `$${Number(n) + offset}`)
+    );
+    params.push(...studentFilters.whereParams);
+  }
+
   if (query.unread === 'true') {
     conditions.push('t.unread_count > 0');
   }
@@ -145,7 +161,17 @@ async function listTickets(req, res) {
   try {
     const countResult = await pool.query(
       `SELECT COUNT(*)::int AS count
-       FROM tickets t JOIN contacts c ON c.id = t.contact_id ${where}`,
+       FROM tickets t JOIN contacts c ON c.id = t.contact_id
+       LEFT JOIN LATERAL (
+         SELECT * FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) s ON true
+       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+       LEFT JOIN LATERAL (
+         SELECT cl.outcome_id, cl.called_at, cl.next_follow_up_at
+         FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id
+         ORDER BY cl.called_at DESC LIMIT 1
+       ) last_call ON true
+       ${where}`,
       params
     );
     const listParams = [...params, limit, offset];
@@ -166,6 +192,16 @@ async function listTickets(req, res) {
        LEFT JOIN LATERAL (
          SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
        ) tafra_match ON true
+       LEFT JOIN LATERAL (
+         SELECT * FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) s ON true
+       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+       LEFT JOIN LATERAL (
+         SELECT cl.outcome_id, cl.called_at, cl.next_follow_up_at
+         FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id
+         ORDER BY cl.called_at DESC LIMIT 1
+       ) last_call ON true
+
        LEFT JOIN users u ON u.id = t.assigned_to
        LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
        LEFT JOIN LATERAL (
