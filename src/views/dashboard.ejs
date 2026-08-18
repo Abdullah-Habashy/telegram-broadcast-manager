@@ -1004,7 +1004,11 @@
               <span>تحديث الطلاب تلقائيًا كل (ساعات)</span>
               <input type="number" id="tafra-auto-sync-interval" min="1" max="168" value="12" style="display:block; width:100%; margin-top:4px; padding:8px; border:1px solid var(--border); border-radius:7px; font-family:inherit">
             </label>
-            <button type="button" class="btn btn-ghost btn-sm" id="save-tafra-auto-sync" style="width:auto">حفظ الفاصل الزمني</button>
+            <label style="flex:1; min-width:220px; color:var(--text-muted); font-size:12px">
+              <span>تحديث الاختبارات تلقائيًا كل (ساعات)</span>
+              <input type="number" id="tafra-exam-auto-sync-interval" min="1" max="168" value="12" style="display:block; width:100%; margin-top:4px; padding:8px; border:1px solid var(--border); border-radius:7px; font-family:inherit">
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" id="save-tafra-auto-sync" style="width:auto">حفظ الفواصل الزمنية</button>
           </div>
           <p class="card-desc" style="margin-top:6px">السيرفر بيفحص كل 15 دقيقة هل حان وقت التحديث التلقائي، وأي طالب جديد بيظهر في اللوحة لوحده من غير Refresh.</p>
           <hr style="border:none; border-top:1px solid var(--border); margin:18px 0">
@@ -4899,6 +4903,8 @@
         if (maxIdeaInput) maxIdeaInput.value = s.max_idea_number || '20';
         const autoSyncInput = document.getElementById('tafra-auto-sync-interval');
         if (autoSyncInput) autoSyncInput.value = s.tafra_auto_sync_interval_hours || '12';
+        const examSyncInput = document.getElementById('tafra-exam-auto-sync-interval');
+        if (examSyncInput) examSyncInput.value = s.tafra_exam_auto_sync_interval_hours || '12';
         document.getElementById('forward-link-command').textContent = `/setforward ${s.forward_setup_code}`;
         const forwardStatus = document.getElementById('forward-target-status');
         if (s.forward_chat_id) {
@@ -5396,11 +5402,12 @@
 
     document.getElementById('save-tafra-auto-sync').addEventListener('click', async () => {
       const interval_hours = Number(document.getElementById('tafra-auto-sync-interval').value);
+      const exam_interval_hours = Number(document.getElementById('tafra-exam-auto-sync-interval').value);
       if (!Number.isInteger(interval_hours) || interval_hours < 1 || interval_hours > 168) {
         return showToast('أدخل رقم صحيح بين 1 و168 ساعة');
       }
       try {
-        await api('/api/settings/tafra-auto-sync', { method: 'POST', body: JSON.stringify({ interval_hours }) });
+        await api('/api/settings/tafra-auto-sync', { method: 'POST', body: JSON.stringify({ interval_hours, exam_interval_hours }) });
         showToast(`هيتحدّث بيانات الطلاب تلقائيًا كل ${interval_hours} ساعة`);
       } catch (error) { showToast(error.message); }
     });

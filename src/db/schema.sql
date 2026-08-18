@@ -415,6 +415,10 @@ INSERT INTO settings (key, value) VALUES
     ('tafra_identifier_encrypted', NULL),
     ('tafra_password_encrypted', NULL),
     ('tafra_auto_sync_interval_hours', '12'),
+    -- مزامنة الاختبارات والدرجات منفصلة عن مزامنة الطلاب بفاصل زمني خاص بيها: بتاخد وقت أطول
+    -- بكتير (حوالي 17 دقيقة لـ 31 اختبار) وبتضرب على API طفرة بكثافة، فمش منطقي تمشي بنفس وتيرة
+    -- تحديث بيانات الطلاب الخفيف
+    ('tafra_exam_auto_sync_interval_hours', '12'),
     ('working_hours_enabled', 'false'),
     ('working_hours_start', '09:00'),
     ('working_hours_end', '22:00'),

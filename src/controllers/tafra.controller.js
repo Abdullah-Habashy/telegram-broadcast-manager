@@ -1401,6 +1401,33 @@ async function performExamSync(credentials) {
   }
 }
 
+// نفس فكرة triggerAutoSyncIfDue بس للاختبارات والدرجات، بفاصل زمني مستقل. بيتنادى من نفس
+// الكرون كل 15 دقيقة. بنتخطّى لو مزامنة الطلاب شغّالة عشان مانضربش على API طفرة بعمليتين
+// تقيلتين في نفس الوقت ونقع في حدود المعدل — الاختبارات هتلحق في الفحص اللي بعده بـ15 دقيقة
+async function triggerExamAutoSyncIfDue() {
+  if (examSyncRunning || syncRunning) return;
+  try {
+    const [credentials, settingsResult, statusResult] = await Promise.all([
+      getCredentials(),
+      pool.query("SELECT value FROM settings WHERE key = 'tafra_exam_auto_sync_interval_hours'"),
+      pool.query('SELECT completed_at, status FROM tafra_exam_sync_status WHERE id = 1'),
+    ]);
+    if (!credentials) return;
+
+    const intervalHours = Math.max(1, Number(settingsResult.rows[0]?.value) || 12);
+    const status = statusResult.rows[0];
+    const dueTime = status?.completed_at
+      ? new Date(status.completed_at).getTime() + intervalHours * 60 * 60 * 1000
+      : 0;
+    if (Date.now() < dueTime) return;
+
+    console.log(`⏰ Exam auto-sync interval reached (${intervalHours}h); starting background Tafra exam sync.`);
+    await performExamSync(credentials);
+  } catch (error) {
+    console.error('❌ Failed to run automatic Tafra exam sync:', error.message);
+  }
+}
+
 async function syncExams(req, res) {
   if (examSyncRunning) return res.status(409).json({ error: 'تحديث الاختبارات جارٍ بالفعل' });
   const credentials = await getCredentials();
@@ -1431,7 +1458,7 @@ async function getExamSyncStatus(req, res) {
 module.exports = {
   getStatus, saveCredentials, syncStudents, syncEnrollments, syncBootcampNames, listStudents, getStudentFilters,
   syncExams, getExamSyncStatus, exportStudentsReport, listStudentContactIds, buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL,
-  triggerAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
+  triggerAutoSyncIfDue, triggerExamAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
   syncNewBotReachability, getNewBotReachabilitySyncStatus, getFollowUpBotStartLog,
   getNewBotWebhookStatus, claimNewBotWebhook, releaseNewBotWebhook,

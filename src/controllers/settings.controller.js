@@ -329,6 +329,18 @@ async function updateTafraAutoSyncInterval(req, res) {
   }
   try {
     await pool.query("UPDATE settings SET value = $1 WHERE key = 'tafra_auto_sync_interval_hours'", [String(value)]);
+    // فاصل الاختبارات اختياري في نفس الطلب — لو مبعتش بنسيبه زي ما هو
+    if (req.body.exam_interval_hours !== undefined) {
+      const examValue = Number(req.body.exam_interval_hours);
+      if (!Number.isInteger(examValue) || examValue < 1 || examValue > 168) {
+        return res.status(400).json({ error: 'فاصل مزامنة الاختبارات يجب أن يكون بين 1 و 168 ساعة' });
+      }
+      await pool.query(
+        `INSERT INTO settings (key, value) VALUES ('tafra_exam_auto_sync_interval_hours', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [String(examValue)]
+      );
+    }
     res.json({ ok: true, interval_hours: value });
   } catch (err) {
     console.error('❌ Failed to update Tafra auto-sync interval:', err.message);
