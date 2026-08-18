@@ -26,9 +26,17 @@ async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
   // جوه وقت العمل رسالة الترحيب نفسها جاية في دقيقتين، فرد إضافي هنا يبقى رسالتين ورا بعض
   if (isWithinWorkingHours(start, end, now)) return false;
 
+  // اسم المنصة بيتجاب هنا مش من المنادي: الهاندلرز عندها بيانات تيليجرام بس، وأول نسخة من
+  // الكود ده كانت بتبعت اسم تيليجرام بينما رسالة الترحيب نفسها بتنده باسم المنصة — نفس الطالب
+  // كان بيتنده باسمين مختلفين في رسالتين ورا بعض
+  const chatId = ctx.chat?.id ?? ctx.from?.id;
+  const tafraResult = await pool.query(
+    'SELECT name FROM tafra_students WHERE telegram_chat_id = $1 LIMIT 1',
+    [chatId]
+  );
   const text = settings.outside_hours_ack_text
     .replaceAll('{when}', nextWorkingWindowPhrase(start, now))
-    .replaceAll('الاسم', getFirstName(contact));
+    .replaceAll('الاسم', getFirstName({ ...contact, tafra_name: tafraResult.rows[0]?.name }));
 
   const telegramMessage = await ctx.reply(text);
   // بيتسجّل في المحادثة (بدون is_welcome) عشان الموظف يشوف الطالب استلم إيه ومايكرّرش نفس الكلام.
