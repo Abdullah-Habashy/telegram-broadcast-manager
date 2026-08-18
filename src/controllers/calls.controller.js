@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const { buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL } = require('./tafra.controller');
 const { toEgyptianMobileE164 } = require('../utils/phone');
 const { getFirstName } = require('../utils/messagePersonalization');
+const { getCredentials: getTafraCredentials } = require('./tafra.controller');
 
 // ---------- نتائج المكالمات ----------
 async function listOutcomes(req, res) {
@@ -545,6 +546,59 @@ async function logSmsSend(req, res) {
   }
 }
 
+// ---------- مشاهدات فيديوهات الطالب ----------
+// بتتجاب لحظيًا من منصة طفرة مش من قاعدتنا: مفيش جدول ولا مزامنة ليها، والاستدعاء بفلتر
+// user_id سريع لطالب واحد. وده كمان بيضمن أرقام محدّثة — عكس مشكلة مزامنة الاختبارات اللي
+// وقفت 8 أيام وخلّت اللوحة تعرض أصفار. endpoint منفصل عن الاختبارات عن قصد: لو API طفرة وقع،
+// الدرجات (من قاعدتنا) تفضل ظاهرة والفيديوهات وحدها هي اللي تعرض خطأ
+async function getStudentLessons(req, res) {
+  const studentId = Number(req.params.id);
+  if (!Number.isInteger(studentId)) return res.status(400).json({ error: 'الطالب غير صالح' });
+
+  try {
+    const accessResult = await pool.query(
+      `SELECT sca.assigned_to FROM tafra_students s
+       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+       WHERE s.tafra_student_id = $1`,
+      [studentId]
+    );
+    if (!accessResult.rows[0]) return res.status(404).json({ error: 'الطالب غير موجود' });
+    if (req.session.userRole !== 'admin' && Number(accessResult.rows[0].assigned_to) !== Number(req.session.userId)) {
+      return res.status(403).json({ error: 'الطالب ده مش مسند لك' });
+    }
+
+    const credentials = await getTafraCredentials();
+    if (!credentials) return res.status(400).json({ error: 'بيانات ربط منصة طفرة مش محفوظة' });
+
+    const { TafraReadOnlyClient } = require('../integrations/tafraClient');
+    const client = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+    const { rows, total, truncated } = await client.getStudentLessonViews(studentId);
+
+    const videos = rows.filter((row) => row.is_video !== false);
+    const completed = videos.filter((row) => row.is_completed).length;
+    const percentages = videos
+      .map((row) => Number(row.progress_percentage))
+      .filter((value) => Number.isFinite(value));
+
+    res.json({
+      views: rows,
+      summary: {
+        total,
+        shown: rows.length,
+        truncated,
+        video_count: videos.length,
+        completed_count: completed,
+        average_progress: percentages.length
+          ? Math.round((percentages.reduce((sum, value) => sum + value, 0) / percentages.length) * 10) / 10
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Failed to load student lesson views:', error.message);
+    res.status(502).json({ error: 'تعذر جلب المشاهدات من منصة طفرة: ' + error.message });
+  }
+}
+
 // ---------- اختبارات الطالب ودرجاته ----------
 // بيتحمّل عند الطلب (لما الموظف يضغط الزرار) مش مع البروفايل، عشان فتح كل طالب مايجيبش
 // عشرات الصفوف من غير حاجة. أهم حاجة هنا مش الدرجات اللي أخدها — دي ظاهرة على المنصة أصلًا —
@@ -821,6 +875,7 @@ module.exports = {
   listMyStudents,
   getStudentProfile,
   getStudentExams,
+  getStudentLessons,
   logSmsSend,
   logCall,
   editCallLog,

@@ -2650,6 +2650,34 @@
       return `<span class="badge ${tone}">${Math.round(value * 10) / 10}%</span>`;
     }
 
+    function renderStudentLessons(data) {
+      const { views, summary } = data;
+      if (!views.length) return '<div class="empty-state">مفيش مشاهدات مسجّلة للطالب ده على المنصة.</div>';
+      const head = `
+        <b style="display:block; margin-bottom:8px">🎬 مشاهدات الفيديوهات</b>
+        <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px">
+          <span class="badge badge-muted">فيديوهات: ${summary.video_count}</span>
+          <span class="badge badge-muted">مكتملة: ${summary.completed_count}</span>
+          ${summary.average_progress !== null ? `<span class="badge badge-muted">متوسط المشاهدة: ${summary.average_progress}%</span>` : ''}
+          ${summary.truncated ? `<span class="badge badge-warning" title="فيه مشاهدات أقدم متجابتش">أحدث ${summary.shown} من ${summary.total}</span>` : `<span class="badge badge-muted">الإجمالي: ${summary.total}</span>`}
+        </div>`;
+      const rows = views.map((view) => `
+        <tr>
+          <td>${escapeHtml(view.lesson_name || '—')}${view.is_completed ? '' : ' <span class="ticket-muted">(لم يكملها)</span>'}</td>
+          <td class="ticket-muted">${escapeHtml(view.bootcamp_name || '—')}</td>
+          <td>${examPercentBadge(view.progress_percentage)}</td>
+          <td class="ticket-muted">${fmtExamDuration(view.watch_progress_seconds)} / ${fmtExamDuration(view.lesson_duration_seconds)}</td>
+          <td class="ticket-muted">${escapeHtml(view.viewed_at || '—')}</td>
+        </tr>`).join('');
+      return head + `
+        <div class="tafra-students-table-wrap">
+          <table style="min-width:640px">
+            <thead><tr><th>الدرس</th><th>الكورس</th><th>نسبة المشاهدة</th><th>شاهد / المدة</th><th>آخر مشاهدة</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
     function renderStudentExams(data) {
       const { taken, missed, summary } = data;
       const summaryRow = `
@@ -2723,12 +2751,15 @@
                  حسب RFC 5724، وبعض تطبيقات الرسائل مابتفكّش %2B فبتحاول تبعت لرقم غلط. الرقم
                  خارج من toEgyptianMobileE164 فمضمون إنه + وكود مصر و10 أرقام بس -->
             ${data.sms ? `<a class="btn btn-ghost btn-sm" style="width:auto" id="profile-sms-btn" href="sms:${data.sms.phone}?body=${encodeURIComponent(data.sms.body)}" title="بيفتح تطبيق الرسائل على تليفونك والنص جاهز — تدوس إرسال وخلاص">✉️ رسالة SMS</a>` : ''}
-            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والدرجات</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والفيديوهات</button>
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
         </div>
         <div class="card" id="student-exams-panel" style="display:none; margin-block:12px">
           <div class="empty-state">جارٍ التحميل...</div>
+        </div>
+        <div class="card" id="student-lessons-panel" style="display:none; margin-block:12px">
+          <div class="empty-state">جارٍ تحميل المشاهدات من منصة طفرة...</div>
         </div>
         ${(data.sms_logs && data.sms_logs.length) ? `
         <div class="card" style="margin-block:12px">
@@ -2795,16 +2826,21 @@
       // الاختبارات بتتحمّل أول مرة يفتح الموظف اللوحة بس، وبعدها الزرار بيطوي ويفتح من غير طلب جديد
       document.getElementById('toggle-student-exams-btn').addEventListener('click', async () => {
         const examsPanel = document.getElementById('student-exams-panel');
+        const lessonsPanel = document.getElementById('student-lessons-panel');
         const isHidden = examsPanel.style.display === 'none';
         examsPanel.style.display = isHidden ? '' : 'none';
+        lessonsPanel.style.display = isHidden ? '' : 'none';
         if (!isHidden || examsPanel.dataset.loaded === '1') return;
-        try {
-          const exams = await api('/api/calls/student/' + student.tafra_student_id + '/exams');
-          examsPanel.innerHTML = renderStudentExams(exams);
-          examsPanel.dataset.loaded = '1';
-        } catch (error) {
-          examsPanel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
-        }
+        examsPanel.dataset.loaded = '1';
+        const studentId = student.tafra_student_id;
+        // الاتنين بيتحمّلوا بالتوازي وكل واحد بيتعامل مع فشله لوحده: الدرجات من قاعدتنا (سريعة)،
+        // والمشاهدات نداء لحظي لمنصة طفرة (أبطأ وممكن يفشل) — فوقوع المنصة مايخفيش الدرجات
+        api('/api/calls/student/' + studentId + '/exams')
+          .then((exams) => { examsPanel.innerHTML = renderStudentExams(exams); })
+          .catch((error) => { examsPanel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`; });
+        api('/api/calls/student/' + studentId + '/lessons')
+          .then((lessons) => { lessonsPanel.innerHTML = renderStudentLessons(lessons); })
+          .catch((error) => { lessonsPanel.innerHTML = `<div class="empty-state">تعذر تحميل المشاهدات: ${escapeHtml(error.message)}</div>`; });
       });
 
       if (student.ticket_id) {

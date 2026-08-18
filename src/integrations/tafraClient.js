@@ -171,6 +171,32 @@ class TafraReadOnlyClient {
     return this.getWithRetry(`${BASE_URL}/offline-exams/${safeExamId}/marks?page=${safePage}`);
   }
 
+  // سجل مشاهدات دروس طالب واحد. مفيش مسار مستقل للطالب على المنصة — نفس نقطة المجموعة الكاملة
+  // مع filter[user_id]، والترقيم 15 صف للصفحة (ثابت من المنصة، مفيش per_page).
+  // بنحدّ عدد الصفحات لأن ده بيتنادى لحظيًا وقت ما الموظف يفتح البروفايل، فمينفعش يستنى دقايق
+  async getStudentLessonViews(studentId, maxPages = 10) {
+    const safeStudentId = Number(studentId);
+    if (!Number.isInteger(safeStudentId) || safeStudentId <= 0) throw new Error('رقم الطالب غير صالح');
+
+    const rows = [];
+    let total = 0;
+    let lastPage = 1;
+    for (let page = 1; page <= maxPages; page += 1) {
+      const response = await this.getWithRetry(
+        `${BASE_URL}/online-lessons/views/index?filter[user_id]=${safeStudentId}&sort=-viewed_at&page=${page}`
+      );
+      const pageRows = Array.isArray(response.data?.data) ? response.data.data : [];
+      rows.push(...pageRows);
+      const meta = response.data?.meta || {};
+      total = Number(meta.total) || rows.length;
+      lastPage = Number(meta.last_page) || 1;
+      if (page >= lastPage || !pageRows.length) break;
+      await delay(120);
+    }
+    // truncated بيقول للواجهة إن فيه مشاهدات أقدم ما اتجابتش، عشان متعرضش رقم ناقص كأنه الكل
+    return { rows, total, truncated: lastPage > maxPages };
+  }
+
   // بيرجّع اسم الكورس اللي الاختبار الأونلاين ده تابع له — متاح للأونلاين بس (قيد من المنصة نفسها)
   async getStudentExamMarksHistory(studentId, examId) {
     const safeStudentId = Number(studentId);
