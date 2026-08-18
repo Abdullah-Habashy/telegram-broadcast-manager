@@ -724,11 +724,11 @@
           </select>
           <input type="date" id="tafra-enrolled-from" class="compact-input" title="تاريخ الاشتراك من">
           <input type="date" id="tafra-enrolled-to" class="compact-input" title="تاريخ الاشتراك إلى">
-          <select id="tafra-welcome-status-filter" class="compact-select" title="حالة رسالة الترحيب — الرد التلقائي عند أول دخول للبوت">
-            <option value="">كل حالات المراسلة</option>
-            <option value="no_welcome">بدأ محادثة ولم تُرسل له رسالة ترحيب</option>
-            <option value="welcome_no_reply">بدأ محادثة وتم إرسال رسالة ترحيب ولم يرد</option>
-            <option value="welcome_replied">بدأ محادثة وأُرسلت رسالة ترحيب وتم الرد</option>
+          <select id="tafra-welcome-status-filter" class="compact-select" title="حالة رسالة الترحيب — الرد التلقائي عند أول دخول للبوت. كل الحالات مشروطة بأن الطالب دخل البوت فعلاً">
+            <option value="">حالة رسالة الترحيب</option>
+            <option value="no_welcome">دخل البوت ومجاش له ترحيب</option>
+            <option value="welcome_no_reply">وصله ترحيب ومردّش</option>
+            <option value="welcome_replied">وصله ترحيب ورد</option>
           </select>
           <input type="date" id="tafra-last-sent-from" class="compact-input" title="آخر إرسال من">
           <input type="date" id="tafra-last-sent-to" class="compact-input" title="آخر إرسال إلى">
