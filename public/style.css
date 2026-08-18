@@ -676,8 +676,18 @@ tr:last-child td { border-bottom: none; }
   .ticket-reply-main { width: 100%; }
   .ticket-reply-main textarea { min-height: 48px; max-height: 50vh; font-size: 16px; margin: 0; width: 100%; }
   /* زرار الإرسال بياخد المساحة الفاضية بعد أزرار الأدوات — هدف أكبر للإصبع وأوضح */
-  .ticket-reply-actions { gap: 6px; width: 100%; }
+  .ticket-reply-actions { gap: 6px; width: 100%; position: relative; }
   .ticket-reply-actions .ticket-send-button { flex: 1; width: auto !important; }
+  /* القوائم المنسدلة (الأفكار / درجات الاختبارات) بتتثبّت على صف الأزرار كله مش على الزرار
+     نفسه: الزرار عرضه 44px والقائمة 260px، وفي RTL كانت بتمتد ناحية اليمين وتتقص بره الشاشة.
+     بنلغي تموضع الـ wrap عشان أقرب أب مموضَع يبقى صف الأزرار، فتاخد عرضه بالظبط */
+  .idea-picker-wrap { position: static; }
+  .idea-picker-dropdown {
+    inset-inline: 0;
+    min-width: 0;
+    max-height: 55vh;
+    overflow-y: auto;
+  }
   .icon-action-btn, .ticket-send-button { width: 44px !important; height: 44px; min-width: 44px; padding: 0; font-size: 18px; }
   .desktop-button-label, .quick-desktop-label { display: none; }
   .quick-mobile-label { display: inline; }
