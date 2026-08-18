@@ -2699,26 +2699,20 @@
           </div>
         </details>` : '';
 
+      // تلات أعمدة بس — اسم الاختبار والدرجة والنسبة. الكورس والمحاولة والوقت والتاريخ اتشالوا
+      // بناءً على طلب صريح: على شاشة التليفون كانوا بيضغطوا الأعمدة المهمة ويجبروا تمرير أفقي.
+      // "(لم يكملها)" باقية جنب الاسم لأن الدرجة من غيرها بتتقري غلط — محاولة ناقصة مش نتيجة نهائية
       const takenBlock = taken.length ? `
         <b style="display:block; margin-bottom:6px">الدرجات</b>
         <div class="tafra-students-table-wrap">
-          <!-- الـ wrap بيجيب التمرير الأفقي، بس min-width الافتراضي بتاعه 980px وده كتير على
-               لوحة جانبية بسبعة أعمدة، فبنقلّله عشان الجدول يبان كامل من غير تمرير لو فيه مساحة -->
-          <table style="min-width:720px">
-            <thead><tr>
-              <th>الاختبار</th><th>الكورس</th><th>الدرجة</th><th>النسبة</th>
-              <th>المحاولة</th><th>الوقت</th><th>التاريخ</th>
-            </tr></thead>
+          <table style="min-width:0">
+            <thead><tr><th>الاختبار</th><th>الدرجة</th><th>النسبة</th></tr></thead>
             <tbody>
               ${taken.map((exam) => `
                 <tr>
                   <td>${escapeHtml(exam.name)}${exam.finished ? '' : ' <span class="ticket-muted">(لم يكملها)</span>'}</td>
-                  <td class="ticket-muted">${escapeHtml(exam.bootcamp_name || '—')}</td>
                   <td>${exam.mark === null ? '—' : escapeHtml(String(exam.mark))}</td>
                   <td>${examPercentBadge(exam.percentage)}</td>
-                  <td>${exam.attempt_number ?? '—'}</td>
-                  <td class="ticket-muted">${fmtExamDuration(exam.time_taken_seconds)}</td>
-                  <td class="ticket-muted">${exam.taken_at ? fmtDate(exam.taken_at) : '—'}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
