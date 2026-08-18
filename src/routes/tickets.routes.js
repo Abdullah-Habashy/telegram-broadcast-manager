@@ -49,5 +49,6 @@ router.patch('/:id/idea', ticketsController.updateIdeaProgress);
 router.get('/:id/idea-log', ticketsController.getIdeaProgressLog);
 router.get('/:id/recent-exam-marks', ticketsController.getRecentExamMarks);
 router.get('/:id/course-exam-marks', ticketsController.getCourseExamMarks);
+router.get('/:id/lesson-views', ticketsController.getTicketLessonViews);
 
 module.exports = router;

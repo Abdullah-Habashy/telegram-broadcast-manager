@@ -4633,6 +4633,8 @@ ${mark}${percent}`;
             <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-urgent-toggle"
               title="${ticket.is_urgent ? 'إلغاء علامة عاجل' : 'وسم كحالة عاجلة'}" aria-label="عاجل"
               style="${ticket.is_urgent ? 'background:var(--danger-tint,#fdeaea)' : ''}">🚨</button>
+            <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-lessons-toggle"
+              title="مشاهدات فيديوهات الطالب" aria-label="مشاهدات الفيديوهات" aria-expanded="false">🎬</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-status-toggle" title="الحالة وبيانات التذكرة" aria-label="إظهار الحالة وبيانات التذكرة" aria-expanded="false">◉</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-follow-up-toggle" title="موعد المتابعة" aria-label="إظهار موعد المتابعة" aria-expanded="false">📅</button>
           </div>
@@ -4662,6 +4664,7 @@ ${mark}${percent}`;
             </div>
             </div>
           </div>
+          <div class="card ticket-lessons-panel" id="ticket-lessons-panel" style="display:none"></div>
           <div class="ticket-messages" id="ticket-messages">
             ${data.messages.length ? data.messages.map(ticketMessageHtml).join('') : '<div class="empty-state">لا توجد رسائل</div>'}
           </div>
@@ -4792,6 +4795,30 @@ ${mark}${percent}`;
         document.getElementById('send-ticket-reply').addEventListener('click', sendTicketReply);
         document.getElementById('cancel-ticket-reply-context').addEventListener('click', clearReplyContext);
         document.getElementById('mobile-ticket-back').addEventListener('click', closeMobileTicket);
+
+        // مشاهدات الفيديوهات: نداء لحظي لمنصة طفرة، فبيتحمّل أول ما الموظف يفتح الكارت مش مع
+        // كل تذكرة بيفتحها. dataset.loaded بيمنع إعادة التحميل مع كل فتح وقفل
+        const lessonsToggle = document.getElementById('ticket-lessons-toggle');
+        const lessonsPanel = document.getElementById('ticket-lessons-panel');
+        lessonsToggle.addEventListener('click', async () => {
+          const willOpen = lessonsPanel.style.display === 'none';
+          lessonsPanel.style.display = willOpen ? 'block' : 'none';
+          lessonsToggle.classList.toggle('active', willOpen);
+          lessonsToggle.setAttribute('aria-expanded', String(willOpen));
+          if (!willOpen || lessonsPanel.dataset.loaded === '1') return;
+          lessonsPanel.dataset.loaded = '1';
+          lessonsPanel.innerHTML = '<div class="empty-state">جارٍ تحميل المشاهدات من منصة طفرة...</div>';
+          try {
+            const data = await api('/api/tickets/' + ticketId + '/lesson-views');
+            lessonsPanel.innerHTML = data.linked === false
+              ? '<div class="empty-state">الطالب ده مش مربوط بحساب على منصة طفرة، فمفيش مشاهدات.</div>'
+              : renderStudentLessons(data);
+          } catch (error) {
+            // إعادة المحاولة مسموحة بعد الفشل — غالبًا بطء لحظي من المنصة مش مشكلة دايمة
+            lessonsPanel.dataset.loaded = '';
+            lessonsPanel.innerHTML = `<div class="empty-state">تعذر تحميل المشاهدات: ${escapeHtml(error.message)}</div>`;
+          }
+        });
         const mobileDetails = document.getElementById('ticket-mobile-details');
         const mobileStatusToggle = document.getElementById('mobile-ticket-status-toggle');
         const mobileFollowUpToggle = document.getElementById('mobile-ticket-follow-up-toggle');

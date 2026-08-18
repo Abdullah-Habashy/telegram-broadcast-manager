@@ -734,6 +734,14 @@ tr:last-child td { border-bottom: none; }
 }
 
 
+/* كارت مشاهدات الفيديوهات جوه المحادثة — لوحة المحادثة ارتفاعها ثابت والجزء اللي بيتمرّر هو
+   .ticket-messages بس، فالكارت ده بيتمرّر جوّه نفسه بارتفاع محدود بدل ما يقص الرسايل */
+.ticket-lessons-panel {
+  flex-shrink: 0; max-height: 32vh; overflow-y: auto;
+  margin: 0 0 10px; padding: 12px;
+}
+#ticket-lessons-toggle.active { background: var(--primary-tint); color: var(--primary); }
+
 /* ===== متابعة الأداء ===== */
 .perf-toolbar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px;

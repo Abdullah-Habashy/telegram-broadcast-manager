@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const { setUrgentFlag } = require('../utils/urgentFlag');
-const { buildTafraStudentFilters } = require('./tafra.controller');
+const { buildTafraStudentFilters, getCredentials: getTafraCredentials } = require('./tafra.controller');
+const { fetchStudentLessonViews } = require('../utils/lessonViews');
 const fs = require('fs');
 const path = require('path');
 const botManager = require('../bot/botManager');
@@ -1030,6 +1031,48 @@ async function getCourseExamMarks(req, res) {
   }
 }
 
+// مشاهدات فيديوهات الطالب صاحب التذكرة — نفس مصدر شاشة المتابعة التليفونية بالظبط، بس بيوصل
+// للطالب من التذكرة بدل ما ياخد رقمه مباشرة. نقطة نهاية منفصلة عن بيانات التذكرة عن قصد: النداء
+// بيروح لمنصة طفرة لحظيًا وممكن يبطّئ أو يفشل، فلو حصل ده المحادثة تفضل شغالة والكارت وحده
+// هو اللي يعرض الخطأ
+async function getTicketLessonViews(req, res) {
+  const ticketId = Number(req.params.id);
+  if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'التذكرة غير صالحة' });
+
+  try {
+    const result = await pool.query(
+      `SELECT t.assigned_to, s.tafra_student_id
+       FROM tickets t
+       JOIN contacts c ON c.id = t.contact_id
+       LEFT JOIN LATERAL (
+         SELECT tafra_student_id FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) s ON true
+       WHERE t.id = $1`,
+      [ticketId]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+    // نفس قاعدة getTicket بالظبط: الموظف ميقدرش يشوف بيانات تذكرة مسندة لموظف تاني
+    if (req.session.userRole !== 'admin'
+      && row.assigned_to !== null && row.assigned_to !== undefined
+      && Number(row.assigned_to) !== Number(req.session.userId)) {
+      return res.status(403).json({ error: 'التذكرة دي مسندة لموظف تاني' });
+    }
+    // مش كل من بيكلم البوت طالب على المنصة — دي حالة عادية مش خطأ
+    if (!row.tafra_student_id) {
+      return res.json({ views: [], summary: null, linked: false });
+    }
+
+    const credentials = await getTafraCredentials();
+    if (!credentials) return res.status(400).json({ error: 'بيانات ربط منصة طفرة مش محفوظة' });
+    const data = await fetchStudentLessonViews(credentials, Number(row.tafra_student_id));
+    res.json({ ...data, linked: true });
+  } catch (error) {
+    console.error('❌ Failed to load ticket lesson views:', error.message);
+    res.status(502).json({ error: 'تعذر جلب المشاهدات من منصة طفرة: ' + error.message });
+  }
+}
+
 function streamEvents(req, res) {
   const events = require('../utils/events');
   events.registerClient(req, res);
@@ -1075,7 +1118,7 @@ module.exports = {
   updateNextFollowUpMessage,
   listTickets, listTicketIds, getTicket, updateTicket, bulkAssignTickets, bulkAssignTicketsByContact,
   replyToTicket, getTicketMeta,
-  editSupportMessage, deleteSupportMessage, getRecentExamMarks, getCourseExamMarks,
+  editSupportMessage, deleteSupportMessage, getRecentExamMarks, getCourseExamMarks, getTicketLessonViews,
   createTicketSubtitle, updateIdeaProgress, getIdeaProgressLog, streamEvents,
   flagIncomingMessage, listFlaggedMessages, reactToIncomingMessage,
 };

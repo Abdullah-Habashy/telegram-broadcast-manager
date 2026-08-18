@@ -5,6 +5,7 @@ const { toEgyptianMobileE164 } = require('../utils/phone');
 const { getFirstName } = require('../utils/messagePersonalization');
 const { setUrgentFlag, setUrgentFlagBulk } = require('../utils/urgentFlag');
 const { getCredentials: getTafraCredentials } = require('./tafra.controller');
+const { fetchStudentLessonViews } = require('../utils/lessonViews');
 
 // ---------- نتائج المكالمات ----------
 async function listOutcomes(req, res) {
@@ -573,29 +574,7 @@ async function getStudentLessons(req, res) {
     const credentials = await getTafraCredentials();
     if (!credentials) return res.status(400).json({ error: 'بيانات ربط منصة طفرة مش محفوظة' });
 
-    const { TafraReadOnlyClient } = require('../integrations/tafraClient');
-    const client = new TafraReadOnlyClient(credentials.identifier, credentials.password);
-    const { rows, total, truncated } = await client.getStudentLessonViews(studentId);
-
-    const videos = rows.filter((row) => row.is_video !== false);
-    const completed = videos.filter((row) => row.is_completed).length;
-    const percentages = videos
-      .map((row) => Number(row.progress_percentage))
-      .filter((value) => Number.isFinite(value));
-
-    res.json({
-      views: rows,
-      summary: {
-        total,
-        shown: rows.length,
-        truncated,
-        video_count: videos.length,
-        completed_count: completed,
-        average_progress: percentages.length
-          ? Math.round((percentages.reduce((sum, value) => sum + value, 0) / percentages.length) * 10) / 10
-          : null,
-      },
-    });
+    res.json(await fetchStudentLessonViews(credentials, studentId));
   } catch (error) {
     console.error('❌ Failed to load student lesson views:', error.message);
     res.status(502).json({ error: 'تعذر جلب المشاهدات من منصة طفرة: ' + error.message });
