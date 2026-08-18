@@ -2485,6 +2485,9 @@
               <!-- الاسم data-sms-student مش data-student-id عن قصد: loadCalls بيختار
                    [data-student-id] ويربطه بفتح البروفايل، فلو استخدمناه هنا الرابط كان هياخد
                    نفس المُعالج ويفتح البروفايل بدل ما يفتح تطبيق الرسائل -->
+              ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm open-student-chat-btn"
+                  style="width:auto; padding:2px 10px" data-ticket-id="${student.ticket_id}"
+                  title="فتح محادثة الطالب في صندوق الدعم">💬 الشات</button>` : ''}
               ${student.sms ? `<a class="btn btn-ghost btn-sm sms-row-btn" style="width:auto; padding:2px 10px"
                   data-sms-student="${id}"
                   href="sms:${student.sms.phone}?body=${encodeURIComponent(student.sms.body)}"
@@ -2514,6 +2517,12 @@
             if (event.target.tagName === 'INPUT') return;
             openCallProfile(Number(row.dataset.studentId));
           });
+        });
+        // نفس دالة الربط المستخدمة في الشاشات التانية — بتنقل لتاب الدعم وتفتح التذكرة
+        bindOpenStudentChatButtons(list);
+        list.querySelectorAll('.open-student-chat-btn').forEach((btn) => {
+          // من غير كده الضغطة بتطلع للصف وتفتح بروفايل المتابعة فوق الشات
+          btn.addEventListener('click', (event) => event.stopPropagation());
         });
         list.querySelectorAll('.sms-row-btn').forEach((link) => {
           link.addEventListener('click', (event) => {

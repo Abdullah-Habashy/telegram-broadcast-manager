@@ -316,7 +316,7 @@ function buildStudentSelectSql(examSelectSql) {
   return `SELECT s.tafra_student_id, s.name, s.phone, s.parent_phone, s.status,
     s.student_code, s.educational_level #>> '{}' AS educational_level, s.grade_level, s.gender,
     CASE WHEN s.educational_level #>> '{}' ILIKE '%ازهر%' THEN 'azhar' ELSE 'general' END AS education_type,
-    t.current_idea_number,
+    t.current_idea_number, t.id AS ticket_id,
     bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum${examSelectSql || ''},
     sca.assigned_to, au.name AS assigned_name,
     last_call.outcome_name AS last_outcome_name, last_call.called_at AS last_called_at,
