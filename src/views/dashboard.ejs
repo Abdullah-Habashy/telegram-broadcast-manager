@@ -2688,12 +2688,16 @@
           ${summary.missed_count ? `<span class="badge badge-danger">متاح ولم يدخله: ${summary.missed_count}</span>` : '<span class="badge badge-success">مدخّل كل المتاح</span>'}
         </div>`;
 
-      // المتاح-ولم-يدخله فوق الدرجات عن قصد: ده اللي الموظف بيكلّم الطالب بسببه
+      // مطوية ومحطوطة **تحت** الدرجات: العدد نفسه ظاهر في الملخص فوق وهو الإشارة اللي تهم،
+      // أما قائمة الأسماء فتفصيل مرجعي. لما كانت مفتوحة وفوق، طالب عنده 30 اختبار لم يدخله كان
+      // بيدفن جدول الدرجات تحت 3400 حرف من الشارات ويخلي الموظف يفتكر إنه مفيش درجات أصلاً
       const missedBlock = missed.length ? `
-        <b style="display:block; margin-bottom:6px">اختبارات متاحة لم يدخلها</b>
-        <div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:16px">
-          ${missed.map((exam) => `<span class="badge badge-danger" title="${escapeHtml(exam.bootcamp_name || '')}">${escapeHtml(exam.name)}</span>`).join('')}
-        </div>` : '';
+        <details style="margin-top:16px">
+          <summary style="cursor:pointer; font-weight:700">اختبارات متاحة لم يدخلها (${missed.length})</summary>
+          <div class="row" style="gap:6px; flex-wrap:wrap; margin-top:10px">
+            ${missed.map((exam) => `<span class="badge badge-danger" title="${escapeHtml(exam.bootcamp_name || '')}">${escapeHtml(exam.name)}</span>`).join('')}
+          </div>
+        </details>` : '';
 
       const takenBlock = taken.length ? `
         <b style="display:block; margin-bottom:6px">الدرجات</b>
@@ -2720,7 +2724,7 @@
           </table>
         </div>` : '<div class="empty-state">الطالب ده لسه ماخدش أي اختبار.</div>';
 
-      return summaryRow + missedBlock + takenBlock;
+      return summaryRow + takenBlock + missedBlock;
     }
 
     function renderCallProfile(data) {
