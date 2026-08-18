@@ -2635,14 +2635,6 @@
       }
     }
 
-    // ثواني -> "٥ د ٢٠ ث" — الوقت اللي الطالب استغرقه في الاختبار بييجي بالثواني من المنصة
-    function fmtExamDuration(seconds) {
-      if (!seconds && seconds !== 0) return '—';
-      const mins = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return mins ? `${mins} د${secs ? ` ${secs} ث` : ''}` : `${secs} ث`;
-    }
-
     function examPercentBadge(percentage) {
       if (percentage === null || percentage === undefined) return '<span class="badge badge-muted">بدون درجة</span>';
       const value = Number(percentage);
@@ -2661,18 +2653,16 @@
           ${summary.average_progress !== null ? `<span class="badge badge-muted">متوسط المشاهدة: ${summary.average_progress}%</span>` : ''}
           ${summary.truncated ? `<span class="badge badge-warning" title="فيه مشاهدات أقدم متجابتش">أحدث ${summary.shown} من ${summary.total}</span>` : `<span class="badge badge-muted">الإجمالي: ${summary.total}</span>`}
         </div>`;
+      // عمودين بس زي جدول الدرجات — الكورس والمدة وآخر مشاهدة اتشالوا بطلب صريح
       const rows = views.map((view) => `
         <tr>
-          <td>${escapeHtml(view.lesson_name || '—')}${view.is_completed ? '' : ' <span class="ticket-muted">(لم يكملها)</span>'}</td>
-          <td class="ticket-muted">${escapeHtml(view.bootcamp_name || '—')}</td>
+          <td>${escapeHtml(view.lesson_name || '—')}</td>
           <td>${examPercentBadge(view.progress_percentage)}</td>
-          <td class="ticket-muted">${fmtExamDuration(view.watch_progress_seconds)} / ${fmtExamDuration(view.lesson_duration_seconds)}</td>
-          <td class="ticket-muted">${escapeHtml(view.viewed_at || '—')}</td>
         </tr>`).join('');
       return head + `
         <div class="tafra-students-table-wrap">
-          <table style="min-width:640px">
-            <thead><tr><th>الدرس</th><th>الكورس</th><th>نسبة المشاهدة</th><th>شاهد / المدة</th><th>آخر مشاهدة</th></tr></thead>
+          <table style="min-width:0">
+            <thead><tr><th>الفيديو</th><th>نسبة المشاهدة</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>`;
@@ -2774,6 +2764,7 @@
               <div class="ticket-muted">بواسطة: ${escapeHtml(log.sent_by_name || '—')}</div>
             </div>`).join('')}
         </div>` : ''}
+        <div id="call-log-section">
         <div class="ticket-controls" style="grid-template-columns: repeat(2, 1fr)">
           ${(currentUserRole === 'admin' || canAssignCalls) ? `
             <label>الموظف المسؤول عن الاتصال
@@ -2815,6 +2806,7 @@
           <textarea id="call-notes" placeholder="ملاحظات عن المكالمة (اختياري)..."
             style="width:100%; min-height:60px; padding:10px; border:1.5px solid var(--border); border-radius:8px; font-family:inherit"></textarea>
         </div>
+        </div>
       `;
 
       document.getElementById('mobile-call-back').addEventListener('click', closeMobileCallProfile);
@@ -2828,12 +2820,14 @@
         const examsPanel = document.getElementById('student-exams-panel');
         const lessonsPanel = document.getElementById('student-lessons-panel');
         const dataPanels = document.getElementById('student-data-panels');
-        const historyList = document.getElementById('call-history-list');
+        const logSection = document.getElementById('call-log-section');
         const isHidden = dataPanels.style.display === 'none';
-        // بنبدّل مكان سجل المكالمات مش بنكدّس فوقه: اللوحة ارتفاعها ثابت وسجل المكالمات هو
-        // الجزء الوحيد اللي بياخد المساحة الباقية ويتمرّر، فلو ضفنا الكروت جنبه بيتقصوا
+        // بنبدّل مكان قسم تسجيل المكالمة بالكامل (الكنترولز + السجل + النتيجة + الملاحظات)،
+        // مش سجل المكالمات بس: اللوحة ارتفاعها ثابت والعناصر دي بتاخد أغلبها بارتفاع ثابت،
+        // فلو سيبناها الكروت بتتحشر في شريط رفيع. الموظف بيبص على البيانات أو بيسجّل مكالمة —
+        // مش الاتنين في نفس اللحظة
         dataPanels.style.display = isHidden ? '' : 'none';
-        if (historyList) historyList.style.display = isHidden ? 'none' : '';
+        if (logSection) logSection.style.display = isHidden ? 'none' : '';
         if (!isHidden || examsPanel.dataset.loaded === '1') return;
         examsPanel.dataset.loaded = '1';
         const studentId = student.tafra_student_id;
