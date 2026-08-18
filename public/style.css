@@ -491,7 +491,7 @@ tr:last-child td { border-bottom: none; }
 }
 .ticket-reply-context-label { flex-shrink: 0; font-weight: 600; color: var(--primary); }
 .ticket-reply-context-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
-.ticket-reply-box textarea { flex: 1; min-height: 74px; resize: vertical; padding: 10px; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; }
+.ticket-reply-box textarea { flex: 1; min-height: 74px; max-height: 55vh; resize: vertical; padding: 10px; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; }
 .ticket-reply-main { flex: 1; min-width: 0; }
 .ticket-reply-main textarea { width: 100%; }
 .ticket-reply-actions { display: flex; align-items: center; gap: 6px; }
@@ -671,7 +671,7 @@ tr:last-child td { border-bottom: none; }
     flex-shrink: 0; flex-direction: row; align-items: flex-end; margin: 0 -4px;
     padding: 10px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 18px rgba(23, 27, 43, 0.08);
   }
-  .ticket-reply-main textarea { min-height: 48px; max-height: 110px; font-size: 16px; margin: 0; }
+  .ticket-reply-main textarea { min-height: 48px; max-height: 55vh; font-size: 16px; margin: 0; }
   .ticket-reply-actions { gap: 4px; }
   .icon-action-btn, .ticket-send-button { width: 44px !important; height: 44px; min-width: 44px; padding: 0; font-size: 18px; }
   .desktop-button-label, .quick-desktop-label { display: none; }

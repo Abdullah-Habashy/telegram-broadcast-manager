@@ -3744,6 +3744,18 @@
             </div>
           </div>`;
 
+        // صندوق الرد بيكبر مع المحتوى لحد 55% من الشاشة بدل ما يفضل سطرين ثابتين. الحد الأقصى
+        // في الـ CSS بيخلي الصندوق يعمل تمرير داخلي بعد كده بدل ما يبلع الشاشة ويخفي المحادثة.
+        // مهم بعد حقن درجات الاختبارات: النص بيبقى عشرات الأسطر وكان بيتقص عند 110px
+        function autoGrowReplyBox(textarea) {
+          if (!textarea) return;
+          textarea.style.height = 'auto';
+          textarea.style.height = textarea.scrollHeight + 'px';
+        }
+
+        const replyBoxEl = document.getElementById('ticket-reply-content');
+        replyBoxEl?.addEventListener('input', () => autoGrowReplyBox(replyBoxEl));
+
         // تعيين مفاتيح الرسائل الحالية لمنع التكرار عند التحديث التلقائي المباشر
         renderedMessageKeys = new Set((data.messages || []).map(messageKeyOf));
         document.getElementById('ticket-messages').addEventListener('click', handleMessageToolsClick);
@@ -3942,7 +3954,10 @@
           function insertIntoReply(text) {
             const textarea = document.getElementById('ticket-reply-content');
             textarea.value = textarea.value.trim() ? `${textarea.value.trim()}\n\n${text}` : text;
+            autoGrowReplyBox(textarea);
             textarea.focus();
+            // بنودّيه لأول الدرجات المحقونة مش لآخرها، عشان يقرأها من البداية على التليفون
+            textarea.scrollTop = 0;
           }
 
           // سطر الدرجة — بيضيف النسبة المئوية بين قوسين جنبها لو متاحة
