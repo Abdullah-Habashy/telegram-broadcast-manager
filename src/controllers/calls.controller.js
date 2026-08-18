@@ -3,7 +3,7 @@ const pool = require('../config/db');
 const { buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL } = require('./tafra.controller');
 const { toEgyptianMobileE164 } = require('../utils/phone');
 const { getFirstName } = require('../utils/messagePersonalization');
-const { setUrgentFlag } = require('../utils/urgentFlag');
+const { setUrgentFlag, setUrgentFlagBulk } = require('../utils/urgentFlag');
 const { getCredentials: getTafraCredentials } = require('./tafra.controller');
 
 // ---------- نتائج المكالمات ----------
@@ -616,6 +616,19 @@ async function toggleStudentUrgent(req, res) {
   }
 }
 
+// وسم/إلغاء عاجل لمجموعة طلاب مرة واحدة — بيشتغل مع نفس التحديد المستخدم في الإسناد الجماعي
+async function bulkToggleUrgent(req, res) {
+  const studentIds = parseStudentIds(req.body);
+  if (!studentIds.length) return res.status(400).json({ error: 'اختر طالب واحد على الأقل' });
+  try {
+    const count = await setUrgentFlagBulk(studentIds, req.body.is_urgent);
+    res.json({ ok: true, updated: count, is_urgent: Boolean(req.body.is_urgent) });
+  } catch (error) {
+    console.error('❌ Failed to bulk-toggle the urgent flag:', error.message);
+    res.status(500).json({ error: 'تعذر تغيير علامة عاجل للمحددين' });
+  }
+}
+
 // ---------- اختبارات الطالب ودرجاته ----------
 // بيتحمّل عند الطلب (لما الموظف يضغط الزرار) مش مع البروفايل، عشان فتح كل طالب مايجيبش
 // عشرات الصفوف من غير حاجة. أهم حاجة هنا مش الدرجات اللي أخدها — دي ظاهرة على المنصة أصلًا —
@@ -894,6 +907,7 @@ module.exports = {
   getStudentExams,
   getStudentLessons,
   toggleStudentUrgent,
+  bulkToggleUrgent,
   logSmsSend,
   logCall,
   editCallLog,

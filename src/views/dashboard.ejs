@@ -371,6 +371,10 @@
                 <select id="calls-assign-to-select" class="compact-select"><option value="">إسناد المحددين لـ...</option></select>
                 <button type="button" class="btn btn-primary btn-sm" id="assign-selected-calls-btn" style="width:auto" disabled>إسناد</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="unassign-selected-calls-btn" disabled>إلغاء الإسناد</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="mark-urgent-calls-btn" style="width:auto" disabled
+                  title="وسم كل المحددين كحالات عاجلة">🚨 وسم عاجل</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="unmark-urgent-calls-btn" style="width:auto" disabled
+                  title="إلغاء علامة عاجل عن كل المحددين">إلغاء عاجل</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="toggle-assignment-log-btn">سجل الإسناد</button>
               </div>
             </div>
@@ -2558,6 +2562,11 @@
       document.getElementById('assign-selected-calls-btn').disabled =
         !selectedCallStudentIds.size || !document.getElementById('calls-assign-to-select').value;
       document.getElementById('unassign-selected-calls-btn').disabled = !selectedCallStudentIds.size;
+      const urgentDisabled = !selectedCallStudentIds.size;
+      const markBtn = document.getElementById('mark-urgent-calls-btn');
+      const unmarkBtn = document.getElementById('unmark-urgent-calls-btn');
+      if (markBtn) markBtn.disabled = urgentDisabled;
+      if (unmarkBtn) unmarkBtn.disabled = urgentDisabled;
     }
 
     async function loadCallOutcomes() {
@@ -3030,6 +3039,23 @@ ${mark}${percent}`;
     if (currentUserRole === 'admin' || canAssignCalls) {
       document.getElementById('calls-scope-filter').addEventListener('change', () => { callsPage = 1; loadCalls(); });
       document.getElementById('calls-called-by-filter').addEventListener('change', () => { callsPage = 1; loadCalls(); });
+      // وسم جماعي — بيستخدم نفس التحديد بتاع الإسناد، بما فيه "تحديد كل النتائج" عبر الصفحات
+      [['mark-urgent-calls-btn', true], ['unmark-urgent-calls-btn', false]].forEach(([btnId, flag]) => {
+        document.getElementById(btnId).addEventListener('click', async () => {
+          const ids = [...selectedCallStudentIds];
+          if (!ids.length) return;
+          if (!confirm(`${flag ? 'وسم' : 'إلغاء وسم'} ${ids.length} طالب كحالات عاجلة؟`)) return;
+          try {
+            const result = await api('/api/calls/urgent-bulk', {
+              method: 'POST', body: JSON.stringify({ tafra_student_ids: ids, is_urgent: flag })
+            });
+            showToast(`تم تحديث ${result.updated} طالب`);
+            selectedCallStudentIds.clear();
+            loadCalls();
+          } catch (error) { showToast(error.message); }
+        });
+      });
+
       document.getElementById('select-page-calls-btn').addEventListener('click', () => {
         document.querySelectorAll('.call-student-selector').forEach((checkbox) => {
           checkbox.checked = true;

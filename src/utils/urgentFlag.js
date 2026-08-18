@@ -30,4 +30,25 @@ async function setUrgentFlag({ tafraStudentId = null, contactId = null, isUrgent
   return flag;
 }
 
-module.exports = { setUrgentFlag };
+
+// نسخة جماعية: جملتين بس مهما كان العدد، بدل استدعاء setUrgentFlag لكل طالب. بتكتب على
+// tafra_students وعلى صفوف contacts المرتبطة بيهم عن طريق telegram_chat_id
+async function setUrgentFlagBulk(tafraStudentIds, isUrgent) {
+  const ids = [...new Set((tafraStudentIds || []).map(Number).filter(Number.isInteger))];
+  if (!ids.length) return 0;
+  const flag = Boolean(isUrgent);
+
+  const updated = await pool.query(
+    'UPDATE tafra_students SET is_urgent = $2 WHERE tafra_student_id = ANY($1::bigint[]) RETURNING tafra_student_id',
+    [ids, flag]
+  );
+  await pool.query(
+    `UPDATE contacts SET is_urgent = $2
+     WHERE chat_id IN (SELECT telegram_chat_id FROM tafra_students
+                       WHERE tafra_student_id = ANY($1::bigint[]) AND telegram_chat_id IS NOT NULL)`,
+    [ids, flag]
+  );
+  return updated.rowCount;
+}
+
+module.exports = { setUrgentFlag, setUrgentFlagBulk };
