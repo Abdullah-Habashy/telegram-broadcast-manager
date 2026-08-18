@@ -2642,6 +2642,20 @@
       return `<span class="badge ${tone}">${Math.round(value * 10) / 10}%</span>`;
     }
 
+    // كتلة نص عادية بدل الجداول: سهلة القراءة على التليفون وسهلة التحديد والنسخ، وزرار نسخ
+    // بيحطها في الحافظة مرة واحدة عشان تتبعت للطالب من غير تحديد يدوي
+    function copyableTextBlock(label, text) {
+      const id = 'copytext-' + Math.random().toString(36).slice(2, 9);
+      return `
+        <div class="row-between" style="margin-bottom:6px">
+          <b>${escapeHtml(label)}</b>
+          <button type="button" class="btn btn-ghost btn-sm copy-text-btn" style="width:auto" data-copy-target="${id}">📋 نسخ</button>
+        </div>
+        <pre id="${id}" style="margin:0; font-family:inherit; font-size:15px; line-height:1.7;
+          white-space:pre-wrap; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text;
+          background:var(--surface-sunken); border:1px solid var(--border); border-radius:8px; padding:12px">${escapeHtml(text)}</pre>`;
+    }
+
     function renderStudentLessons(data) {
       const { views, summary } = data;
       if (!views.length) return '<div class="empty-state">مفيش مشاهدات مسجّلة للطالب ده على المنصة.</div>';
@@ -2653,19 +2667,17 @@
           ${summary.average_progress !== null ? `<span class="badge badge-muted">متوسط المشاهدة: ${summary.average_progress}%</span>` : ''}
           ${summary.truncated ? `<span class="badge badge-warning" title="فيه مشاهدات أقدم متجابتش">أحدث ${summary.shown} من ${summary.total}</span>` : `<span class="badge badge-muted">الإجمالي: ${summary.total}</span>`}
         </div>`;
-      // عمودين بس زي جدول الدرجات — الكورس والمدة وآخر مشاهدة اتشالوا بطلب صريح
-      const rows = views.map((view) => `
-        <tr>
-          <td>${escapeHtml(view.lesson_name || '—')}</td>
-          <td>${examPercentBadge(view.progress_percentage)}</td>
-        </tr>`).join('');
-      return head + `
-        <div class="tafra-students-table-wrap">
-          <table style="min-width:0">
-            <thead><tr><th>الفيديو</th><th>نسبة المشاهدة</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>`;
+      // نفس أسلوب الدرجات: اسم الفيديو في سطر ونسبة المشاهدة تحته
+      const viewsText = views.map((view) => {
+        const percent = (view.progress_percentage === null || view.progress_percentage === undefined)
+          ? '—' : `${Math.round(Number(view.progress_percentage) * 10) / 10}%`;
+        return `${view.lesson_name || '—'}
+${percent}`;
+      }).join(`
+
+
+`);
+      return head + copyableTextBlock('مشاهدات الفيديوهات', viewsText);
     }
 
     function renderStudentExams(data) {
@@ -2692,21 +2704,21 @@
       // تلات أعمدة بس — اسم الاختبار والدرجة والنسبة. الكورس والمحاولة والوقت والتاريخ اتشالوا
       // بناءً على طلب صريح: على شاشة التليفون كانوا بيضغطوا الأعمدة المهمة ويجبروا تمرير أفقي.
       // "(لم يكملها)" باقية جنب الاسم لأن الدرجة من غيرها بتتقري غلط — محاولة ناقصة مش نتيجة نهائية
-      const takenBlock = taken.length ? `
-        <b style="display:block; margin-bottom:6px">الدرجات</b>
-        <div class="tafra-students-table-wrap">
-          <table style="min-width:0">
-            <thead><tr><th>الاختبار</th><th>الدرجة</th><th>النسبة</th></tr></thead>
-            <tbody>
-              ${taken.map((exam) => `
-                <tr>
-                  <td>${escapeHtml(exam.name)}${exam.finished ? '' : ' <span class="ticket-muted">(لم يكملها)</span>'}</td>
-                  <td>${exam.mark === null ? '—' : escapeHtml(String(exam.mark))}</td>
-                  <td>${examPercentBadge(exam.percentage)}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>` : '<div class="empty-state">الطالب ده لسه ماخدش أي اختبار.</div>';
+      // نص عادي مش جدول — اسم الاختبار في سطر والدرجة تحته وسطرين فاضيين بين كل واحد والتاني،
+      // عشان يتقرا على التليفون من غير تمرير أفقي ويتنسخ كتلة واحدة تتبعت للطالب
+      const takenText = taken.map((exam) => {
+        const percent = (exam.percentage === null || exam.percentage === undefined)
+          ? '' : ` (${Math.round(Number(exam.percentage) * 10) / 10}%)`;
+        const mark = exam.mark === null ? '—' : String(exam.mark);
+        return `${exam.name}${exam.finished ? '' : ' (لم يكملها)'}
+${mark}${percent}`;
+      }).join(`
+
+
+`);
+      const takenBlock = taken.length
+        ? copyableTextBlock('الدرجات', takenText)
+        : '<div class="empty-state">الطالب ده لسه ماخدش أي اختبار.</div>';
 
       return summaryRow + takenBlock + missedBlock;
     }
@@ -2833,6 +2845,17 @@
         const studentId = student.tafra_student_id;
         // الاتنين بيتحمّلوا بالتوازي وكل واحد بيتعامل مع فشله لوحده: الدرجات من قاعدتنا (سريعة)،
         // والمشاهدات نداء لحظي لمنصة طفرة (أبطأ وممكن يفشل) — فوقوع المنصة مايخفيش الدرجات
+        // زرار النسخ: بيتربط بالتفويض على الحاوية عشان يشتغل مع أي كتلة تتحمّل بعدين
+        dataPanels.onclick = (event) => {
+          const btn = event.target.closest('.copy-text-btn');
+          if (!btn) return;
+          const block = document.getElementById(btn.dataset.copyTarget);
+          if (!block) return;
+          navigator.clipboard.writeText(block.textContent)
+            .then(() => { btn.textContent = '✅ اتنسخ'; setTimeout(() => { btn.textContent = '📋 نسخ'; }, 1500); })
+            .catch(() => showToast('المتصفح رفض النسخ — حدّد النص وانسخه يدويًا'));
+        };
+
         api('/api/calls/student/' + studentId + '/exams')
           .then((exams) => { examsPanel.innerHTML = renderStudentExams(exams); })
           .catch((error) => { examsPanel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`; });
