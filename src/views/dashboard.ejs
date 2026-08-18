@@ -1328,7 +1328,13 @@
         const title = def.title ? ' title="' + escapeHtml(def.title) + '"' : '';
         if (def.type === 'hidden') return '<input type="hidden" id="' + id + '" value="">';
         if (def.type === 'search') return '<input type="search" id="' + id + '" class="compact-input" placeholder="' + escapeHtml(def.placeholder || '') + '"' + title + '>';
-        if (def.type === 'date') return '<input type="date" id="' + id + '" class="compact-input"' + title + '>';
+        // خانة التاريخ الفاضية مابتعرضش أي نص، والـ title مابيظهرش على التليفون — فالاسم بيتحط
+        // كليبل جنبها. الـ id بيفضل على الـ input نفسه عشان كل الربط الموجود مايتأثرش
+        if (def.type === 'date') {
+          return '<label class="row" style="gap:6px; align-items:center; white-space:nowrap; flex-wrap:nowrap"' + title + '>'
+            + '<span style="font-size:12px; color:var(--text-muted)">' + escapeHtml(def.title || '') + '</span>'
+            + '<input type="date" id="' + id + '" class="compact-input" style="width:auto"></label>';
+        }
         if (def.type === 'checkbox') {
           return '<label class="row" style="gap:8px; cursor:pointer; white-space:nowrap; flex-wrap:nowrap"' + title + '>'
             + '<input type="checkbox" id="' + id + '" style="width:auto"><span>' + escapeHtml(def.label || '') + '</span></label>';
