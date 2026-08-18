@@ -425,6 +425,9 @@ tr:last-child td { border-bottom: none; }
 .ticket-follow-up-box input { display: block; width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 7px; font-family: inherit; }
 .quick-follow-up-buttons { width: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-top: 4px; }
 .quick-follow-up-buttons > span { color: var(--text-muted); font-size: 12px; margin-inline-end: 2px; }
+/* كروت الاختبارات والفيديوهات بتحل محل سجل المكالمات وتاخد نفس المساحة القابلة للتمرير،
+   بدل ما تتكدّس جنبه في لوحة ارتفاعها ثابت وoverflow:hidden فتتقص */
+#student-data-panels { flex: 1; min-height: 0; overflow-y: auto; }
 .ticket-messages { flex: 1; min-height: 350px; max-height: 480px; overflow-y: auto; padding: 16px 4px; display: flex; flex-direction: column; gap: 10px; }
 .ticket-message { position: relative; max-width: 78%; padding: 10px 12px; border-radius: 12px; }
 .ticket-message.incoming { align-self: flex-start; background: var(--surface-sunken); }
@@ -666,6 +669,10 @@ tr:last-child td { border-bottom: none; }
   .ticket-controls { grid-template-columns: repeat(2, 1fr); }
   .ticket-follow-up-box { flex-shrink: 0; }
   .ticket-messages { flex: 1; min-height: 0; max-height: none; padding: 12px 2px; }
+  /* لوحة المحادثة ارتفاعها ثابت مع overflow:hidden، والجزء الوحيد اللي بيتمرّر هو .ticket-messages.
+     الكروت دي إخوات ليها مش جواها، فكانت بتتقص: مكنش ينفع تنزل تشوف باقي الاختبارات، وكارت
+     الفيديوهات تحتيها كان بيختفي تمامًا. كل كارت بقى بيتمرّر جوّه نفسه بارتفاع محدود */
+  #student-sms-logs-panel { flex-shrink: 0; max-height: 30vh; overflow-y: auto; }
   .ticket-message { max-width: 90%; }
   /* على التليفون الأزرار بتنزل صف لوحدها عشان صندوق الكتابة ياخد عرض الشاشة كامل — كانوا
      جنبه في نفس الصف وبياكلوا حوالي 190px منه (أربع أزرار × 44px + المسافات) */

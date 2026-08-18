@@ -2753,14 +2753,16 @@
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
         </div>
-        <div class="card" id="student-exams-panel" style="display:none; margin-block:12px">
-          <div class="empty-state">جارٍ التحميل...</div>
-        </div>
-        <div class="card" id="student-lessons-panel" style="display:none; margin-block:12px">
-          <div class="empty-state">جارٍ تحميل المشاهدات من منصة طفرة...</div>
+        <div id="student-data-panels" style="display:none">
+          <div class="card" id="student-exams-panel" style="margin-block:12px">
+            <div class="empty-state">جارٍ التحميل...</div>
+          </div>
+          <div class="card" id="student-lessons-panel" style="margin-block:12px">
+            <div class="empty-state">جارٍ تحميل المشاهدات من منصة طفرة...</div>
+          </div>
         </div>
         ${(data.sms_logs && data.sms_logs.length) ? `
-        <div class="card" style="margin-block:12px">
+        <div class="card" id="student-sms-logs-panel" style="margin-block:12px">
           <b style="display:block; margin-bottom:8px">📨 رسايل SMS المُرسلة (${data.sms_logs.length})</b>
           ${data.sms_logs.map((log) => `
             <div class="call-log-entry">
@@ -2825,9 +2827,13 @@
       document.getElementById('toggle-student-exams-btn').addEventListener('click', async () => {
         const examsPanel = document.getElementById('student-exams-panel');
         const lessonsPanel = document.getElementById('student-lessons-panel');
-        const isHidden = examsPanel.style.display === 'none';
-        examsPanel.style.display = isHidden ? '' : 'none';
-        lessonsPanel.style.display = isHidden ? '' : 'none';
+        const dataPanels = document.getElementById('student-data-panels');
+        const historyList = document.getElementById('call-history-list');
+        const isHidden = dataPanels.style.display === 'none';
+        // بنبدّل مكان سجل المكالمات مش بنكدّس فوقه: اللوحة ارتفاعها ثابت وسجل المكالمات هو
+        // الجزء الوحيد اللي بياخد المساحة الباقية ويتمرّر، فلو ضفنا الكروت جنبه بيتقصوا
+        dataPanels.style.display = isHidden ? '' : 'none';
+        if (historyList) historyList.style.display = isHidden ? 'none' : '';
         if (!isHidden || examsPanel.dataset.loaded === '1') return;
         examsPanel.dataset.loaded = '1';
         const studentId = student.tafra_student_id;
