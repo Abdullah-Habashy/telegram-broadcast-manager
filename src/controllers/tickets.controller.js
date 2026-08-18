@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { setUrgentFlag } = require('../utils/urgentFlag');
 const fs = require('fs');
 const path = require('path');
 const botManager = require('../bot/botManager');
@@ -159,7 +160,7 @@ async function listTickets(req, res) {
         latest.direction AS last_message_direction,
         bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
         (c.last_contacted_at IS NOT NULL) AS can_message,
-        tafra_match.name AS tafra_name
+        c.is_urgent, tafra_match.name AS tafra_name
        FROM tickets t
        JOIN contacts c ON c.id = t.contact_id
        LEFT JOIN LATERAL (
@@ -242,7 +243,7 @@ async function getTicket(req, res) {
          ts.name AS subtitle_name,
          bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
          (c.last_contacted_at IS NOT NULL) AS can_message,
-         tafra_match.name AS tafra_name
+         c.is_urgent, tafra_match.name AS tafra_name
        FROM updated
        JOIN contacts c ON c.id = updated.contact_id
        LEFT JOIN LATERAL (
@@ -993,7 +994,23 @@ function streamEvents(req, res) {
   events.registerClient(req, res);
 }
 
+// تبديل علامة "عاجل" من صندوق الدعم — بتتزامن مع شاشة المتابعة تلقائيًا
+async function toggleTicketUrgent(req, res) {
+  const ticketId = Number(req.params.id);
+  if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'التذكرة غير صالحة' });
+  try {
+    const found = await pool.query('SELECT contact_id FROM tickets WHERE id = $1', [ticketId]);
+    if (!found.rows[0]) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+    const result = await setUrgentFlag({ contactId: found.rows[0].contact_id, isUrgent: req.body.is_urgent });
+    res.json({ ok: true, is_urgent: result });
+  } catch (error) {
+    console.error('❌ Failed to toggle the ticket urgent flag:', error.message);
+    res.status(500).json({ error: 'تعذر تغيير علامة عاجل' });
+  }
+}
+
 module.exports = {
+  toggleTicketUrgent,
   listTickets, listTicketIds, getTicket, updateTicket, bulkAssignTickets, bulkAssignTicketsByContact,
   replyToTicket, getTicketMeta,
   editSupportMessage, deleteSupportMessage, getRecentExamMarks, getCourseExamMarks,

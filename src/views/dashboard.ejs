@@ -1233,6 +1233,11 @@
     // اسم الطالب في كل اللوحة بيتاخد من منصة طفرة الأول — ده الاسم الحقيقي المسجّل، أما اسم
     // تيليجرام فبيكتبه الطالب بنفسه وساعات بيبقى لقب أو إنجليزي. بنرجع لتيليجرام بس لو الطالب
     // مش مربوط بحساب على المنصة. (سبق ولخبط: اللوج كان بيعرض "amin elofy" والترحيب "محمد")
+    // شارة "عاجل" — نفس الشكل في المتابعة وصندوق الدعم
+    function urgentBadge(isUrgent) {
+      return isUrgent ? '<span class="badge badge-danger" title="حالة عاجلة">🚨 عاجل</span>' : '';
+    }
+
     function studentDisplayName(row) {
       if (!row) return 'بدون اسم';
       const tafra = (row.tafra_name || '').trim();
@@ -2465,6 +2470,7 @@
               <span class="ticket-name-with-subtitle">
                 ${showCheckbox ? `<input type="checkbox" class="call-student-selector" value="${id}" ${selectedCallStudentIds.has(id) ? 'checked' : ''} aria-label="تحديد الطالب">` : ''}
                 <span>${escapeHtml(student.name || 'بدون اسم')}</span>
+                ${urgentBadge(student.is_urgent)}
                 ${telegramReachBadge(student.can_message)}
                 ${student.current_idea_number ? `<span class="idea-badge" title="رقم الفكرة الحالية">💡${student.current_idea_number}</span>` : ''}
                 ${bootcampMarksHtml(student, 'sm')}
@@ -2714,6 +2720,7 @@ ${mark}${percent}`;
           <button type="button" class="btn btn-ghost btn-sm mobile-ticket-back icon-only-mobile" id="mobile-call-back" title="رجوع للقائمة" aria-label="رجوع للقائمة">←</button>
           <div>
             <h2 class="ticket-heading-name">${escapeHtml(student.name || 'بدون اسم')}
+              ${urgentBadge(student.is_urgent)}
               ${telegramReachBadge(student.can_message)}
               ${student.assigned_name ? `<span class="ticket-employee-badge employee-color-1" title="الموظف المسؤول">${escapeHtml(student.assigned_name)}</span>` : ''}
             </h2>
@@ -2725,6 +2732,7 @@ ${mark}${percent}`;
                  حسب RFC 5724، وبعض تطبيقات الرسائل مابتفكّش %2B فبتحاول تبعت لرقم غلط. الرقم
                  خارج من toEgyptianMobileE164 فمضمون إنه + وكود مصر و10 أرقام بس -->
             ${data.sms ? `<a class="btn btn-ghost btn-sm" style="width:auto" id="profile-sms-btn" href="sms:${data.sms.phone}?body=${encodeURIComponent(data.sms.body)}" title="بيفتح تطبيق الرسائل على تليفونك والنص جاهز — تدوس إرسال وخلاص">✉️ رسالة SMS</a>` : ''}
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-urgent-btn">${student.is_urgent ? '🚨 إلغاء عاجل' : '🚨 وسم عاجل'}</button>
             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والفيديوهات</button>
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
@@ -2796,6 +2804,16 @@ ${mark}${percent}`;
       `;
 
       document.getElementById('mobile-call-back').addEventListener('click', closeMobileCallProfile);
+
+      document.getElementById('toggle-urgent-btn')?.addEventListener('click', async () => {
+        try {
+          await api('/api/calls/student/' + student.tafra_student_id + '/urgent', {
+            method: 'POST', body: JSON.stringify({ is_urgent: !student.is_urgent })
+          });
+          openCallProfile(student.tafra_student_id);
+          loadCalls();
+        } catch (error) { showToast(error.message); }
+      });
 
       document.getElementById('profile-sms-btn')?.addEventListener('click', () => {
         recordSmsSend(student.tafra_student_id);
@@ -3499,6 +3517,7 @@ ${mark}${percent}`;
                   <span>${escapeHtml(name)}</span>
                   ${telegramReachBadge(ticket.can_message)}
                   <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
+                  ${urgentBadge(ticket.is_urgent)}
                   ${ideaBadge}
                   ${bootcampMarksHtml(ticket, 'sm')}
                   ${ticket.assigned_name ? `<span class="ticket-employee-badge ${employeeBadgeClass(ticket.assigned_to)}" title="الموظف المسؤول: ${escapeHtml(ticket.assigned_name)}">${escapeHtml(firstEmployeeName(ticket.assigned_name))}</span>` : ''}
@@ -3655,11 +3674,15 @@ ${mark}${percent}`;
                 <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
                 ${assignedUser ? `<span class="ticket-employee-badge ${employeeBadgeClass(assignedUser.id)}" title="الموظف المسؤول: ${escapeHtml(assignedUser.name)}">${escapeHtml(firstEmployeeName(assignedUser.name))}</span>` : ''}
                 ${ticket.current_idea_number ? `<span class="idea-badge-lg" title="رقم الفكرة الحالية">💡 فكرة ${ticket.current_idea_number}</span>` : ''}
+                ${urgentBadge(ticket.is_urgent)}
               </h2>
               <div class="ticket-muted">${ticket.telegram_username ? '@' + escapeHtml(ticket.telegram_username) + ' · ' : ''}Chat ID: ${ticket.chat_id}</div>
             </div>
           </div>
           <div class="mobile-ticket-option-buttons">
+            <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-urgent-toggle"
+              title="${ticket.is_urgent ? 'إلغاء علامة عاجل' : 'وسم كحالة عاجلة'}" aria-label="عاجل"
+              style="${ticket.is_urgent ? 'background:var(--danger-tint,#fdeaea)' : ''}">🚨</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-status-toggle" title="الحالة وبيانات التذكرة" aria-label="إظهار الحالة وبيانات التذكرة" aria-expanded="false">◉</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-follow-up-toggle" title="موعد المتابعة" aria-label="إظهار موعد المتابعة" aria-expanded="false">📅</button>
           </div>
@@ -3750,6 +3773,16 @@ ${mark}${percent}`;
 
         // تعيين مفاتيح الرسائل الحالية لمنع التكرار عند التحديث التلقائي المباشر
         renderedMessageKeys = new Set((data.messages || []).map(messageKeyOf));
+        document.getElementById('ticket-urgent-toggle')?.addEventListener('click', async () => {
+          try {
+            await api(`/api/tickets/${ticket.id}/urgent`, {
+              method: 'POST', body: JSON.stringify({ is_urgent: !ticket.is_urgent })
+            });
+            openTicket(ticket.id);
+            loadTickets();
+          } catch (error) { showToast(error.message); }
+        });
+
         document.getElementById('ticket-messages').addEventListener('click', handleMessageToolsClick);
 
         panel.querySelectorAll('[data-ticket-field]').forEach((select) => {

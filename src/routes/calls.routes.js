@@ -23,6 +23,7 @@ router.get('/my-list', callsController.listMyStudents);
 router.get('/student/:id', callsController.getStudentProfile);
 router.get('/student/:id/exams', callsController.getStudentExams);
 router.get('/student/:id/lessons', callsController.getStudentLessons);
+router.post('/student/:id/urgent', callsController.toggleStudentUrgent);
 router.post('/student/:id/sms-log', callsController.logSmsSend);
 router.post('/student/:id/log', callsController.logCall);
 router.patch('/logs/:logId', callsController.editCallLog);

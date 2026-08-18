@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const { buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL } = require('./tafra.controller');
 const { toEgyptianMobileE164 } = require('../utils/phone');
 const { getFirstName } = require('../utils/messagePersonalization');
+const { setUrgentFlag } = require('../utils/urgentFlag');
 const { getCredentials: getTafraCredentials } = require('./tafra.controller');
 
 // ---------- نتائج المكالمات ----------
@@ -317,6 +318,7 @@ function buildStudentSelectSql(examSelectSql) {
     s.student_code, s.educational_level #>> '{}' AS educational_level, s.grade_level, s.gender,
     CASE WHEN s.educational_level #>> '{}' ILIKE '%ازهر%' THEN 'azhar' ELSE 'general' END AS education_type,
     t.current_idea_number, t.id AS ticket_id,
+    (COALESCE(s.is_urgent, FALSE) OR COALESCE(c.is_urgent, FALSE)) AS is_urgent,
     bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum${examSelectSql || ''},
     sca.assigned_to, au.name AS assigned_name,
     last_call.outcome_name AS last_outcome_name, last_call.called_at AS last_called_at,
@@ -416,7 +418,8 @@ async function getStudentProfile(req, res) {
          s.educational_level #>> '{}' AS educational_level, s.grade_level, s.gender, s.telegram_username, s.telegram_chat_id,
          t.id AS ticket_id,
          sca.assigned_to, au.name AS assigned_name,
-         (c.last_contacted_at IS NOT NULL) AS can_message
+         (c.last_contacted_at IS NOT NULL) AS can_message,
+         (COALESCE(s.is_urgent, FALSE) OR COALESCE(c.is_urgent, FALSE)) AS is_urgent
        FROM tafra_students s
        LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
        LEFT JOIN tickets t ON t.contact_id = c.id
@@ -596,6 +599,20 @@ async function getStudentLessons(req, res) {
   } catch (error) {
     console.error('❌ Failed to load student lesson views:', error.message);
     res.status(502).json({ error: 'تعذر جلب المشاهدات من منصة طفرة: ' + error.message });
+  }
+}
+
+// تبديل علامة "عاجل" من شاشة المتابعة — بتتزامن مع صندوق الدعم تلقائيًا
+async function toggleStudentUrgent(req, res) {
+  const studentId = Number(req.params.id);
+  if (!Number.isInteger(studentId)) return res.status(400).json({ error: 'الطالب غير صالح' });
+  try {
+    const result = await setUrgentFlag({ tafraStudentId: studentId, isUrgent: req.body.is_urgent });
+    if (result === null) return res.status(404).json({ error: 'الطالب غير موجود' });
+    res.json({ ok: true, is_urgent: result });
+  } catch (error) {
+    console.error('❌ Failed to toggle the urgent flag:', error.message);
+    res.status(500).json({ error: 'تعذر تغيير علامة عاجل' });
   }
 }
 
@@ -876,6 +893,7 @@ module.exports = {
   getStudentProfile,
   getStudentExams,
   getStudentLessons,
+  toggleStudentUrgent,
   logSmsSend,
   logCall,
   editCallLog,
