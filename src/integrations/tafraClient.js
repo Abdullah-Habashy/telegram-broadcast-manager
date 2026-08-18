@@ -5,6 +5,24 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// انتهاء الجلسة مش دايمًا بييجي بحالة 401: منصة طفرة بترجّع HTTP 200 ومعاه success:false
+// والرسالة "يجب أن تكون مسجل الدخول للقيام بذلك."، فالفحص بالحالة لوحدها كان بيفوّتها والطلب
+// يفشل نهائيًا بدل ما يعيد تسجيل الدخول. حصل فعليًا في مزامنة 18 أغسطس: التوكن خلص في نص
+// عملية بتاخد ~40 دقيقة، فضاعت درجات اختبار كامل. بنفحص الحالة **والرسالة** مع بعض
+const SESSION_EXPIRED_HINTS = [
+  'يجب أن تكون مسجل الدخول',
+  'unauthenticated',
+  'unauthorized',
+  'token has expired',
+];
+
+function isSessionExpiredError(error) {
+  if (!error) return false;
+  if (error.status === 401) return true;
+  const message = String(error.message || '').toLowerCase();
+  return SESSION_EXPIRED_HINTS.some((hint) => message.includes(hint.toLowerCase()));
+}
+
 class TafraReadOnlyClient {
   constructor(identifier, password) {
     this.identifier = identifier;
@@ -133,7 +151,7 @@ class TafraReadOnlyClient {
         });
       } catch (error) {
         lastError = error;
-        if (error.status === 401) {
+        if (isSessionExpiredError(error)) {
           this.accessToken = null;
           await this.ensureLogin();
         } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429 || error.status >= 500)) {
