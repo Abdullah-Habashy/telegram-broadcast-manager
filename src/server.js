@@ -31,6 +31,22 @@ const publicRoutes = require('./routes/public.routes');
 const PgSession = pgSessionFactory(session);
 const app = express();
 
+// بصمة إصدار بتتحسب مرة واحدة عند التشغيل من أحدث وقت تعديل بين ملفات الواجهة. بتتحط على
+// رابط style.css فالمتصفح بيجيب النسخة الجديدة بعد كل نشر بدل ما يفضل على القديمة المخزّنة —
+// كانت التعديلات مابتظهرش على التليفون بعد النشر لحد ما المستخدم يعمل hard refresh يدوي
+const ASSET_VERSION = (() => {
+  const fs = require('fs');
+  const files = [
+    path.join(__dirname, '..', 'public', 'style.css'),
+    path.join(__dirname, 'views', 'dashboard.ejs'),
+  ];
+  const newest = files.reduce((latest, file) => {
+    try { return Math.max(latest, fs.statSync(file).mtimeMs); } catch (_) { return latest; }
+  }, 0);
+  return String(Math.floor(newest));
+})();
+app.locals.assetVersion = ASSET_VERSION;
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 // السيرفر بيشتغل ورا Cloudflare Tunnel (HTTPS بيتفكّ عند Cloudflare والاتصال الداخلي للسيرفر HTTP عادي)،
@@ -42,6 +58,15 @@ app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// صفحات HTML مبنية من السيرفر وفيها الجافاسكريبت جوّه، فأي كاش ليها معناه إن المستخدم يفضل
+// شغّال على نسخة قديمة بعد النشر. الملفات الثابتة فوق مش متأثرة — بتتكسّر بـ assetVersion
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+    res.set('Cache-Control', 'no-store, must-revalidate');
+  }
+  next();
+});
 
 app.use(
   session({
