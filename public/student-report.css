@@ -1,0 +1,127 @@
+/* ===========================================================
+   تقرير الطالب المشترَك — صفحة عامة يفتحها ولي الأمر أو الطالب.
+   ملف ستايل مستقل عن اللوحة عن قصد: الصفحة دي بتتفتح على تليفونات مش معروفة وبيتشارك
+   رابطها، فمحتاجة تبقى خفيفة ومقروءة لوحدها من غير أي اعتماد على ستايل اللوحة الداخلية.
+   بتستخدم متغيرات style.css اللي بتتحمّل قبلها.
+   =========================================================== */
+
+.report-body { background: var(--bg); padding: 0; }
+
+.report-shell { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+
+.report-header {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  flex-wrap: wrap; margin-bottom: 14px;
+}
+.report-header h1 { font-size: 24px; line-height: 1.3; }
+.report-subtitle { margin: 4px 0 0; color: var(--text-muted); font-size: 13.5px; }
+.report-header-side { text-align: end; }
+.report-generated { font-size: 12px; color: var(--text-faint); margin-bottom: 6px; }
+.report-print-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 8px; padding: 7px 14px; font-family: inherit; font-size: 13px; cursor: pointer;
+}
+.report-print-btn:hover { background: var(--surface-sunken); }
+
+.report-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.report-chip {
+  background: var(--primary-tint); color: var(--primary); border-radius: 999px;
+  padding: 5px 12px; font-size: 12.5px; font-weight: 600;
+}
+.report-chip em { font-style: normal; font-weight: 500; opacity: 0.75; margin-inline-start: 6px; }
+
+/* الأرقام السريعة */
+.report-kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px; margin-bottom: 20px;
+}
+.report-kpi {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px; border-inline-start: 3px solid var(--border);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.report-kpi.good { border-inline-start-color: var(--success); }
+.report-kpi.warn { border-inline-start-color: var(--warning); }
+.report-kpi-label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.report-kpi-value { font-size: 24px; font-weight: 700; line-height: 1.15; }
+
+.report-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 18px; margin-bottom: 16px;
+}
+.report-card h2 { font-size: 17px; margin-bottom: 10px; }
+.report-note { font-size: 13.5px; color: var(--text-muted); line-height: 1.9; margin: 0 0 14px; }
+.report-note b { color: var(--text); }
+.report-empty { color: var(--text-faint); font-size: 13.5px; margin: 6px 0; }
+.report-muted { color: var(--text-muted); }
+
+/* الأشرطة — أفقية عشان أسماء الاختبارات والفيديوهات عربية وطويلة */
+.report-bars { display: flex; flex-direction: column; gap: 7px; margin-bottom: 18px; }
+.report-bar-row {
+  display: grid; grid-template-columns: minmax(100px, 42%) 1fr auto;
+  gap: 10px; align-items: center; font-size: 12.5px;
+}
+.report-bar-label { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-bar-track { background: var(--surface-sunken); border-radius: 999px; height: 13px; overflow: hidden; }
+.report-bar-fill { display: block; height: 100%; border-radius: 999px; }
+.report-bar-fill.high { background: var(--success); }
+.report-bar-fill.mid { background: var(--warning); }
+.report-bar-fill.low { background: var(--danger); }
+.report-bar-value { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.report-table-wrap { overflow-x: auto; }
+.report-table-wrap table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 520px; }
+.report-table-wrap th, .report-table-wrap td {
+  padding: 9px 10px; text-align: start; border-bottom: 1px solid var(--border); vertical-align: top;
+}
+.report-table-wrap th { font-size: 12px; color: var(--text-muted); font-weight: 700; white-space: nowrap; }
+.report-table-wrap tbody tr:last-child td { border-bottom: 0; }
+
+.report-tag {
+  display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+}
+.report-tag.ok { background: var(--success-tint); color: var(--success); }
+.report-tag.no { background: var(--warning-tint); color: var(--warning); }
+
+.report-stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px;
+}
+.report-stat-grid > div { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.report-stat-grid span { font-size: 11.5px; }
+
+#videos-section:not(.show-all) .report-extra-row { display: none; }
+.report-more-btn {
+  margin-top: 12px; width: 100%; padding: 10px; cursor: pointer;
+  border: 1px dashed var(--border); background: var(--surface-sunken); color: var(--text-muted);
+  border-radius: 8px; font-family: inherit; font-size: 13px;
+}
+.report-more-btn:hover { color: var(--text); border-color: var(--text-faint); }
+
+.report-footer {
+  text-align: center; color: var(--text-faint); font-size: 12px; margin-top: 22px; line-height: 1.8;
+}
+
+.report-notfound { text-align: center; padding-top: 80px; }
+.report-notfound h1 { font-size: 22px; margin-bottom: 10px; }
+.report-notfound p { color: var(--text-muted); margin: 4px 0; }
+
+@media (max-width: 640px) {
+  .report-header { flex-direction: column; }
+  .report-header-side { text-align: start; }
+  .report-kpis { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  .report-kpi-value { font-size: 20px; }
+  .report-bar-row { grid-template-columns: minmax(80px, 46%) 1fr auto; font-size: 12px; }
+}
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  .report-print-btn, .report-more-btn { display: none; }
+  #videos-section .report-extra-row { display: table-row !important; }
+  .report-body { background: #fff; }
+  .report-shell { max-width: none; padding: 0; }
+  .report-card, .report-kpi { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+  .report-table-wrap { overflow: visible; }
+  .report-table-wrap table { min-width: 0; }
+  /* الألوان جزء من المعنى (أخضر = كويس، أحمر = ضعيف) فلازم تتطبع */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

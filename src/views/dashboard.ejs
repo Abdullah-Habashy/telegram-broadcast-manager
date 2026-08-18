@@ -66,6 +66,17 @@
       </div>
     </aside>
 
+    <div class="modal-overlay" id="student-report-overlay" style="display:none">
+      <div class="modal-card card student-report-modal">
+        <div class="row-between" style="margin-bottom:12px">
+          <h2 style="margin:0">تقرير الطالب</h2>
+          <button type="button" class="btn btn-ghost btn-sm" id="close-student-report-btn" title="إغلاق" aria-label="إغلاق">✕</button>
+        </div>
+        <p class="card-desc" id="student-report-name"></p>
+        <div id="student-report-body"><div class="empty-state">بيتحمّل...</div></div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="change-password-overlay" style="display:none">
       <div class="modal-card card">
         <div class="row-between" style="margin-bottom:14px">
@@ -3028,6 +3039,106 @@
       await loadPerformance();
     }
 
+    // ---------- رابط تقرير الطالب ----------
+    // التقرير صفحة عامة، فالنافذة دي مقصود إنها تخلي ده واضح للموظف: بتقول مين ممكن يفتحها
+    // وإيه اللي فيها، وبتدي طريقة واحدة واضحة لقفل رابط اتشارك بالغلط (تجديد أو إلغاء)
+    let currentReportStudentId = null;
+
+    function bindStudentReportButtons(scope) {
+      if (!scope) return;
+      scope.querySelectorAll('[data-report-student]').forEach((button) => {
+        if (button.dataset.reportBound === '1') return;
+        button.dataset.reportBound = '1';
+        button.addEventListener('click', () =>
+          openStudentReportDialog(button.dataset.reportStudent, button.dataset.reportName));
+      });
+    }
+
+    function openStudentReportDialog(studentId, studentName) {
+      currentReportStudentId = Number(studentId);
+      document.getElementById('student-report-name').textContent = studentName || '';
+      document.getElementById('student-report-overlay').style.display = 'flex';
+      loadStudentReportLink();
+    }
+
+    function closeStudentReportDialog() {
+      document.getElementById('student-report-overlay').style.display = 'none';
+      currentReportStudentId = null;
+    }
+
+    async function loadStudentReportLink() {
+      const body = document.getElementById('student-report-body');
+      body.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const data = await api('/api/student-report/' + currentReportStudentId);
+        body.innerHTML = renderStudentReportLink(data);
+        bindStudentReportLinkActions();
+      } catch (error) {
+        body.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderStudentReportLink(data) {
+      const notice = `<p class="report-link-notice">الصفحة دي بتتفتح من غير تسجيل دخول لأي حد معاه الرابط.
+        فيها الدرجات ومشاهدات الفيديوهات والمكالمات وتفاعله مع الرسايل — من غير ملاحظات المكالمات
+        ولا نص المحادثات ولا أي بيانات عن الموظفين.</p>`;
+      if (!data.url) {
+        return notice + '<button type="button" class="btn btn-primary" id="create-report-link-btn">إنشاء رابط للمشاركة</button>';
+      }
+      return notice
+        + `<div class="report-link-box">
+             <input type="text" id="report-link-input" readonly value="${escapeHtml(data.url)}">
+             <button type="button" class="btn btn-primary btn-sm" id="copy-report-link-btn" style="width:auto">📋 نسخ</button>
+           </div>
+           ${data.created_at ? `<div class="report-link-meta">الرابط ده اتعمل في ${fmtDate(data.created_at)}</div>` : ''}
+           <div class="report-link-actions">
+             <a class="btn btn-ghost btn-sm" style="width:auto" href="${escapeHtml(data.url)}" target="_blank" rel="noopener">فتح الصفحة</a>
+             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="regenerate-report-link-btn"
+               title="بيعمل رابط جديد ويوقّف القديم فورًا">🔄 تجديد الرابط</button>
+             <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" id="revoke-report-link-btn"
+               title="بيلغي الرابط تمامًا — الصفحة تبقى مش موجودة">🚫 إلغاء</button>
+           </div>`;
+    }
+
+    function bindStudentReportLinkActions() {
+      document.getElementById('create-report-link-btn')?.addEventListener('click', async (event) => {
+        event.currentTarget.disabled = true;
+        try {
+          await api('/api/student-report/' + currentReportStudentId, { method: 'POST', body: JSON.stringify({}) });
+          showToast('اتعمل رابط للتقرير');
+          loadStudentReportLink();
+        } catch (error) { showToast(error.message); }
+      });
+      document.getElementById('copy-report-link-btn')?.addEventListener('click', (event) => {
+        const button = event.currentTarget;
+        const input = document.getElementById('report-link-input');
+        navigator.clipboard.writeText(input.value)
+          .then(() => { button.textContent = '✅ اتنسخ'; setTimeout(() => { button.textContent = '📋 نسخ'; }, 1500); })
+          .catch(() => { input.select(); showToast('المتصفح رفض النسخ — الرابط محدد، انسخه بإيدك'); });
+      });
+      document.getElementById('regenerate-report-link-btn')?.addEventListener('click', async () => {
+        if (!confirm('الرابط القديم هيبطّل يشتغل فورًا، وأي حد معاه مش هيقدر يفتحه تاني. تأكيد؟')) return;
+        try {
+          await api('/api/student-report/' + currentReportStudentId, { method: 'POST', body: JSON.stringify({ regenerate: true }) });
+          showToast('اتعمل رابط جديد والقديم اتوقف');
+          loadStudentReportLink();
+        } catch (error) { showToast(error.message); }
+      });
+      document.getElementById('revoke-report-link-btn')?.addEventListener('click', async () => {
+        if (!confirm('هيتلغي الرابط تمامًا والصفحة تبقى مش موجودة لأي حد. تأكيد؟')) return;
+        try {
+          await api('/api/student-report/' + currentReportStudentId, { method: 'DELETE' });
+          showToast('اتلغى رابط التقرير');
+          loadStudentReportLink();
+        } catch (error) { showToast(error.message); }
+      });
+    }
+
+    document.getElementById('close-student-report-btn').addEventListener('click', closeStudentReportDialog);
+    document.getElementById('student-report-overlay').addEventListener('click', (event) => {
+      if (event.target.id === 'student-report-overlay') closeStudentReportDialog();
+    });
+
     // ---------- التنقل بين التابات ----------
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach((item) => {
@@ -3198,7 +3309,7 @@
       });
     }
 
-    function buildStudentsTableHtml(students, { showExamMark, showCheckbox, showEnrollmentDates, sort }) {
+    function buildStudentsTableHtml(students, { showExamMark, showCheckbox, showEnrollmentDates, sort, showReport }) {
       const headerCells = (showCheckbox ? '<th class="select-cell"><input type="checkbox" id="select-all-tafra-students" aria-label="تحديد الكل"></th>' : '')
         + `<th>الطالب</th><th>الباب</th><th>الهاتف</th><th>هاتف ولي الأمر</th><th>الصف</th><th>التعليم</th><th>الحالة</th><th>الفكرة الحالية</th>${showExamMark ? '<th>درجة الاختبار</th>' : ''}${showEnrollmentDates ? `<th data-sort-key="enrollment"${sortThAttrs('enrollment', sort)}>تاريخ الاشتراك</th>` : ''}<th data-sort-key="last_sent"${sortThAttrs('last_sent', sort)}>آخر إرسال</th><th data-sort-key="last_received"${sortThAttrs('last_received', sort)}>آخر استقبال</th><th>تيليجرام</th>`;
       const rows = students.map((student) => `<tr>
@@ -3209,6 +3320,9 @@
           <div class="tafra-student-name">${escapeHtml(student.name || 'بدون اسم')}</div>
           <div class="tafra-student-sub">رقم الطالب: ${escapeHtml(student.tafra_student_id)} — الكود: ${escapeHtml(student.student_code || '—')}</div>
           ${openChatButtonHtml(student)}
+          ${showReport ? `<button type="button" class="btn btn-ghost btn-sm student-report-btn"
+            data-report-student="${student.tafra_student_id}"
+            data-report-name="${escapeHtml(student.name || 'الطالب')}">📄 تقرير</button>` : ''}
         </td>
         <td>${bootcampMarksHtml(student, 'sm') || '<span class="badge badge-muted">—</span>'}</td>
         <td>${escapeHtml(student.phone || '—')}</td>
@@ -3252,8 +3366,9 @@
         // مراسلة الطالب محتاجة إنه يكون بدأ محادثة مع البوت فعلًا — تيليجرام مايسمحش نبعتله غير كده،
         // حتى لو ربط حسابه على منصة طفرة نفسها
         currentFilteredTafraStudentContactIds = result.students.filter(canMessageStudent).map((s) => Number(s.contact_id));
-        wrap.innerHTML = buildStudentsTableHtml(result.students, { showExamMark, showCheckbox: true, showEnrollmentDates, sort: tafraSort });
+        wrap.innerHTML = buildStudentsTableHtml(result.students, { showExamMark, showCheckbox: true, showEnrollmentDates, sort: tafraSort, showReport: true });
         bindOpenStudentChatButtons(wrap);
+        bindStudentReportButtons(wrap);
         enableTableSort(wrap, {
           onSort: async (key, dir) => {
             tafraSort = { key, dir };
@@ -3542,7 +3657,7 @@
         <b style="display:block; margin-bottom:8px">🎬 مشاهدات الفيديوهات</b>
         <div class="row" style="gap:8px; flex-wrap:wrap; margin-bottom:12px">
           <span class="badge badge-muted">فيديوهات: ${summary.video_count}</span>
-          <span class="badge badge-muted">مكتملة: ${summary.completed_count}</span>
+          <span class="badge badge-muted" title="محسوبة من نسبة المشاهدة (٩٠% فأكتر) — علامة &quot;مكتمل&quot; اللي بترجّعها المنصة مش موثوقة">خلّصها: ${summary.completed_count}</span>
           ${summary.average_progress !== null ? `<span class="badge badge-muted">متوسط المشاهدة: ${summary.average_progress}%</span>` : ''}
           ${summary.truncated ? `<span class="badge badge-warning" title="فيه مشاهدات أقدم متجابتش">أحدث ${summary.shown} من ${summary.total}</span>` : `<span class="badge badge-muted">الإجمالي: ${summary.total}</span>`}
         </div>`;
@@ -3633,6 +3748,9 @@ ${mark}${percent}`;
             ${data.sms ? `<a class="btn btn-ghost btn-sm" style="width:auto" id="profile-sms-btn" href="sms:${data.sms.phone}?body=${encodeURIComponent(data.sms.body)}" title="بيفتح تطبيق الرسائل على تليفونك والنص جاهز — تدوس إرسال وخلاص">✉️ رسالة SMS</a>` : ''}
             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-urgent-btn">${student.is_urgent ? '🚨 إلغاء عاجل' : '🚨 وسم عاجل'}</button>
             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والفيديوهات</button>
+            <button type="button" class="btn btn-ghost btn-sm student-report-btn" style="width:auto"
+              data-report-student="${student.tafra_student_id}"
+              data-report-name="${escapeHtml(student.name || 'الطالب')}">📄 تقرير للمشاركة</button>
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
         </div>
@@ -3756,6 +3874,7 @@ ${mark}${percent}`;
       });
 
       if (student.ticket_id) {
+        bindStudentReportButtons(document.getElementById('calls-profile-panel'));
         document.getElementById('open-call-student-ticket')?.addEventListener('click', () => {
           pendingDeepLinkTicketId = student.ticket_id;
           document.querySelector('.nav-item[data-tab="tickets"]')?.click();
@@ -4635,6 +4754,8 @@ ${mark}${percent}`;
               style="${ticket.is_urgent ? 'background:var(--danger-tint,#fdeaea)' : ''}">🚨</button>
             <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-lessons-toggle"
               title="مشاهدات فيديوهات الطالب" aria-label="مشاهدات الفيديوهات" aria-expanded="false">🎬</button>
+            <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-report-btn"
+              title="تقرير الطالب — رابط يتشارك مع ولي الأمر" aria-label="تقرير الطالب">📄</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-status-toggle" title="الحالة وبيانات التذكرة" aria-label="إظهار الحالة وبيانات التذكرة" aria-expanded="false">◉</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-follow-up-toggle" title="موعد المتابعة" aria-label="إظهار موعد المتابعة" aria-expanded="false">📅</button>
           </div>
@@ -4798,6 +4919,15 @@ ${mark}${percent}`;
 
         // مشاهدات الفيديوهات: نداء لحظي لمنصة طفرة، فبيتحمّل أول ما الموظف يفتح الكارت مش مع
         // كل تذكرة بيفتحها. dataset.loaded بيمنع إعادة التحميل مع كل فتح وقفل
+        // زرار التقرير بيحتاج يحوّل التذكرة لطالب منصة الأول — مش كل من بيكلم البوت طالب مسجّل
+        document.getElementById('ticket-report-btn').addEventListener('click', async () => {
+          try {
+            const result = await api('/api/student-report/ticket/' + ticketId + '/student');
+            if (!result.tafra_student_id) return showToast('الطالب ده مش مربوط بحساب على منصة طفرة، فمفيش تقرير');
+            openStudentReportDialog(result.tafra_student_id, studentDisplayName(ticket));
+          } catch (error) { showToast(error.message); }
+        });
+
         const lessonsToggle = document.getElementById('ticket-lessons-toggle');
         const lessonsPanel = document.getElementById('ticket-lessons-panel');
         lessonsToggle.addEventListener('click', async () => {

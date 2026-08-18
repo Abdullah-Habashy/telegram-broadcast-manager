@@ -11,12 +11,20 @@ const { TafraReadOnlyClient } = require('../integrations/tafraClient');
 // ملحوظة على القدرات: نقطة النهاية دي بتشتغل كمان من غير filter[user_id] وبترجّع كل المشاهدات،
 // لكن الاستجابة مافيهاش معرّف طالب — الاسم بس. فأي تجميع لكل الطلاب لازم يمشي طالب-بطالب،
 // لأن المطابقة بالاسم مش موثوقة (فيه أسماء متكررة على أكتر من طالب)
+// علامة is_completed اللي بترجّعها المنصة **مش** معناها إن الطالب خلّص الفيديو — قسناها على
+// بيانات حقيقية ولقينا ٨٧ فيديو متعلّم عليهم "مكتمل" منهم ٢٩ نسبة مشاهدتهم صفر بالظبط. يعني
+// الأقرب إنها بتعني "الفيديو متاح/مفتوح له" مش "اتفرج عليه". فبنحسب الاكتمال من نسبة المشاهدة
+// نفسها، وده الرقم اللي بيتعرض للموظف ولولي الأمر — عشان محدش يتفرج على رقم مش حقيقي
+const COMPLETED_PROGRESS_THRESHOLD = 90;
+
+const isCompletedByProgress = (row) => Number(row.progress_percentage) >= COMPLETED_PROGRESS_THRESHOLD;
+
 async function fetchStudentLessonViews(credentials, studentId) {
   const client = new TafraReadOnlyClient(credentials.identifier, credentials.password);
   const { rows, total, truncated } = await client.getStudentLessonViews(studentId);
 
   const videos = rows.filter((row) => row.is_video !== false);
-  const completed = videos.filter((row) => row.is_completed).length;
+  const completed = videos.filter(isCompletedByProgress).length;
   const percentages = videos
     .map((row) => Number(row.progress_percentage))
     .filter((value) => Number.isFinite(value));
@@ -36,4 +44,4 @@ async function fetchStudentLessonViews(credentials, studentId) {
   };
 }
 
-module.exports = { fetchStudentLessonViews };
+module.exports = { fetchStudentLessonViews, isCompletedByProgress, COMPLETED_PROGRESS_THRESHOLD };

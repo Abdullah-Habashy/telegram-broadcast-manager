@@ -466,6 +466,15 @@ CREATE INDEX IF NOT EXISTS idx_tafra_students_phone ON tafra_students (phone);
 ALTER TABLE tafra_students ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
 CREATE INDEX IF NOT EXISTS idx_tafra_students_gender ON tafra_students (gender) WHERE gender IS NOT NULL;
 
+-- توكن صفحة تقرير الطالب — رابط عام (/r/<token>) يفتحه ولي الأمر أو الطالب من غير تسجيل دخول.
+-- ٣٢ بايت عشوائية كـ hex فمافيش تخمين، وواحد لكل طالب. التجديد بيكتب توكن جديد فوق القديم،
+-- فالرابط اللي اتشارك قبل كده بيموت فورًا — دي الطريقة الوحيدة لقفل رابط اتسرّب.
+-- NULL معناها مفيش رابط اتعمل (أو اتلغى)، والصفحة وقتها بترد ٤٠٤
+ALTER TABLE tafra_students ADD COLUMN IF NOT EXISTS report_token VARCHAR(64);
+ALTER TABLE tafra_students ADD COLUMN IF NOT EXISTS report_token_created_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tafra_students_report_token
+    ON tafra_students (report_token) WHERE report_token IS NOT NULL;
+
 -- الصف الدراسي المبسّط (1ث/2ث/3ث) — منصة طفرة بترجع نص حر غير موحّد في educational_level
 -- (مثلاً "الصف الثالث الثانوي" و"تالتة ثانوي (ازهر)" لنفس الصف)، فبنستنتج منه الصف الموحّد تلقائيًا.
 -- الحقل ده قابل للتعديل اليدوي من شاشة المتابعة التليفونية، والاستنتاج التلقائي بيحصل بس لو لسه NULL

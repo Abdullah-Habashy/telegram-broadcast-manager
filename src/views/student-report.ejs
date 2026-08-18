@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <%- include('partials/layout-head') %>
+  <link rel="stylesheet" href="/student-report.css" />
+  <title>تقرير <%= report.student.name %></title>
+</head>
+<body class="report-body">
+  <div class="report-shell">
+
+    <header class="report-header">
+      <div>
+        <h1><%= report.student.name %></h1>
+        <p class="report-subtitle">
+          تقرير المتابعة
+          <% if (report.student.grade_level) { %> · <%= report.student.grade_level %><% } %>
+          <% if (report.student.student_code) { %> · كود <%= report.student.student_code %><% } %>
+        </p>
+      </div>
+      <div class="report-header-side">
+        <div class="report-generated">اتولّد في <%= report.generated_at_text %></div>
+        <button type="button" class="report-print-btn" onclick="window.print()">🖨 طباعة</button>
+      </div>
+    </header>
+
+    <% if (report.bootcamps.length) { %>
+      <div class="report-chips">
+        <% report.bootcamps.forEach((bootcamp) => { %>
+          <span class="report-chip"><%= bootcamp.name %><% if (bootcamp.enrolled_text) { %>
+            <em>اشترك <%= bootcamp.enrolled_text %></em><% } %></span>
+        <% }) %>
+      </div>
+    <% } %>
+
+    <!-- ===== أرقام سريعة ===== -->
+    <section class="report-kpis">
+      <div class="report-kpi">
+        <span class="report-kpi-label">اختبارات دخلها</span>
+        <span class="report-kpi-value"><%= report.exams.total %></span>
+      </div>
+      <div class="report-kpi<%= report.exams.average !== null && report.exams.average >= 50 ? ' good' : (report.exams.average !== null ? ' warn' : '') %>">
+        <span class="report-kpi-label">متوسط الدرجات</span>
+        <span class="report-kpi-value"><%= report.exams.average === null ? '—' : report.exams.average + '%' %></span>
+      </div>
+      <div class="report-kpi" id="kpi-videos">
+        <span class="report-kpi-label">فيديوهات اتفرّج عليها</span>
+        <span class="report-kpi-value">…</span>
+      </div>
+      <div class="report-kpi" id="kpi-watch">
+        <span class="report-kpi-label">متوسط نسبة المشاهدة</span>
+        <span class="report-kpi-value">…</span>
+      </div>
+      <div class="report-kpi">
+        <span class="report-kpi-label">مكالمات اتعملت له</span>
+        <span class="report-kpi-value"><%= report.calls.total %></span>
+      </div>
+      <div class="report-kpi<%= report.calls.answered ? ' good' : '' %>">
+        <span class="report-kpi-label">رد في</span>
+        <span class="report-kpi-value"><%= report.calls.answered %></span>
+      </div>
+      <div class="report-kpi<%= report.calls.no_answer ? ' warn' : '' %>">
+        <span class="report-kpi-label">مردّش في</span>
+        <span class="report-kpi-value"><%= report.calls.no_answer %></span>
+      </div>
+      <div class="report-kpi">
+        <span class="report-kpi-label">رسايل رد عليها</span>
+        <span class="report-kpi-value"><%= report.engagement.replied_to %> / <%= report.engagement.messages_sent %></span>
+      </div>
+    </section>
+
+    <!-- ===== الاختبارات ===== -->
+    <section class="report-card">
+      <h2>📝 الاختبارات</h2>
+      <% if (!report.exams.rows.length) { %>
+        <p class="report-empty">لسه مدخلش أي اختبار.</p>
+      <% } else { %>
+        <p class="report-note">
+          دخل <b><%= report.exams.total %></b> اختبار<% if (report.exams.average !== null) { %>،
+          بمتوسط <b><%= report.exams.average %>%</b> وأعلى درجة <b><%= report.exams.best %>%</b><% } %>.
+        </p>
+        <div class="report-bars">
+          <% report.exams.rows.filter((row) => row.percentage !== null).slice(0, 20).forEach((row) => { %>
+            <div class="report-bar-row">
+              <span class="report-bar-label" title="<%= row.name %>"><%= row.name %></span>
+              <span class="report-bar-track">
+                <span class="report-bar-fill <%= row.percentage >= 75 ? 'high' : row.percentage >= 50 ? 'mid' : 'low' %>"
+                      style="width: <%= Math.max(2, Math.min(100, row.percentage)) %>%"></span>
+              </span>
+              <span class="report-bar-value"><%= row.percentage %>%</span>
+            </div>
+          <% }) %>
+        </div>
+        <div class="report-table-wrap">
+          <table>
+            <thead><tr><th>الاختبار</th><th>الباب</th><th>الدرجة</th><th>النسبة</th><th>التاريخ والوقت</th></tr></thead>
+            <tbody>
+              <% report.exams.rows.forEach((row) => { %>
+                <tr>
+                  <td><%= row.name %></td>
+                  <td class="report-muted"><%= row.bootcamp || '—' %></td>
+                  <td><%= row.mark === null ? '—' : row.mark %></td>
+                  <td><%= row.percentage === null ? '—' : row.percentage + '%' %></td>
+                  <td class="report-muted"><%= row.occurred_text %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+
+    <!-- ===== مشاهدات الفيديوهات (بتتحمّل من المنصة بعد فتح الصفحة) ===== -->
+    <section class="report-card">
+      <h2>🎬 مشاهدات الفيديوهات</h2>
+      <div id="videos-section"><p class="report-empty">جارٍ تحميل المشاهدات من المنصة...</p></div>
+    </section>
+
+    <!-- ===== المكالمات ===== -->
+    <section class="report-card">
+      <h2>📞 المتابعة التليفونية</h2>
+      <% if (!report.calls.total) { %>
+        <p class="report-empty">لسه ما اتعملتش أي مكالمة متابعة.</p>
+      <% } else { %>
+        <p class="report-note">
+          اتصلنا بيه <b><%= report.calls.total %></b> مرة —
+          رد في <b><%= report.calls.answered %></b>،
+          ومردّش في <b><%= report.calls.no_answer %></b><% if (report.calls.wrong_number) { %>،
+          و<b><%= report.calls.wrong_number %></b> الرقم فيها كان غلط<% } %>.
+          أول مكالمة <%= report.calls.first_call_text %>، وآخر واحدة <%= report.calls.last_call_text %>.
+        </p>
+        <div class="report-table-wrap">
+          <table>
+            <thead><tr><th>التاريخ والوقت</th><th>النتيجة</th></tr></thead>
+            <tbody>
+              <% report.calls.rows.forEach((row) => { %>
+                <tr>
+                  <td><%= row.called_text %></td>
+                  <td><span class="report-tag <%= row.reached ? 'ok' : 'no' %>"><%= row.outcome %></span></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+
+    <!-- ===== التفاعل مع رسايل المتابعة ===== -->
+    <section class="report-card">
+      <h2>💬 التفاعل مع رسايل المتابعة</h2>
+      <% if (!report.engagement.messages_sent) { %>
+        <p class="report-empty">لسه ما اتبعتلوش رسايل متابعة على تيليجرام.</p>
+      <% } else { %>
+        <p class="report-note">
+          بعتنا له <b><%= report.engagement.messages_sent %></b> مرة، رد على
+          <b><%= report.engagement.replied_to %></b> منهم<% if (report.engagement.reply_rate !== null) { %>
+          (<b><%= report.engagement.reply_rate %>%</b>)<% } %>.
+          متوسط وقت رده <b><%= report.engagement.avg_reply_text %></b>،
+          والوسيط <b><%= report.engagement.median_reply_text %></b>.
+        </p>
+        <div class="report-stat-grid">
+          <div><span class="report-muted">رسايل منه</span><b><%= report.activity.messages_from_student %></b></div>
+          <div><span class="report-muted">رسايل ليه</span><b><%= report.activity.messages_to_student %></b></div>
+          <div><span class="report-muted">أول رسالة منه</span><b><%= report.activity.first_message_text %></b></div>
+          <div><span class="report-muted">آخر رسالة منه</span><b><%= report.activity.last_message_text %></b></div>
+        </div>
+      <% } %>
+    </section>
+
+    <footer class="report-footer">
+      التقرير ده خاص بـ <%= report.student.name %> وبيتحدّث تلقائيًا في كل مرة تفتح الصفحة.
+    </footer>
+  </div>
+
+  <script>
+    // بيانات التقرير كلها اتعرضت من السيرفر ما عدا المشاهدات — دي نداء لحظي للمنصة وبطيء
+    // شوية، فبتتحمّل بعد ما الصفحة تبان عشان باقي التقرير ما يستناهاش
+    (function loadVideos() {
+      var section = document.getElementById('videos-section');
+      function esc(value) {
+        return String(value === null || value === undefined ? '' : value)
+          .replace(/[&<>'"]/g, function (ch) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch];
+          });
+      }
+      fetch(location.pathname.replace(/\/$/, '') + '/videos')
+        .then(function (response) { return response.ok ? response.json() : Promise.reject(new Error('failed')); })
+        .then(function (data) {
+          var views = data.views || [];
+          var summary = data.summary || {};
+          document.querySelector('#kpi-videos .report-kpi-value').textContent = summary.video_count || 0;
+          document.querySelector('#kpi-watch .report-kpi-value').textContent =
+            summary.average_progress === null || summary.average_progress === undefined ? '—' : summary.average_progress + '%';
+          if (!views.length) { section.innerHTML = '<p class="report-empty">لسه مفتحش أي فيديو على المنصة.</p>'; return; }
+
+          var note = '<p class="report-note">اتفرّج على <b>' + (summary.video_count || 0) + '</b> فيديو، '
+            + 'خلّص منهم <b>' + (summary.completed_count || 0) + '</b> (شافه ٩٠% فأكتر)'
+            + (summary.average_progress !== null && summary.average_progress !== undefined
+              ? '، بمتوسط مشاهدة <b>' + summary.average_progress + '%</b>' : '')
+            + '.' + (summary.truncated ? ' <span class="report-muted">(معروض أحدث ' + summary.shown + ' من ' + summary.total + ')</span>' : '') + '</p>';
+
+          var bars = '<div class="report-bars">' + views.filter(function (v) {
+            return v.is_video && v.progress_percentage !== null;
+          }).slice(0, 20).map(function (v) {
+            var pct = Math.max(2, Math.min(100, v.progress_percentage));
+            var tone = v.progress_percentage >= 75 ? 'high' : v.progress_percentage >= 30 ? 'mid' : 'low';
+            return '<div class="report-bar-row">'
+              + '<span class="report-bar-label" title="' + esc(v.lesson_name) + '">' + esc(v.lesson_name) + '</span>'
+              + '<span class="report-bar-track"><span class="report-bar-fill ' + tone + '" style="width:' + pct + '%"></span></span>'
+              + '<span class="report-bar-value">' + v.progress_percentage + '%</span></div>';
+          }).join('') + '</div>';
+
+          var VISIBLE = 15;
+          var table = '<div class="report-table-wrap"><table><thead><tr>'
+            + '<th>الفيديو</th><th>الباب</th><th>نسبة المشاهدة</th><th>اتفرّج</th><th>التاريخ والوقت</th>'
+            + '</tr></thead><tbody>' + views.map(function (v, index) {
+              return '<tr' + (index >= VISIBLE ? ' class="report-extra-row"' : '') + '><td>' + esc(v.lesson_name) + '</td>'
+                + '<td class="report-muted">' + esc(v.bootcamp_name || '—') + '</td>'
+                + '<td>' + (v.progress_percentage === null ? '—' : v.progress_percentage + '%')
+                + (v.is_completed ? ' <span class="report-tag ok">مكتمل</span>' : '') + '</td>'
+                + '<td class="report-muted">' + esc(v.watched_text) + ' من ' + esc(v.duration_text) + '</td>'
+                + '<td class="report-muted">' + esc(v.viewed_text) + '</td></tr>';
+            }).join('') + '</tbody></table></div>'
+            + (views.length > VISIBLE
+              ? '<button type="button" class="report-more-btn" id="show-all-videos">عرض كل الـ'
+                + views.length + ' مشاهدة</button>'
+              : '');
+
+          section.innerHTML = note + bars + table;
+          var showAll = document.getElementById('show-all-videos');
+          if (showAll) {
+            showAll.addEventListener('click', function () {
+              section.classList.add('show-all');
+              showAll.remove();
+            });
+            // الطباعة لازم تطلع كاملة حتى لو الجدول لسه مطوي على الشاشة
+            window.addEventListener('beforeprint', function () { section.classList.add('show-all'); });
+          }
+        })
+        .catch(function () {
+          document.querySelector('#kpi-videos .report-kpi-value').textContent = '—';
+          document.querySelector('#kpi-watch .report-kpi-value').textContent = '—';
+          section.innerHTML = '<p class="report-empty">تعذر تحميل المشاهدات من المنصة دلوقتي. جرّب تحدّث الصفحة بعد شوية.</p>';
+        });
+    }());
+  </script>
+</body>
+</html>

@@ -22,6 +22,8 @@ const broadcastRoutes = require('./routes/broadcast.routes');
 const settingsRoutes = require('./routes/settings.routes');
 const statsRoutes = require('./routes/stats.routes');
 const performanceRoutes = require('./routes/performance.routes');
+const studentReportRoutes = require('./routes/studentReport.routes');
+const studentReportController = require('./controllers/studentReport.controller');
 const ticketsRoutes = require('./routes/tickets.routes');
 const adminRoutes = require('./routes/admin.routes');
 const tafraRoutes = require('./routes/tafra.routes');
@@ -102,6 +104,12 @@ app.post(newBotManager.WEBHOOK_PATH, (req, res) => {
   bot.handleUpdate(req.body, res);
 });
 
+// ===== تقرير الطالب المشترَك =====
+// صفحة عامة من غير تسجيل دخول — الحماية الوحيدة إن التوكن عشوائي وطويل. متسجّلة قبل مسارات
+// المصادقة عشان مايتمش تحويلها للوجين، وبرّه /api عن قصد: ده رابط بيتبعت لولي الأمر بالإيد
+app.get('/r/:token', studentReportController.renderPublicReport);
+app.get('/r/:token/videos', studentReportController.getPublicReportVideos);
+
 // ===== صفحات المصادقة =====
 app.use('/', authRoutes);
 
@@ -138,6 +146,7 @@ app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/performance', performanceRoutes);
+app.use('/api/student-report', studentReportRoutes);
 app.use('/api/tickets', ticketsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tafra', tafraRoutes);
