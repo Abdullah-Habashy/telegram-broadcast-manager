@@ -801,6 +801,29 @@ tr:last-child td { border-bottom: none; }
 .perf-heat-hour { font-size: 9.5px; color: var(--text-faint); text-align: center; }
 .perf-heat-cell { height: 15px; border-radius: 2px; background: var(--surface-sunken); }
 
+/* شرايح عدم التفاعل — كل شريحة سطر فيه العنوان والشرح وشريط نسبي، وجنبه الرقم وزرار الفتح */
+.perf-segments { display: flex; flex-direction: column; gap: 10px; }
+.perf-segment {
+  display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  border-inline-start-width: 3px; background: var(--surface);
+}
+.perf-segment-danger { border-inline-start-color: var(--danger); }
+.perf-segment-warn { border-inline-start-color: var(--warning); }
+.perf-segment-muted { border-inline-start-color: var(--border); }
+.perf-segment-danger .perf-bar-fill { background: var(--danger); }
+.perf-segment-warn .perf-bar-fill { background: var(--warning); }
+.perf-segment-muted .perf-bar-fill { background: var(--text-faint); }
+.perf-segment-main { min-width: 0; }
+.perf-segment-title { font-size: 13.5px; font-weight: 700; }
+.perf-segment-hint { font-size: 11.5px; color: var(--text-faint); margin: 2px 0 7px; line-height: 1.5; }
+.perf-segment-main .perf-bar-track { display: block; height: 8px; }
+.perf-segment-side { text-align: center; white-space: nowrap; }
+.perf-segment-value { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.perf-segment-pct { font-size: 11px; color: var(--text-faint); margin-bottom: 6px; }
+.perf-segment-note { font-size: 11px; color: var(--text-faint); }
+.perf-segment-open { padding: 5px 10px; }
+
 .perf-table-scroll { overflow-x: auto; }
 .perf-table-scroll table { min-width: 1000px; }
 #perf-staff-table th, #perf-staff-table td { white-space: nowrap; }
@@ -820,6 +843,9 @@ th.perf-sorted { color: var(--primary); }
   .perf-heat-row { grid-template-columns: 40px repeat(24, 1fr); gap: 1px; }
   .perf-heat-cell { height: 12px; }
   .perf-donut-wrap { justify-content: center; }
+  .perf-segment { grid-template-columns: 1fr; gap: 8px; }
+  .perf-segment-side { display: flex; align-items: baseline; gap: 10px; text-align: start; }
+  .perf-segment-pct { margin-bottom: 0; }
 }
 
 /* ===== الطباعة =====

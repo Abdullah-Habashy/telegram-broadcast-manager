@@ -845,6 +845,7 @@
           </div>
           <label class="perf-date-label">من <input type="date" id="perf-from" class="compact-input"></label>
           <label class="perf-date-label">إلى <input type="date" id="perf-to" class="compact-input"></label>
+          <span class="perf-date-label">الأبواب <input type="hidden" id="perf-bootcamp-filter" value=""></span>
           <button type="button" class="btn btn-primary btn-sm" id="perf-refresh">تحديث</button>
           <span class="perf-toolbar-note" id="perf-range-note"></span>
         </div>
@@ -875,6 +876,10 @@
           <div class="card"><h2>الوصول للطلاب</h2>
             <p class="card-desc">مسارين مستقلين: البوت والتليفون. فيه طلاب وصلنا لهم تليفونيًا وهما أصلًا ما دخلوش البوت، فمينفعش يتعرضوا كقمع واحد</p>
             <div id="perf-reach"></div>
+          </div>
+          <div class="card"><h2>مين مش متفاعل؟</h2>
+            <p class="card-desc">كل شريحة معرّفة بنفس شرط الفلتر في شاشة طلاب المنصة بالظبط، فالرقم هنا هو نفس عدد الطلاب اللي هيطلعوا لما تفتحها</p>
+            <div id="perf-disengaged"></div>
           </div>
           <div class="perf-two-col">
             <div class="card"><h2>الطلاب على الأفكار</h2>
@@ -2300,6 +2305,38 @@
     const PERF_WEEK_ORDER = [6, 0, 1, 2, 3, 4, 5];
     const PERF_WEEK_LABELS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
+    // شرايح عدم التفاعل. كل شريحة عندها filters = نفس شرط الفلتر المقابل في شاشة طلاب المنصة،
+    // فالعدد اللي بيظهر هنا بيطابق عدد الصفوف اللي بتطلع هناك لما تدوس "افتح القايمة".
+    // التلات شرايح الأخيرة معندهاش زرار عن قصد: مفيش فلتر جاهز يعبّر عنها بالظبط، وربطها بأقرب
+    // فلتر كان هيدّي رقم مختلف عن اللي مكتوب — ورقم مايتطابقش أسوأ من رقم من غير زرار
+    const PERF_SEGMENTS = [
+      { key: 'seg_unlinked', label: 'غير مرتبطين بتيليجرام', tone: 'danger',
+        hint: 'مفيش حساب تيليجرام مربوط — البوت مايقدرش يوصلهم أصلًا',
+        filters: { telegram: 'unlinked' } },
+      { key: 'seg_linked_not_started', label: 'مرتبطين وما بدأوش البوت', tone: 'danger',
+        hint: 'الحساب مربوط لكن عمرهم ما فتحوا محادثة مع البوت',
+        filters: { telegram: 'linked_not_started' } },
+      { key: 'seg_never_wrote', label: 'دخلوا البوت وما ردّوا على أي رسالة', tone: 'warn',
+        hint: 'دوسوا Start ومبعتوش ولا رسالة واحدة لحد دلوقتي',
+        filters: { conversation_status: 'start_only' } },
+      { key: 'seg_no_welcome', label: 'دخلوا البوت ومجاش لهم ترحيب', tone: 'warn',
+        hint: 'محتاجين تواصل يدوي — رسالة الترحيب مااتبعتلهمش',
+        filters: { welcome_status: 'no_welcome' } },
+      { key: 'seg_welcome_no_reply', label: 'وصلهم ترحيب ومردّوش', tone: 'warn',
+        hint: 'الرسالة وصلت فعلًا ومحدش رد عليها',
+        filters: { welcome_status: 'welcome_no_reply' } },
+      { key: 'seg_silent_7d', label: 'كانوا بيردّوا وسكتوا من أكتر من أسبوع', tone: 'warn',
+        hint: 'اتكلموا قبل كده، وآخر رسالة منهم بقالها أكتر من ٧ أيام', silentDays: 7 },
+      { key: 'seg_silent_14d', label: 'سكتوا من أكتر من أسبوعين', tone: 'warn', silentDays: 14 },
+      { key: 'seg_silent_30d', label: 'سكتوا من أكتر من شهر', tone: 'danger', silentDays: 30 },
+      { key: 'seg_broadcast_no_reply', label: 'اتبعتلهم إرسال جماعي ومردّوش خالص', tone: 'muted',
+        hint: 'وصلتهم رسالة جماعية واحدة على الأقل وعمرهم ما كتبوا حاجة' },
+      { key: 'seg_assigned_never_called', label: 'مسندين لمتابعة تليفونية ومحدش اتصل بيهم', tone: 'muted',
+        hint: 'الطالب متوزّع على موظف بس مفيش ولا مكالمة متسجّلة له' },
+      { key: 'seg_called_never_reached', label: 'اتصلنا بيهم ومعرفناش نوصلهم ولا مرة', tone: 'muted',
+        hint: 'كل المكالمات المسجّلة ليهم كانت "لم يرد" أو "الخط مشغول" أو رقم غلط' },
+    ];
+
     let perfSummaryData = null;
     let perfStaffData = null;
     let perfStaffSort = { key: 'replies', dir: 'desc' };
@@ -2307,6 +2344,10 @@
 
     const perfNum = (value) => Number(value || 0).toLocaleString('en-US');
     const perfPct = (part, whole) => (whole ? Math.round((Number(part) / whole) * 1000) / 10 : 0);
+    const perfPctText = (part, whole) => {
+      const value = perfPct(part, whole);
+      return value === 0 && Number(part) > 0 ? 'أقل من 0.1%' : value + '%';
+    };
     const perfDur = (seconds) => (seconds === null || seconds === undefined ? '—' : fmtDuration(seconds));
 
     function perfNiceCeil(value) {
@@ -2459,8 +2500,10 @@
       const params = new URLSearchParams();
       const from = document.getElementById('perf-from').value;
       const to = document.getElementById('perf-to').value;
+      const bootcamp = document.getElementById('perf-bootcamp-filter').value;
       if (from) params.set('from', from);
       if (to) params.set('to', to);
+      if (bootcamp) params.set('bootcamp', bootcamp);
       return params.toString();
     }
 
@@ -2473,12 +2516,20 @@
       document.getElementById('perf-to').value = toText;
     }
 
-    function perfRangeNote(range) {
+    function perfScopeLabel(scope) {
+      const names = (scope && scope.bootcamps ? scope.bootcamps : []).map((row) => row.name.trim()).filter(Boolean);
+      if (!names.length) return 'كل الأبواب';
+      return names.length <= 2 ? names.join(' + ') : `${names.length} أبواب مختارة`;
+    }
+
+    function perfRangeNote(data) {
       const note = document.getElementById('perf-range-note');
       if (!note) return;
-      note.textContent = range.capped
+      const range = data.range;
+      const period = range.capped
         ? `الفترة اتقصّت لـ ${range.days} يوم (${range.from} → ${range.to}) — ده أقصى مدى معروض`
         : `${range.from} → ${range.to} (${range.days} يوم)`;
+      note.textContent = `${period} · ${perfScopeLabel(data.scope)}`;
       note.classList.toggle('perf-note-warning', Boolean(range.capped));
     }
 
@@ -2492,7 +2543,7 @@
         ]);
         perfSummaryData = summary;
         perfStaffData = staff;
-        perfRangeNote(summary.range);
+        perfRangeNote(summary);
         renderPerfPlatform(summary);
         renderPerfStaff(staff);
         perfFillEmployeeSelect(staff.staff);
@@ -2578,11 +2629,16 @@
                 { label: 'كل طلاب المنصة', value: reach.students_total, color: PERF_PALETTE[5] },
                 { label: 'مرتبطين بتيليجرام', value: reach.linked_telegram, color: PERF_PALETTE[0] },
                 { label: 'بدأوا محادثة مع البوت', value: reach.started_bot, color: PERF_PALETTE[0] },
+                { label: 'كتبوا ولو رسالة واحدة', value: reach.wrote_at_least_once, color: PERF_PALETTE[1] },
                 { label: 'وصلهم ترحيب', value: reach.got_welcome, color: PERF_PALETTE[1] },
                 { label: 'ردّوا بعد الترحيب', value: reach.replied_after_welcome, color: PERF_PALETTE[1] },
+                { label: 'لم يردّوا على أي رسالة', value: reach.seg_never_wrote, color: PERF_PALETTE[3] },
               ],
               showPercentOf: reach.students_total,
             })}
+            <p class="perf-inline-note">من ${perfNum(reach.started_bot)} طالب دخلوا البوت:
+              <b>${perfNum(reach.wrote_at_least_once)}</b> كتبوا لنا،
+              و<b>${perfNum(reach.seg_never_wrote)}</b> ما ردّوش على أي رسالة</p>
           </div>
           <div>
             <h3 class="perf-subhead">مسار التليفون</h3>
@@ -2599,6 +2655,8 @@
         </div>
         <p class="perf-inline-note">إجمالي اللي وصلنا له بأي وسيلة (بوت أو تليفون):
           <b>${perfNum(reach.reached_any_channel)}</b> طالب — ${perfPct(reach.reached_any_channel, reach.students_total)}% من طلاب المنصة</p>`;
+
+      renderPerfDisengaged(data);
 
       const movesByIdea = new Map(data.idea_moves.map((row) => [Number(row.idea_number), row]));
       document.getElementById('perf-ideas').innerHTML = perfBarChart({
@@ -2639,6 +2697,89 @@
       document.getElementById('perf-heatmap').innerHTML =
         perfHeatmap(data.heatmap.incoming, 'رسايل الطلاب الواردة', '54,72,209')
         + perfHeatmap(data.heatmap.replies, 'ردود الفريق', '31,157,99');
+    }
+
+    // ---------- مين مش متفاعل ----------
+    function renderPerfDisengaged(data) {
+      const reach = data.reach;
+      const total = reach.students_total;
+      const rows = PERF_SEGMENTS.map((segment) => ({ segment, value: Number(reach[segment.key]) || 0 }))
+        .filter((row) => row.value > 0);
+      const wrap = document.getElementById('perf-disengaged');
+      if (!rows.length) { wrap.innerHTML = perfEmpty('كل الطلاب في النطاق ده متفاعلين — مفيش شريحة تستاهل انتباه.'); return; }
+
+      const max = Math.max(...rows.map((row) => row.value));
+      wrap.innerHTML = '<div class="perf-segments">' + rows.map(({ segment, value }) => {
+        const width = Math.max(1.5, (value / max) * 100);
+        const canOpen = Boolean(segment.filters || segment.silentDays);
+        return `<div class="perf-segment perf-segment-${segment.tone}">
+          <div class="perf-segment-main">
+            <div class="perf-segment-title">${escapeHtml(segment.label)}</div>
+            ${segment.hint ? `<div class="perf-segment-hint">${escapeHtml(segment.hint)}</div>` : ''}
+            <span class="perf-bar-track"><span class="perf-bar-fill" style="width:${width.toFixed(2)}%"></span></span>
+          </div>
+          <div class="perf-segment-side">
+            <div class="perf-segment-value">${perfNum(value)}</div>
+            <div class="perf-segment-pct">${perfPctText(value, total)} من ${perfNum(total)}</div>
+            ${canOpen
+              ? `<button type="button" class="btn btn-ghost btn-sm perf-segment-open" data-perf-segment="${escapeHtml(segment.key)}">افتح القايمة</button>`
+              : '<span class="perf-segment-note">مفيش فلتر مطابق</span>'}
+          </div>
+        </div>`;
+      }).join('') + '</div>';
+
+      wrap.querySelectorAll('[data-perf-segment]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const segment = PERF_SEGMENTS.find((item) => item.key === button.dataset.perfSegment);
+          if (!segment) return;
+          const filters = { ...(segment.filters || {}) };
+          // "سكت من أكتر من N يوم" = آخر استقبال قبل (النهارده - N). فلتر "آخر استقبال إلى"
+          // معناه "أقل من نهاية اليوم ده"، فبنطرح يوم زيادة عشان الحد يطلع مطابق للرقم المعروض
+          if (segment.silentDays) {
+            filters.last_received_to = perfShiftDay(data.range.today, -(segment.silentDays + 1));
+          }
+          perfOpenStudentSegment(filters, segment.label);
+        });
+      });
+    }
+
+    function perfShiftDay(dayText, days) {
+      const date = new Date(`${dayText}T00:00:00Z`);
+      date.setUTCDate(date.getUTCDate() + days);
+      return date.toISOString().slice(0, 10);
+    }
+
+    // بينقل لشاشة طلاب المنصة ويحط عليها فلاتر الشريحة (زائد نطاق الأبواب المختار هنا).
+    // بننقل التاب بالإيد مش بـ click عشان نقدر ننتظر تحميل خيارات الفلاتر قبل ما نكتب القيم —
+    // لو كتبناها قبله، loadTafraStudentFilters كان هيسترجع المحفوظ من قبل ويدوس على اختيارنا
+    async function perfOpenStudentSegment(filters, label) {
+      const nav = document.querySelector('.nav-item[data-tab="tafra-students"]');
+      const panel = document.getElementById('tab-tafra-students');
+      if (!nav || !panel) return showToast('شاشة طلاب المنصة مش متاحة');
+      document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
+      nav.classList.add('active');
+      document.querySelectorAll('.tab-panel').forEach((section) => (section.style.display = 'none'));
+      panel.style.display = 'block';
+      try {
+        await loadTafraStudentFilters();
+        applyStudentFilterOptions('tafra', tafraFilterOptions);
+        resetStudentFilters('tafra');
+        const scoped = { ...filters };
+        const bootcamp = document.getElementById('perf-bootcamp-filter').value;
+        if (bootcamp) scoped.bootcamp = bootcamp;
+        Object.entries(scoped).forEach(([key, value]) => {
+          const element = studentFilterElement('tafra', key);
+          if (!element) return;
+          element.value = value;
+          multiSelectControllers[element.id]?.refresh();
+        });
+        bindStudentFilterEvents('tafra', () => { tafraStudentsPage = 1; loadTafraStudents(); });
+        tafraStudentsPage = 1;
+        await loadTafraStudents();
+        showToast(`اتفلترت شاشة طلاب المنصة على: ${label}`);
+      } catch (error) {
+        showToast(error.message);
+      }
     }
 
     // ---------- مقارنة الفريق ----------
@@ -2787,6 +2928,7 @@
         <div class="perf-print-header">
           <h2>تقرير أداء — ${escapeHtml(data.user.name)}</h2>
           <p>${escapeHtml(data.range.from)} → ${escapeHtml(data.range.to)} (${data.range.days} يوم)
+             · ${escapeHtml(perfScopeLabel(perfSummaryData ? perfSummaryData.scope : null))}
              · اتولّد في ${escapeHtml(fmtDate(new Date().toISOString()))}</p>
         </div>
         <div class="perf-kpi-grid">${kpis}</div>
@@ -2838,11 +2980,23 @@
       if (!perfInitialised) {
         perfInitialised = true;
         perfSetRange(30);
-        registerFilterGroup('performance', ['perf-from', 'perf-to', 'perf-employee']);
+        registerFilterGroup('performance', ['perf-from', 'perf-to', 'perf-employee', 'perf-bootcamp-filter']);
 
         document.getElementById('perf-refresh').addEventListener('click', loadPerformance);
         document.getElementById('perf-from').addEventListener('change', loadPerformance);
         document.getElementById('perf-to').addEventListener('change', loadPerformance);
+        // فلتر الأبواب بياخد نفس خيارات باقي الشاشات. بيفضل فاضي افتراضيًا (كل الأبواب) — الافتراضي
+        // بتاع شاشة الطلاب (الباب الأول + المنهج كاملا) مايتطبقش هنا عشان اللوحة تبدأ بالصورة الكاملة
+        try {
+          await loadTafraStudentFilters();
+        } catch (error) {
+          // بتوقع مثلاً لو قايمة الموظفين فشلت. الخيارات نفسها بتتخزن في tafraFilterOptions أول ما
+          // الطلب يرجّع، قبل أي حاجة ممكن تقع — فالقايمة بتتعمل برة الـ try عشان متضيعش معاها
+          console.warn('تعذر تحميل خيارات فلاتر الطلاب بالكامل:', error.message);
+        }
+        createMultiSelectFilter('perf-bootcamp-filter', 'كل الأبواب')
+          ?.setOptions((tafraFilterOptions?.bootcamps || []).map((item) => ({ value: item.id, label: item.name })));
+        document.getElementById('perf-bootcamp-filter').addEventListener('change', loadPerformance);
         document.getElementById('perf-quick-ranges').addEventListener('click', (event) => {
           const button = event.target.closest('[data-perf-days]');
           if (!button) return;

@@ -20,17 +20,63 @@ const MAX_RANGE_DAYS = 366;
 // حتى لو اتعادت بعد دقيقتين
 const MESSAGE_BURST_SECONDS = 300;
 
+// عتبات "سكت من قد إيه" — الأرقام دي بتظهر كشرايح في لوحة عدم التفاعل، وكل شريحة ليها زرار
+// بيفتح شاشة طلاب المنصة على نفس الشريحة بالظبط
+const SILENT_DAY_THRESHOLDS = [7, 14, 30];
+
 const RANGE_START = `(($1::date)::timestamp AT TIME ZONE '${TZ}')`;
 const RANGE_END = `((($2::date + INTERVAL '1 day'))::timestamp AT TIME ZONE '${TZ}')`;
 const dayOf = (column) => `((${column} AT TIME ZONE '${TZ}')::date)`;
 const inRange = (column) => `${column} >= ${RANGE_START} AND ${column} < ${RANGE_END}`;
+// النهارده بتوقيت القاهرة كـ timestamptz — أساس شرايح "سكت من كذا يوم"
+const cairoDaysAgo = (days) => `(((NOW() AT TIME ZONE '${TZ}')::date - ${days})::timestamp AT TIME ZONE '${TZ}')`;
 
 // رد حقيقي من موظف: مش إرسال جماعي (broadcast_recipient_id) ومش رسالة تلقائية (sent_by IS NULL)
 const AGENT_REPLY_CONDITION = 'sm.deleted_at IS NULL AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL';
 
+// ---------- نطاق الأبواب ----------
+// الأدمن يقدر يقصر اللوحة كلها على باب واحد أو أكتر (الباب الأول، المنهج كاملا...). النطاق
+// بيتطبّق على **كل** استعلام في الملف ده — مش على شاشة الطلاب بس — عشان الأرقام تفضل متسقة:
+// لو اخترت الباب الأول، سرعة الرد والمكالمات والأفكار كلها بتبقى لطلاب الباب الأول بس.
+//
+// لما مافيش اختيار، الشرط بيبقى TRUE حرفيًا والباراميتر مابيتبعتش أصلًا — عشان المخطِّط ياخد
+// خطة نضيفة من غير OR زيادة، وعشان بوستجرس بيرفض باراميترز مبعوتة ومش مستخدمة في الاستعلام
+
+function parseBootcampIds(query) {
+  return String(query.bootcamp || '')
+    .split(',')
+    .map((value) => Number(String(value).trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+}
+
+// بيرجّع أدوات بناء شروط النطاق لطلب واحد. baseParamCount = عدد الباراميترز اللي قبل النطاق
+// في الاستعلام ده (الفترة مثلاً)، عشان رقم الـ placeholder يطلع صح
+function buildScope(bootcampIds) {
+  const active = bootcampIds.length > 0;
+  const studentsSql = (index) => `SELECT e.tafra_student_id FROM tafra_enrollments e
+      WHERE e.enrollment_type = 'enroll' AND e.tafra_bootcamp_id = ANY($${index}::bigint[])`;
+  return {
+    active,
+    // الباراميترز النهائية لاستعلام بيبدأ بـ base — بيتضاف عليها مصفوفة الأبواب لو فيه نطاق
+    params: (base = []) => (active ? [...base, bootcampIds] : base),
+    // شرط على عمود فيه tafra_student_id
+    student: (column, baseParamCount = 0) =>
+      (active ? `${column} IN (${studentsSql(baseParamCount + 1)})` : 'TRUE'),
+    // شرط على عمود فيه contacts.id — بيعدّي من contacts لـ tafra_students بالـ chat_id.
+    // ملاحظة مقصودة: لما يبقى فيه نطاق، جهات الاتصال اللي مش طلاب منصة بتخرج من الحساب —
+    // وده الصح، لأن السؤال بقى "طلاب الباب ده" مش "كل اللي كلّمنا البوت"
+    contact: (column, baseParamCount = 0) => (active
+      ? `${column} IN (
+          SELECT c_scope.id FROM contacts c_scope
+          JOIN tafra_students s_scope ON s_scope.telegram_chat_id = c_scope.chat_id
+          WHERE s_scope.tafra_student_id IN (${studentsSql(baseParamCount + 1)}))`
+      : 'TRUE'),
+  };
+}
+
 // آخر رسالة واردة وآخر رسالة صادرة لكل تذكرة — بتتحسب مرة واحدة هنا بدل ما كل عدّاد يعيد نفس
-// الاستعلامات المتداخلة على كل تذكرة (ده كان الفرق بين ثانيتين وجزء من الثانية)
-const TICKET_EDGES_CTE = `
+// الاستعلامات المتداخلة على كل تذكرة (ده كان الفرق بين ثواني وجزء من الثانية)
+const ticketEdgesCte = (contactScope) => `
   ticket_edges AS (
     SELECT t.id, t.contact_id, t.status, t.priority, t.assigned_to, t.unread_count,
       t.next_follow_up_at, t.current_idea_number, t.subtitle_id,
@@ -38,6 +84,7 @@ const TICKET_EDGES_CTE = `
       (SELECT MAX(sm.sent_at) FROM support_messages sm
         WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL) AS last_outgoing_at
     FROM tickets t
+    WHERE ${contactScope}
   )`;
 
 // تذكرة مفتوحة وآخر حركة فيها من الطالب — نفس تعريف فلتر "مفتوحة ولم يُرد عليها" في صندوق الدعم
@@ -58,14 +105,18 @@ const AWAITING_REPLY_CONDITION = `
 //
 // مفيش فلتر تاريخ على الأحداث عن قصد: الجدولين صغيرين، والقراءة الكاملة بتخلّي بداية الموجة
 // مضبوطة حتى لو ابتدت قبل الفترة بكتير. الفلترة بتحصل على started_at في الآخر
-const RESPONSE_WAVES_CTE = `
+const responseWavesCte = (contactScope) => `
+  scoped_tickets AS (
+    SELECT t.id, t.contact_id FROM tickets t WHERE ${contactScope}
+  ),
   events AS (
-    SELECT t.id AS ticket_id, im.received_at AS at, 0 AS is_reply, NULL::int AS user_id
+    SELECT st.id AS ticket_id, im.received_at AS at, 0 AS is_reply, NULL::int AS user_id
     FROM incoming_messages im
-    JOIN tickets t ON t.contact_id = im.contact_id
+    JOIN scoped_tickets st ON st.contact_id = im.contact_id
     UNION ALL
     SELECT sm.ticket_id, sm.sent_at AS at, 1 AS is_reply, sm.sent_by AS user_id
     FROM support_messages sm
+    JOIN scoped_tickets st ON st.id = sm.ticket_id
     WHERE ${AGENT_REPLY_CONDITION}
   ),
   numbered AS (
@@ -149,7 +200,7 @@ function parseRange(query) {
     from = shiftDate(to, -(MAX_RANGE_DAYS - 1));
     capped = true;
   }
-  return { from, to, days: daysBetween(from, to), capped };
+  return { from, to, days: daysBetween(from, to), capped, today };
 }
 
 const toInt = (value) => (value === null || value === undefined ? 0 : Number(value));
@@ -166,55 +217,66 @@ function shapeResponse(row = {}) {
   };
 }
 
+function emptyHeatmap() {
+  return Array.from({ length: 7 }, () => new Array(24).fill(0));
+}
+
 // زمن الرد مجمّع لكل موظف. الاستعلام مابياخدش user_id جوه الـ CTE عن قصد: تمرير الفلتر جوّه
 // بيخلّي المخطِّط يختار خطة أسوأ بكتير (٦ ثواني مقابل جزء من الثانية على نفس البيانات)، فبنجمّع
 // للكل ونختار الصف المطلوب في الجافاسكربت. وده كمان بيضمن إن رقم التقرير الفردي مايختلفش أبدًا
 // عن رقم نفس الموظف في جدول المقارنة، لأنهم حرفيًا نفس الاستعلام
-async function responsesByUser(from, to) {
-  const result = await pool.query(`WITH ${RESPONSE_WAVES_CTE}
+async function responsesByUser(range, scope) {
+  const result = await pool.query(`WITH ${responseWavesCte(scope.contact('t.contact_id', 2))}
     SELECT user_id, ${RESPONSE_AGGREGATES_SQL}, ${RESPONSE_BUCKETS_SQL}
-    FROM responses WHERE user_id IS NOT NULL GROUP BY user_id`, [from, to]);
+    FROM responses WHERE user_id IS NOT NULL GROUP BY user_id`, scope.params([range.from, range.to]));
   return new Map(result.rows.map((row) => [Number(row.user_id), row]));
-}
-
-function emptyHeatmap() {
-  return Array.from({ length: 7 }, () => new Array(24).fill(0));
 }
 
 // ---------- الملخص العام للمنصة ----------
 
 async function getSummary(req, res) {
   const range = parseRange(req.query);
-  const params = [range.from, range.to];
+  const bootcampIds = parseBootcampIds(req.query);
+  const scope = buildScope(bootcampIds);
+  // الاستعلامات اللي فيها فترة بتحط النطاق في $3، واللي من غير فترة بتحطه في $1
+  const dated = scope.params([range.from, range.to]);
+  const undated = scope.params([]);
+  const contactScope = scope.contact('t.contact_id', 2);
+  const contactScopeBare = scope.contact('t.contact_id', 0);
 
   try {
     const [
       volume, tickets, responses, replyGaps, calls, callGaps,
-      outcomes, funnel, ideas, ideaMoves, timeseries, hourly, subtitles,
+      outcomes, students, ideas, ideaMoves, timeseries, hourly, subtitles, bootcamps,
     ] = await Promise.all([
       // حجم الشغل في الفترة
       pool.query(`
         SELECT
-          (SELECT COUNT(*)::int FROM incoming_messages im WHERE ${inRange('im.received_at')}) AS incoming_messages,
-          (SELECT COUNT(DISTINCT im.contact_id)::int FROM incoming_messages im WHERE ${inRange('im.received_at')}) AS active_students,
-          (SELECT COUNT(*)::int FROM support_messages sm WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')}) AS agent_replies,
-          (SELECT COUNT(DISTINCT sm.ticket_id)::int FROM support_messages sm WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')}) AS conversations_touched,
-          (SELECT COUNT(*)::int FROM support_messages sm
-            WHERE sm.deleted_at IS NULL AND sm.is_welcome AND ${inRange('sm.sent_at')}) AS welcome_messages,
-          (SELECT COUNT(*)::int FROM support_messages sm
+          (SELECT COUNT(*)::int FROM incoming_messages im
+            WHERE ${inRange('im.received_at')} AND ${scope.contact('im.contact_id', 2)}) AS incoming_messages,
+          (SELECT COUNT(DISTINCT im.contact_id)::int FROM incoming_messages im
+            WHERE ${inRange('im.received_at')} AND ${scope.contact('im.contact_id', 2)}) AS active_students,
+          (SELECT COUNT(*)::int FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+            WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')} AND ${contactScope}) AS agent_replies,
+          (SELECT COUNT(DISTINCT sm.ticket_id)::int FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+            WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')} AND ${contactScope}) AS conversations_touched,
+          (SELECT COUNT(*)::int FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+            WHERE sm.deleted_at IS NULL AND sm.is_welcome AND ${inRange('sm.sent_at')} AND ${contactScope}) AS welcome_messages,
+          (SELECT COUNT(*)::int FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
             WHERE sm.deleted_at IS NULL AND sm.sent_by IS NULL AND NOT sm.is_welcome
-              AND sm.broadcast_recipient_id IS NULL AND ${inRange('sm.sent_at')}) AS auto_follow_ups,
+              AND sm.broadcast_recipient_id IS NULL AND ${inRange('sm.sent_at')} AND ${contactScope}) AS auto_follow_ups,
           (SELECT COUNT(*)::int FROM broadcast_recipients br
-            WHERE br.status = 'sent' AND ${inRange('br.sent_at')}) AS broadcast_sent,
+            WHERE br.status = 'sent' AND ${inRange('br.sent_at')} AND ${scope.contact('br.contact_id', 2)}) AS broadcast_sent,
           (SELECT COUNT(*)::int FROM broadcast_recipients br
-            WHERE br.status = 'failed' AND ${inRange('br.sent_at')}) AS broadcast_failed,
-          (SELECT COUNT(*)::int FROM sms_logs sl WHERE ${inRange('sl.sent_at')}) AS sms_sent,
-          (SELECT COUNT(*)::int FROM tickets t WHERE ${inRange('t.created_at')}) AS new_conversations
-      `, params),
+            WHERE br.status = 'failed' AND ${inRange('br.sent_at')} AND ${scope.contact('br.contact_id', 2)}) AS broadcast_failed,
+          (SELECT COUNT(*)::int FROM sms_logs sl
+            WHERE ${inRange('sl.sent_at')} AND ${scope.student('sl.tafra_student_id', 2)}) AS sms_sent,
+          (SELECT COUNT(*)::int FROM tickets t WHERE ${inRange('t.created_at')} AND ${contactScope}) AS new_conversations
+      `, dated),
 
       // حالة صندوق الدعم دلوقتي — لقطة اللحظة مش الفترة، لأن السؤال "إيه المتعلّق عليّ دلوقتي؟"
       pool.query(`
-        WITH ${TICKET_EDGES_CTE}
+        WITH ${ticketEdgesCte(contactScopeBare)}
         SELECT COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE te.status = 'new')::int AS status_new,
           COUNT(*) FILTER (WHERE te.status = 'in_progress')::int AS status_in_progress,
@@ -230,18 +292,18 @@ async function getSummary(req, res) {
           ROUND(MAX(EXTRACT(EPOCH FROM (NOW() - te.last_incoming_at)))
             FILTER (WHERE ${AWAITING_REPLY_CONDITION}))::int AS oldest_waiting_seconds
         FROM ticket_edges te
-      `),
+      `, undated),
 
-      pool.query(`WITH ${RESPONSE_WAVES_CTE}
-        SELECT ${RESPONSE_AGGREGATES_SQL}, ${RESPONSE_BUCKETS_SQL} FROM responses`, params),
+      pool.query(`WITH ${responseWavesCte(contactScope)}
+        SELECT ${RESPONSE_AGGREGATES_SQL}, ${RESPONSE_BUCKETS_SQL} FROM responses`, dated),
 
       // المسافة بين رسالتين متتاليتين لنفس المحادثة (بعد استبعاد الدفعة الواحدة)
       pool.query(`
         WITH ordered AS (
           SELECT sm.ticket_id, sm.sent_at,
             LAG(sm.sent_at) OVER (PARTITION BY sm.ticket_id ORDER BY sm.sent_at) AS prev_sent_at
-          FROM support_messages sm
-          WHERE ${AGENT_REPLY_CONDITION}
+          FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+          WHERE ${AGENT_REPLY_CONDITION} AND ${contactScope}
         ),
         gaps AS (
           SELECT EXTRACT(EPOCH FROM (sent_at - prev_sent_at)) AS seconds
@@ -252,7 +314,7 @@ async function getSummary(req, res) {
           ROUND(AVG(seconds))::int AS avg_seconds,
           ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY seconds))::int AS median_seconds
         FROM gaps WHERE seconds >= ${MESSAGE_BURST_SECONDS}
-      `, params),
+      `, dated),
 
       pool.query(`
         SELECT COUNT(*)::int AS total,
@@ -265,15 +327,15 @@ async function getSummary(req, res) {
           COUNT(*) FILTER (WHERE COALESCE(TRIM(cl.notes), '') <> '')::int AS with_notes
         FROM call_logs cl
         LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
-        WHERE ${inRange('cl.called_at')}
-      `, params),
+        WHERE ${inRange('cl.called_at')} AND ${scope.student('cl.tafra_student_id', 2)}
+      `, dated),
 
       // المسافة بين مكالمتين لنفس الطالب — من غير حد أدنى: كل مكالمة متسجّلة محاولة حقيقية
       pool.query(`
         WITH ordered AS (
           SELECT cl.tafra_student_id, cl.called_at,
             LAG(cl.called_at) OVER (PARTITION BY cl.tafra_student_id ORDER BY cl.called_at) AS prev_called_at
-          FROM call_logs cl
+          FROM call_logs cl WHERE ${scope.student('cl.tafra_student_id', 2)}
         ),
         gaps AS (
           SELECT EXTRACT(EPOCH FROM (called_at - prev_called_at)) AS seconds
@@ -284,94 +346,118 @@ async function getSummary(req, res) {
           ROUND(AVG(seconds))::int AS avg_seconds,
           ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY seconds))::int AS median_seconds
         FROM gaps
-      `, params),
+      `, dated),
 
       pool.query(`
         SELECT COALESCE(co.name, 'بدون نتيجة مسجّلة') AS name, COUNT(*)::int AS count
         FROM call_logs cl
         LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
-        WHERE ${inRange('cl.called_at')}
+        WHERE ${inRange('cl.called_at')} AND ${scope.student('cl.tafra_student_id', 2)}
         GROUP BY 1 ORDER BY 2 DESC, 1
-      `, params),
+      `, dated),
 
-      // الوصول للطلاب — لقطة تراكمية مش مقيّدة بالفترة: السؤال "وصلنا لكام طالب من أول المشوار؟".
-      // مسارين منفصلين مش قمع واحد: البوت والتليفون مستقلين تمامًا، وفيه طلاب اتكلمنا معاهم
-      // تليفونيًا وهما أصلًا ما دخلوش البوت — فعرضهم كقمع واحد نازل هيبقى غلط
+      // حالة كل طالب مرة واحدة — منها بيتبني مسار الوصول وشرايح عدم التفاعل. لقطة تراكمية مش
+      // مقيّدة بالفترة: السؤال "وصلنا لمين من أول المشوار؟" مش "الفترة دي بس".
+      // كل شريحة معرّفة بنفس شرط الفلتر المقابل لها في شاشة طلاب المنصة بالظبط، عشان الرقم
+      // اللي هنا يطابق عدد الصفوف اللي هتطلع لما تدوس على الشريحة وتفتحها هناك
       pool.query(`
-        WITH welcomed AS (
+        WITH incoming_agg AS (
+          SELECT im.contact_id, COUNT(*)::int AS messages, MAX(im.received_at) AS last_at
+          FROM incoming_messages im GROUP BY im.contact_id
+        ),
+        welcome_agg AS (
           SELECT t.contact_id, MIN(sm.sent_at) AS first_welcome_at
-          FROM tickets t
-          JOIN support_messages sm ON sm.ticket_id = t.id AND sm.deleted_at IS NULL AND sm.is_welcome
+          FROM tickets t JOIN support_messages sm ON sm.ticket_id = t.id
+          WHERE sm.deleted_at IS NULL AND sm.is_welcome
           GROUP BY t.contact_id
         ),
-        replied AS (
-          SELECT w.contact_id
-          FROM welcomed w
-          WHERE EXISTS (
-            SELECT 1 FROM incoming_messages im
-            WHERE im.contact_id = w.contact_id AND im.received_at > w.first_welcome_at
-          )
+        broadcast_agg AS (
+          SELECT br.contact_id, COUNT(*)::int AS messages
+          FROM broadcast_recipients br WHERE br.status = 'sent' GROUP BY br.contact_id
         ),
-        call_stats AS (
-          SELECT cl.tafra_student_id,
-            COUNT(*)::int AS calls,
+        call_agg AS (
+          SELECT cl.tafra_student_id, COUNT(*)::int AS calls,
             COUNT(*) FILTER (WHERE ${REACHED_CONDITION_SQL})::int AS reached
           FROM call_logs cl LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
           GROUP BY cl.tafra_student_id
+        ),
+        state AS (
+          SELECT s.tafra_student_id, s.telegram_chat_id, c.last_contacted_at,
+            COALESCE(i.messages, 0) AS incoming_messages, i.last_at AS last_incoming_at,
+            w.first_welcome_at, COALESCE(b.messages, 0) AS broadcast_messages,
+            COALESCE(ca.calls, 0) AS calls, COALESCE(ca.reached, 0) AS calls_reached,
+            (sca.tafra_student_id IS NOT NULL) AS assigned_for_calls
+          FROM tafra_students s
+          LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
+          LEFT JOIN incoming_agg i ON i.contact_id = c.id
+          LEFT JOIN welcome_agg w ON w.contact_id = c.id
+          LEFT JOIN broadcast_agg b ON b.contact_id = c.id
+          LEFT JOIN call_agg ca ON ca.tafra_student_id = s.tafra_student_id
+          LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+          WHERE ${scope.student('s.tafra_student_id', 0)}
         )
         SELECT
           COUNT(*)::int AS students_total,
-          COUNT(*) FILTER (WHERE s.telegram_chat_id IS NOT NULL)::int AS linked_telegram,
-          COUNT(*) FILTER (WHERE c.last_contacted_at IS NOT NULL)::int AS started_bot,
-          COUNT(*) FILTER (WHERE w.contact_id IS NOT NULL)::int AS got_welcome,
-          COUNT(*) FILTER (WHERE r.contact_id IS NOT NULL)::int AS replied_after_welcome,
-          COUNT(*) FILTER (WHERE sca.tafra_student_id IS NOT NULL)::int AS assigned_for_calls,
-          COUNT(*) FILTER (WHERE cs.calls > 0)::int AS called_at_least_once,
-          COUNT(*) FILTER (WHERE cs.reached > 0)::int AS reached_by_phone,
-          COUNT(*) FILTER (WHERE c.last_contacted_at IS NOT NULL OR cs.reached > 0)::int AS reached_any_channel
-        FROM tafra_students s
-        LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
-        LEFT JOIN welcomed w ON w.contact_id = c.id
-        LEFT JOIN replied r ON r.contact_id = c.id
-        LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
-        LEFT JOIN call_stats cs ON cs.tafra_student_id = s.tafra_student_id
-      `),
+          COUNT(*) FILTER (WHERE telegram_chat_id IS NOT NULL)::int AS linked_telegram,
+          COUNT(*) FILTER (WHERE last_contacted_at IS NOT NULL)::int AS started_bot,
+          COUNT(*) FILTER (WHERE first_welcome_at IS NOT NULL)::int AS got_welcome,
+          COUNT(*) FILTER (WHERE incoming_messages > 0)::int AS wrote_at_least_once,
+          COUNT(*) FILTER (WHERE first_welcome_at IS NOT NULL AND last_incoming_at > first_welcome_at)::int AS replied_after_welcome,
+          COUNT(*) FILTER (WHERE assigned_for_calls)::int AS assigned_for_calls,
+          COUNT(*) FILTER (WHERE calls > 0)::int AS called_at_least_once,
+          COUNT(*) FILTER (WHERE calls_reached > 0)::int AS reached_by_phone,
+          COUNT(*) FILTER (WHERE last_contacted_at IS NOT NULL OR calls_reached > 0)::int AS reached_any_channel,
+          COUNT(*) FILTER (WHERE telegram_chat_id IS NULL)::int AS seg_unlinked,
+          COUNT(*) FILTER (WHERE telegram_chat_id IS NOT NULL AND last_contacted_at IS NULL)::int AS seg_linked_not_started,
+          COUNT(*) FILTER (WHERE last_contacted_at IS NOT NULL AND incoming_messages = 0)::int AS seg_never_wrote,
+          COUNT(*) FILTER (WHERE last_contacted_at IS NOT NULL AND first_welcome_at IS NULL)::int AS seg_no_welcome,
+          COUNT(*) FILTER (WHERE last_contacted_at IS NOT NULL AND first_welcome_at IS NOT NULL
+            AND (last_incoming_at IS NULL OR last_incoming_at <= first_welcome_at))::int AS seg_welcome_no_reply,
+          COUNT(*) FILTER (WHERE broadcast_messages > 0 AND incoming_messages = 0)::int AS seg_broadcast_no_reply,
+          COUNT(*) FILTER (WHERE assigned_for_calls AND calls = 0)::int AS seg_assigned_never_called,
+          COUNT(*) FILTER (WHERE calls > 0 AND calls_reached = 0)::int AS seg_called_never_reached,
+          ${SILENT_DAY_THRESHOLDS.map((days) => `COUNT(*) FILTER (WHERE incoming_messages > 0
+            AND last_incoming_at < ${cairoDaysAgo(days)})::int AS seg_silent_${days}d`).join(',\n          ')}
+        FROM state
+      `, undated),
 
       // توزيع الطلاب على الأفكار — 0 معناها "لم يُحدَّد بعد"
       pool.query(`
         SELECT COALESCE(t.current_idea_number, 0)::int AS idea_number, COUNT(*)::int AS conversations
-        FROM tickets t GROUP BY 1 ORDER BY 1
-      `),
+        FROM tickets t WHERE ${contactScopeBare} GROUP BY 1 ORDER BY 1
+      `, undated),
 
       // تحرّكات الأفكار في الفترة — كام مرة اتنقل طالب لفكرة جديدة
       pool.query(`
         SELECT ipl.idea_number::int AS idea_number, COUNT(*)::int AS moves,
           COUNT(DISTINCT ipl.ticket_id)::int AS students
-        FROM idea_progress_log ipl
-        WHERE ${inRange('ipl.changed_at')}
+        FROM idea_progress_log ipl JOIN tickets t ON t.id = ipl.ticket_id
+        WHERE ${inRange('ipl.changed_at')} AND ${contactScope}
         GROUP BY 1 ORDER BY 1
-      `, params),
+      `, dated),
 
       // السلسلة الزمنية اليومية — الأيام الفاضية بتتولّد من generate_series عشان المخطط ما يقفزش
       pool.query(`
         WITH days AS (SELECT generate_series($1::date, $2::date, INTERVAL '1 day')::date AS day),
         incoming AS (
           SELECT ${dayOf('im.received_at')} AS day, COUNT(*)::int AS n
-          FROM incoming_messages im WHERE ${inRange('im.received_at')} GROUP BY 1
+          FROM incoming_messages im
+          WHERE ${inRange('im.received_at')} AND ${scope.contact('im.contact_id', 2)} GROUP BY 1
         ),
         replies AS (
           SELECT ${dayOf('sm.sent_at')} AS day, COUNT(*)::int AS n
-          FROM support_messages sm WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')} GROUP BY 1
+          FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+          WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')} AND ${contactScope} GROUP BY 1
         ),
         calls AS (
           SELECT ${dayOf('cl.called_at')} AS day, COUNT(*)::int AS n,
             COUNT(*) FILTER (WHERE ${REACHED_CONDITION_SQL})::int AS reached
           FROM call_logs cl LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
-          WHERE ${inRange('cl.called_at')} GROUP BY 1
+          WHERE ${inRange('cl.called_at')} AND ${scope.student('cl.tafra_student_id', 2)} GROUP BY 1
         ),
         opened AS (
           SELECT ${dayOf('t.created_at')} AS day, COUNT(*)::int AS n
-          FROM tickets t WHERE ${inRange('t.created_at')} GROUP BY 1
+          FROM tickets t WHERE ${inRange('t.created_at')} AND ${contactScope} GROUP BY 1
         )
         SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS day,
           COALESCE(incoming.n, 0) AS incoming,
@@ -385,7 +471,7 @@ async function getSummary(req, res) {
         LEFT JOIN calls ON calls.day = d.day
         LEFT JOIN opened ON opened.day = d.day
         ORDER BY d.day
-      `, params),
+      `, dated),
 
       // خريطة الساعات × أيام الأسبوع — بتوضّح فجوات التغطية: امتى الطلاب بيبعتوا وامتى بنرد
       pool.query(`
@@ -393,21 +479,30 @@ async function getSummary(req, res) {
           EXTRACT(DOW FROM (im.received_at AT TIME ZONE '${TZ}'))::int AS dow,
           EXTRACT(HOUR FROM (im.received_at AT TIME ZONE '${TZ}'))::int AS hour,
           COUNT(*)::int AS n
-        FROM incoming_messages im WHERE ${inRange('im.received_at')} GROUP BY 1, 2, 3
+        FROM incoming_messages im
+        WHERE ${inRange('im.received_at')} AND ${scope.contact('im.contact_id', 2)} GROUP BY 1, 2, 3
         UNION ALL
         SELECT 'replies' AS kind,
           EXTRACT(DOW FROM (sm.sent_at AT TIME ZONE '${TZ}'))::int AS dow,
           EXTRACT(HOUR FROM (sm.sent_at AT TIME ZONE '${TZ}'))::int AS hour,
           COUNT(*)::int AS n
-        FROM support_messages sm WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')} GROUP BY 1, 2, 3
-      `, params),
+        FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+        WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')} AND ${contactScope} GROUP BY 1, 2, 3
+      `, dated),
 
       // توزيع المحادثات على العناوين الفرعية — بيوضّح نوع الشغل الغالب
       pool.query(`
         SELECT COALESCE(ts.name, 'بدون عنوان') AS name, COUNT(*)::int AS count
         FROM tickets t LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
+        WHERE ${contactScopeBare}
         GROUP BY 1 ORDER BY 2 DESC, 1
-      `),
+      `, undated),
+
+      // أسماء الأبواب المختارة — عشان الواجهة تكتبها في عنوان التقرير وفي الطباعة
+      bootcampIds.length
+        ? pool.query(`SELECT tafra_bootcamp_id AS id, name FROM tafra_bootcamps
+                      WHERE tafra_bootcamp_id = ANY($1::bigint[]) ORDER BY name`, [bootcampIds])
+        : Promise.resolve({ rows: [] }),
     ]);
 
     const heatmap = { incoming: emptyHeatmap(), replies: emptyHeatmap() };
@@ -418,6 +513,7 @@ async function getSummary(req, res) {
 
     res.json({
       range,
+      scope: { bootcamp_ids: bootcampIds, bootcamps: bootcamps.rows },
       volume: volume.rows[0],
       tickets: tickets.rows[0],
       response: shapeResponse(responses.rows[0]),
@@ -425,13 +521,14 @@ async function getSummary(req, res) {
       calls: calls.rows[0],
       call_gap: callGaps.rows[0],
       call_outcomes: outcomes.rows,
-      reach: funnel.rows[0],
+      reach: students.rows[0],
       ideas: ideas.rows,
       idea_moves: ideaMoves.rows,
       timeseries: timeseries.rows,
       heatmap,
       subtitles: subtitles.rows,
       burst_threshold_seconds: MESSAGE_BURST_SECONDS,
+      silent_thresholds: SILENT_DAY_THRESHOLDS,
     });
   } catch (error) {
     console.error('❌ Failed to load performance summary:', error.message);
@@ -443,7 +540,12 @@ async function getSummary(req, res) {
 
 async function getStaffPerformance(req, res) {
   const range = parseRange(req.query);
-  const params = [range.from, range.to];
+  const bootcampIds = parseBootcampIds(req.query);
+  const scope = buildScope(bootcampIds);
+  const dated = scope.params([range.from, range.to]);
+  const undated = scope.params([]);
+  const contactScope = scope.contact('t.contact_id', 2);
+  const contactScopeBare = scope.contact('t.contact_id', 0);
 
   try {
     const [users, responses, ticketLoad, replyActivity, callActivity, callLoad, ideaActivity, smsActivity] =
@@ -451,11 +553,11 @@ async function getStaffPerformance(req, res) {
         pool.query(`SELECT id, name, role, is_active, can_view_tickets, can_view_calls
                     FROM users ORDER BY (role = 'admin') DESC, name`),
 
-        responsesByUser(range.from, range.to),
+        responsesByUser(range, scope),
 
         // حِمل التذاكر + المستنية رد دلوقتي — الاتنين من نفس المرور على الجدول
         pool.query(`
-          WITH ${TICKET_EDGES_CTE}
+          WITH ${ticketEdgesCte(contactScopeBare)}
           SELECT te.assigned_to AS user_id, COUNT(*)::int AS tickets_total,
             COUNT(*) FILTER (WHERE te.status NOT IN ('resolved', 'closed'))::int AS tickets_open,
             COUNT(*) FILTER (WHERE te.status IN ('resolved', 'closed'))::int AS tickets_done,
@@ -466,16 +568,16 @@ async function getStaffPerformance(req, res) {
               FILTER (WHERE ${AWAITING_REPLY_CONDITION}))::int AS oldest_waiting_seconds
           FROM ticket_edges te
           WHERE te.assigned_to IS NOT NULL
-          GROUP BY te.assigned_to`),
+          GROUP BY te.assigned_to`, undated),
 
         pool.query(`
           SELECT sm.sent_by AS user_id, COUNT(*)::int AS replies_sent,
             COUNT(DISTINCT sm.ticket_id)::int AS conversations_touched,
             COUNT(DISTINCT ${dayOf('sm.sent_at')})::int AS active_days,
             MAX(sm.sent_at) AS last_reply_at
-          FROM support_messages sm
-          WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')}
-          GROUP BY sm.sent_by`, params),
+          FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+          WHERE ${AGENT_REPLY_CONDITION} AND ${inRange('sm.sent_at')} AND ${contactScope}
+          GROUP BY sm.sent_by`, dated),
 
         pool.query(`
           SELECT cl.called_by AS user_id, COUNT(*)::int AS calls_total,
@@ -489,7 +591,8 @@ async function getStaffPerformance(req, res) {
           FROM call_logs cl
           LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
           WHERE cl.called_by IS NOT NULL AND ${inRange('cl.called_at')}
-          GROUP BY cl.called_by`, params),
+            AND ${scope.student('cl.tafra_student_id', 2)}
+          GROUP BY cl.called_by`, dated),
 
         // حِمل المتابعة التليفونية — تراكمي مش بالفترة: "كام طالب مسند ليك ولسه ما اتكلمتش معاه"
         pool.query(`
@@ -497,19 +600,23 @@ async function getStaffPerformance(req, res) {
             COUNT(*) FILTER (WHERE EXISTS (
               SELECT 1 FROM call_logs cl WHERE cl.tafra_student_id = sca.tafra_student_id
             ))::int AS students_done
-          FROM student_call_assignments sca GROUP BY sca.assigned_to`),
+          FROM student_call_assignments sca
+          WHERE ${scope.student('sca.tafra_student_id', 0)}
+          GROUP BY sca.assigned_to`, undated),
 
         pool.query(`
           SELECT ipl.changed_by AS user_id, COUNT(*)::int AS idea_moves,
             COUNT(DISTINCT ipl.ticket_id)::int AS idea_students
-          FROM idea_progress_log ipl
-          WHERE ipl.changed_by IS NOT NULL AND ${inRange('ipl.changed_at')}
-          GROUP BY ipl.changed_by`, params),
+          FROM idea_progress_log ipl JOIN tickets t ON t.id = ipl.ticket_id
+          WHERE ipl.changed_by IS NOT NULL AND ${inRange('ipl.changed_at')} AND ${contactScope}
+          GROUP BY ipl.changed_by`, dated),
 
         pool.query(`
           SELECT sl.sent_by AS user_id, COUNT(*)::int AS sms_sent
-          FROM sms_logs sl WHERE sl.sent_by IS NOT NULL AND ${inRange('sl.sent_at')}
-          GROUP BY sl.sent_by`, params),
+          FROM sms_logs sl
+          WHERE sl.sent_by IS NOT NULL AND ${inRange('sl.sent_at')}
+            AND ${scope.student('sl.tafra_student_id', 2)}
+          GROUP BY sl.sent_by`, dated),
       ]);
 
     const byUser = (result) => new Map(result.rows.map((row) => [Number(row.user_id), row]));
@@ -581,7 +688,7 @@ async function getStaffPerformance(req, res) {
       };
     });
 
-    res.json({ range, staff });
+    res.json({ range, scope: { bootcamp_ids: bootcampIds }, staff });
   } catch (error) {
     console.error('❌ Failed to load staff performance:', error.message);
     res.status(500).json({ error: 'تعذر تحميل أداء الموظفين' });
@@ -594,32 +701,40 @@ async function getStaffMemberReport(req, res) {
   const userId = Number(req.params.id);
   if (!Number.isInteger(userId) || userId <= 0) return res.status(400).json({ error: 'الموظف غير صالح' });
   const range = parseRange(req.query);
-  const params = [range.from, range.to, userId];
+  const bootcampIds = parseBootcampIds(req.query);
+  const scope = buildScope(bootcampIds);
+  // هنا الموظف بياخد $3، فالنطاق بيبقى $4
+  const withUser = scope.params([range.from, range.to, userId]);
+  const contactScope = scope.contact('t.contact_id', 3);
+  const userScopeParams = scope.params([userId]);
+  const ticketContactScope = scope.contact('t.contact_id', 1);
 
   try {
     const userResult = await pool.query('SELECT id, name, role, is_active FROM users WHERE id = $1', [userId]);
     if (!userResult.rows[0]) return res.status(404).json({ error: 'الموظف غير موجود' });
 
     const [responseMap, timeseries, outcomes, ideaMoves, subtitleMix, longestWaiting] = await Promise.all([
-      responsesByUser(range.from, range.to),
+      responsesByUser(range, scope),
 
       pool.query(`
         WITH days AS (SELECT generate_series($1::date, $2::date, INTERVAL '1 day')::date AS day),
         replies AS (
           SELECT ${dayOf('sm.sent_at')} AS day, COUNT(*)::int AS n
-          FROM support_messages sm
-          WHERE ${AGENT_REPLY_CONDITION} AND sm.sent_by = $3::int AND ${inRange('sm.sent_at')} GROUP BY 1
+          FROM support_messages sm JOIN tickets t ON t.id = sm.ticket_id
+          WHERE ${AGENT_REPLY_CONDITION} AND sm.sent_by = $3::int
+            AND ${inRange('sm.sent_at')} AND ${contactScope} GROUP BY 1
         ),
         calls AS (
           SELECT ${dayOf('cl.called_at')} AS day, COUNT(*)::int AS n,
             COUNT(*) FILTER (WHERE ${REACHED_CONDITION_SQL})::int AS reached
           FROM call_logs cl LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
-          WHERE cl.called_by = $3::int AND ${inRange('cl.called_at')} GROUP BY 1
+          WHERE cl.called_by = $3::int AND ${inRange('cl.called_at')}
+            AND ${scope.student('cl.tafra_student_id', 3)} GROUP BY 1
         ),
         ideas AS (
           SELECT ${dayOf('ipl.changed_at')} AS day, COUNT(*)::int AS n
-          FROM idea_progress_log ipl
-          WHERE ipl.changed_by = $3::int AND ${inRange('ipl.changed_at')} GROUP BY 1
+          FROM idea_progress_log ipl JOIN tickets t ON t.id = ipl.ticket_id
+          WHERE ipl.changed_by = $3::int AND ${inRange('ipl.changed_at')} AND ${contactScope} GROUP BY 1
         )
         SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS day,
           COALESCE(replies.n, 0) AS replies,
@@ -631,32 +746,34 @@ async function getStaffMemberReport(req, res) {
         LEFT JOIN calls ON calls.day = d.day
         LEFT JOIN ideas ON ideas.day = d.day
         ORDER BY d.day
-      `, params),
+      `, withUser),
 
       pool.query(`
         SELECT COALESCE(co.name, 'بدون نتيجة مسجّلة') AS name, COUNT(*)::int AS count
         FROM call_logs cl LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
         WHERE cl.called_by = $3::int AND ${inRange('cl.called_at')}
+          AND ${scope.student('cl.tafra_student_id', 3)}
         GROUP BY 1 ORDER BY 2 DESC, 1
-      `, params),
+      `, withUser),
 
       pool.query(`
         SELECT ipl.idea_number::int AS idea_number, COUNT(*)::int AS moves
-        FROM idea_progress_log ipl
-        WHERE ipl.changed_by = $3::int AND ${inRange('ipl.changed_at')}
+        FROM idea_progress_log ipl JOIN tickets t ON t.id = ipl.ticket_id
+        WHERE ipl.changed_by = $3::int AND ${inRange('ipl.changed_at')} AND ${contactScope}
         GROUP BY 1 ORDER BY 1
-      `, params),
+      `, withUser),
 
       // نوعية المحادثات المسندة له دلوقتي
       pool.query(`
         SELECT COALESCE(ts.name, 'بدون عنوان') AS name, COUNT(*)::int AS count
         FROM tickets t LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
-        WHERE t.assigned_to = $1::int GROUP BY 1 ORDER BY 2 DESC, 1
-      `, [userId]),
+        WHERE t.assigned_to = $1::int AND ${ticketContactScope}
+        GROUP BY 1 ORDER BY 2 DESC, 1
+      `, userScopeParams),
 
       // أطول ٥ محادثات مستنية رد عنده دلوقتي — أوضح مؤشر على حاجة محتاجة تدخّل فورًا
       pool.query(`
-        WITH ${TICKET_EDGES_CTE}
+        WITH ${ticketEdgesCte(ticketContactScope)}
         SELECT te.id,
           COALESCE(tsm.name, NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''),
                    c.telegram_username, c.chat_id::text) AS student_name,
@@ -669,11 +786,12 @@ async function getStaffMemberReport(req, res) {
         WHERE te.assigned_to = $1::int AND ${AWAITING_REPLY_CONDITION}
         ORDER BY waiting_seconds DESC NULLS LAST
         LIMIT 5
-      `, [userId]),
+      `, userScopeParams),
     ]);
 
     res.json({
       range,
+      scope: { bootcamp_ids: bootcampIds },
       user: userResult.rows[0],
       response: shapeResponse(responseMap.get(userId)),
       timeseries: timeseries.rows,
