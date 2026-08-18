@@ -190,6 +190,43 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   } else if (query.welcome_status === 'welcome_replied') {
     conditions.push(`c.last_contacted_at IS NOT NULL AND ${WELCOME_SENT} AND ${REPLIED_AFTER_WELCOME}`);
   }
+  // ===== فلاتر المتابعة التليفونية — مشتركة بين شاشة طلاب المنصة وشاشة المتابعة =====
+  // بتتفعّل بس لو الباراميتر مبعوت، فالشاشة اللي مش مستخدماها متأثرش. الأعمدة sca و last_call
+  // بتيجي من CALL_ASSIGNMENT_JOIN_SQL اللي مضاف في الاستعلامين
+  if (query.assigned === 'unassigned') {
+    conditions.push('sca.assigned_to IS NULL');
+  } else if (query.assigned && /^\d+$/.test(String(query.assigned))) {
+    addCondition(Number(query.assigned), 'sca.assigned_to = ?');
+  }
+  if (query.called_by && /^\d+$/.test(String(query.called_by))) {
+    addCondition(Number(query.called_by), `EXISTS (SELECT 1 FROM call_logs cl
+      WHERE cl.tafra_student_id = s.tafra_student_id AND cl.called_by = ?)`);
+  }
+  if (query.call_outcome && /^\d+$/.test(String(query.call_outcome))) {
+    addCondition(Number(query.call_outcome), 'last_call.outcome_id = ?');
+  }
+  const UNREACHED_NAMES = `('لم يرد', 'الخط مشغول')`;
+  const UNREACHED_STREAK_SQL = `(
+    SELECT COUNT(*) FROM call_logs cl_un
+    JOIN call_outcomes co_un ON co_un.id = cl_un.outcome_id
+    WHERE cl_un.tafra_student_id = s.tafra_student_id
+      AND co_un.name IN ${UNREACHED_NAMES}
+      AND cl_un.called_at > COALESCE((
+        SELECT MAX(cl_ok.called_at) FROM call_logs cl_ok
+        JOIN call_outcomes co_ok ON co_ok.id = cl_ok.outcome_id
+        WHERE cl_ok.tafra_student_id = s.tafra_student_id
+          AND co_ok.name NOT IN ${UNREACHED_NAMES}
+      ), '-infinity'::timestamptz)
+  )`;
+  if (query.unreached_streak === '1' || query.unreached_streak === '2') {
+    addCondition(Number(query.unreached_streak), `${UNREACHED_STREAK_SQL} = ?`);
+  } else if (query.unreached_streak === '3plus') {
+    conditions.push(`${UNREACHED_STREAK_SQL} >= 3`);
+  }
+  if (query.follow_up === 'due') conditions.push('last_call.next_follow_up_at <= NOW()');
+  else if (query.follow_up === 'none') conditions.push('last_call.called_at IS NULL');
+  else if (query.follow_up === 'called') conditions.push('last_call.called_at IS NOT NULL');
+
   // استبعاد سريع لمن اتبعتله رسالة جماعية ناجحة اليوم بالفعل — أسرع طريقة لتفادي تكرار الإرسال لنفس
   // الطالب مرتين في نفس اليوم لما يتم تجميع جمهور جديد من فلاتر مختلفة
   if (query.exclude_sent_today === 'true') {
@@ -332,6 +369,12 @@ async function listStudents(req, res) {
        FROM tafra_students s
        LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
        LEFT JOIN tickets t ON t.contact_id = c.id
+       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+       LEFT JOIN LATERAL (
+         SELECT cl.outcome_id, cl.called_at, cl.next_follow_up_at
+         FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id
+         ORDER BY cl.called_at DESC LIMIT 1
+       ) last_call ON true
        ${where}`,
       whereParams
     );
@@ -352,6 +395,12 @@ async function listStudents(req, res) {
        FROM tafra_students s
        LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
        LEFT JOIN tickets t ON t.contact_id = c.id
+       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+       LEFT JOIN LATERAL (
+         SELECT cl.outcome_id, cl.called_at, cl.next_follow_up_at
+         FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id
+         ORDER BY cl.called_at DESC LIMIT 1
+       ) last_call ON true
        ${BOOTCAMP_MARKS_JOIN_SQL}
        ${MESSAGE_TIMELINE_JOIN_SQL}
        ${examJoinSql}
