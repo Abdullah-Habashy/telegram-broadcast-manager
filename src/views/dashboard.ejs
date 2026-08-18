@@ -31,6 +31,7 @@
         <div class="nav-item" data-tab="contacts"><span class="ind"></span> جهات الاتصال والإرسال</div>
         <div class="nav-item" data-tab="tafra-students"><span class="ind"></span> طلاب المنصة</div>
         <div class="nav-item" data-tab="new-bot"><span class="ind"></span> بوت طفرة</div>
+        <div class="nav-item" data-tab="performance"><span class="ind"></span> متابعة الأداء</div>
         <div class="nav-item" data-tab="reports"><span class="ind"></span> التقارير</div>
         <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
         <div class="nav-item" data-tab="settings"><span class="ind"></span> الإعدادات</div>
@@ -824,6 +825,100 @@
             <button type="button" class="btn btn-ghost btn-sm" id="report-students-prev">السابق</button>
             <button type="button" class="btn btn-ghost btn-sm" id="report-students-next">التالي</button>
           </div>
+        </div>
+      </section>
+
+
+      <!-- ===== متابعة الأداء ===== -->
+      <section class="tab-panel" id="tab-performance" style="display:none">
+        <div class="page-header no-print">
+          <h1>متابعة الأداء</h1>
+          <p>نبض المنصة وأداء الفريق — كل الأرقام محسوبة بتوقيت القاهرة</p>
+        </div>
+
+        <div class="card perf-toolbar no-print">
+          <div class="perf-quick-ranges" id="perf-quick-ranges">
+            <button type="button" class="btn btn-ghost btn-sm" data-perf-days="1">النهارده</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-perf-days="7">٧ أيام</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-perf-days="30">٣٠ يوم</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-perf-days="90">٩٠ يوم</button>
+          </div>
+          <label class="perf-date-label">من <input type="date" id="perf-from" class="compact-input"></label>
+          <label class="perf-date-label">إلى <input type="date" id="perf-to" class="compact-input"></label>
+          <button type="button" class="btn btn-primary btn-sm" id="perf-refresh">تحديث</button>
+          <span class="perf-toolbar-note" id="perf-range-note"></span>
+        </div>
+
+        <div class="subtabs no-print" id="perf-subtabs">
+          <button type="button" class="subtab-btn active" data-perf-tab="platform">نبض المنصة</button>
+          <button type="button" class="subtab-btn" data-perf-tab="staff">مقارنة الفريق</button>
+          <button type="button" class="subtab-btn" data-perf-tab="member">تقرير موظف</button>
+        </div>
+
+        <!-- ---- نبض المنصة ---- -->
+        <div class="perf-section" id="perf-platform-section" data-perf-tab="platform">
+          <div id="perf-kpis" class="perf-kpi-grid"></div>
+          <div class="card"><h2>الحركة اليومية</h2>
+            <p class="card-desc">رسايل الطلاب الواردة، ردود الفريق، والمكالمات — يوم بيوم</p>
+            <div id="perf-trend"></div>
+          </div>
+          <div class="perf-two-col">
+            <div class="card"><h2>سرعة الرد</h2>
+              <p class="card-desc">كل موجة رسايل من طالب بتتقاس من أول رسالة فيها لحد أول رد</p>
+              <div id="perf-response-hist"></div>
+            </div>
+            <div class="card"><h2>نتايج المكالمات</h2>
+              <p class="card-desc">توزيع كل المكالمات المسجّلة في الفترة</p>
+              <div id="perf-outcomes"></div>
+            </div>
+          </div>
+          <div class="card"><h2>الوصول للطلاب</h2>
+            <p class="card-desc">مسارين مستقلين: البوت والتليفون. فيه طلاب وصلنا لهم تليفونيًا وهما أصلًا ما دخلوش البوت، فمينفعش يتعرضوا كقمع واحد</p>
+            <div id="perf-reach"></div>
+          </div>
+          <div class="perf-two-col">
+            <div class="card"><h2>الطلاب على الأفكار</h2>
+              <p class="card-desc">كل محادثة والفكرة اللي واقفة عندها دلوقتي، وكام تحرّك حصل في الفترة</p>
+              <div id="perf-ideas"></div>
+            </div>
+            <div class="card"><h2>حالة صندوق الدعم دلوقتي</h2>
+              <p class="card-desc">لقطة اللحظة — مش متأثرة بفترة التقرير</p>
+              <div id="perf-inbox-state"></div>
+            </div>
+          </div>
+          <div class="card"><h2>خريطة التغطية</h2>
+            <p class="card-desc">امتى الطلاب بيبعتوا وامتى بنرد — الساعات اللي فيها وارد كتير ورد قليل هي فجوة التغطية</p>
+            <div id="perf-heatmap"></div>
+          </div>
+        </div>
+
+        <!-- ---- مقارنة الفريق ---- -->
+        <div class="perf-section" id="perf-staff-section" data-perf-tab="staff" style="display:none">
+          <div class="card"><h2>مقارنة الفريق</h2>
+            <p class="card-desc">دوس على أي عمود عشان ترتّب بيه. الأرقام الرمادية تراكمية مش بالفترة</p>
+            <div class="perf-table-scroll"><table id="perf-staff-table"></table></div>
+          </div>
+          <div class="perf-two-col">
+            <div class="card"><h2>حجم الشغل</h2>
+              <p class="card-desc">ردود الشات ومكالمات كل موظف في الفترة</p>
+              <div id="perf-staff-volume"></div>
+            </div>
+            <div class="card"><h2>وسيط سرعة الرد</h2>
+              <p class="card-desc">الأقل أحسن. الموظفين اللي مالهمش ردود مقيسة في الفترة مش ظاهرين</p>
+              <div id="perf-staff-speed"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---- تقرير موظف ---- -->
+        <div class="perf-section" id="perf-member-section" data-perf-tab="member" style="display:none">
+          <div class="card perf-member-picker no-print">
+            <label class="perf-date-label">الموظف
+              <select id="perf-employee" class="compact-select"><option value="">اختار موظف...</option></select>
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="perf-print-report" disabled>🖨 طباعة التقرير</button>
+          </div>
+          <div id="perf-member-report"><div class="empty-state">اختار موظف من القايمة عشان تشوف تقريره.</div></div>
         </div>
       </section>
 
@@ -2195,6 +2290,590 @@
       } catch (error) { showToast(error.message); }
     }
 
+
+    // ===================== متابعة الأداء =====================
+    // مفيش مكتبة رسم في المشروع ولا خطوة build، والمخططات المطلوبة بسيطة كفاية إنها تتكتب
+    // بالإيد: SVG وعناصر CSS نصّية جوه innerHTML زي باقي الواجهة. كل عنصر فيه title عشان
+    // القيمة تبان بمجرد المرور عليه من غير أي كود إضافي، والمخططات بتتمدد على عرض الحاوية
+    const PERF_PALETTE = ['#3648d1', '#1f9d63', '#c17f14', '#d1453b', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
+    // الأسبوع بيبدأ السبت في العرض، لكن PostgreSQL بيرجّع 0 للأحد — فده ترتيب العرض مش القيم
+    const PERF_WEEK_ORDER = [6, 0, 1, 2, 3, 4, 5];
+    const PERF_WEEK_LABELS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+    let perfSummaryData = null;
+    let perfStaffData = null;
+    let perfStaffSort = { key: 'replies', dir: 'desc' };
+    let perfInitialised = false;
+
+    const perfNum = (value) => Number(value || 0).toLocaleString('en-US');
+    const perfPct = (part, whole) => (whole ? Math.round((Number(part) / whole) * 1000) / 10 : 0);
+    const perfDur = (seconds) => (seconds === null || seconds === undefined ? '—' : fmtDuration(seconds));
+
+    function perfNiceCeil(value) {
+      if (value <= 5) return 5;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+      return Math.ceil(value / (magnitude / 2)) * (magnitude / 2);
+    }
+
+    // المحور السيني بيعرض عدد محدود من التواريخ عشان مايتزحمش على فترة طويلة. آخر تاريخ بيتعرض
+    // دايمًا، فاللي قبله بيتشال لو قريب منه أوي — من غير كده الاتنين بيتراكبوا فوق بعض
+    function perfThinLabels(labels, maxLabels) {
+      const step = Math.max(1, Math.ceil(labels.length / maxLabels));
+      const last = labels.length - 1;
+      return labels.map((label, index) => {
+        if (index === last) return label;
+        if (index % step !== 0) return '';
+        return last - index < step * 0.7 ? '' : label;
+      });
+    }
+
+    function perfEmpty(text) {
+      return `<div class="empty-state">${escapeHtml(text)}</div>`;
+    }
+
+    function perfLegend(items, column) {
+      return `<div class="perf-legend ${column ? 'perf-legend-column' : ''}">` + items.map((item, index) =>
+        `<span class="perf-legend-item"><i style="background:${item.color || PERF_PALETTE[index % PERF_PALETTE.length]}"></i>`
+        + `${escapeHtml(item.label)}${item.extra || ''}</span>`).join('') + '</div>';
+    }
+
+    // ---------- مخطط خطي متعدد السلاسل ----------
+    function perfLineChart({ labels, series, height = 240, formatValue = perfNum }) {
+      if (!labels.length) return perfEmpty('مفيش بيانات في الفترة دي.');
+      const width = 780;
+      const pad = { top: 14, right: 14, bottom: 38, left: 54 };
+      const innerW = width - pad.left - pad.right;
+      const innerH = height - pad.top - pad.bottom;
+      const maxValue = perfNiceCeil(Math.max(1, ...series.flatMap((line) => line.values)));
+      const px = (index) => pad.left + (labels.length === 1 ? innerW / 2 : (index / (labels.length - 1)) * innerW);
+      const py = (value) => pad.top + innerH - (Math.max(0, Number(value) || 0) / maxValue) * innerH;
+
+      const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+        const value = Math.round(maxValue * ratio);
+        return `<line x1="${pad.left}" y1="${py(value)}" x2="${width - pad.right}" y2="${py(value)}" class="perf-grid"/>`
+          + `<text x="${pad.left - 8}" y="${py(value) + 4}" text-anchor="end" class="perf-axis">${formatValue(value)}</text>`;
+      }).join('');
+
+      const xAxis = perfThinLabels(labels, 9).map((label, index) => (label
+        ? `<text x="${px(index)}" y="${height - 12}" text-anchor="middle" class="perf-axis">${escapeHtml(label.slice(5))}</text>`
+        : '')).join('');
+
+      const plotted = series.map((line) => {
+        const points = line.values.map((value, index) => `${px(index).toFixed(1)},${py(value).toFixed(1)}`);
+        const area = `M ${px(0).toFixed(1)},${py(0).toFixed(1)} L ${points.join(' L ')} L ${px(labels.length - 1).toFixed(1)},${py(0).toFixed(1)} Z`;
+        const dots = line.values.map((value, index) =>
+          `<circle cx="${px(index).toFixed(1)}" cy="${py(value).toFixed(1)}" r="2.6" fill="${line.color}">`
+          + `<title>${escapeHtml(line.name)} — ${escapeHtml(labels[index])}: ${formatValue(value)}</title></circle>`).join('');
+        return `<path d="${area}" fill="${line.color}" opacity="0.07"/>`
+          + `<polyline points="${points.join(' ')}" fill="none" stroke="${line.color}" stroke-width="2"
+             stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+      }).join('');
+
+      return `<div class="perf-chart"><svg viewBox="0 0 ${width} ${height}" width="100%" role="img"
+        aria-label="مخطط زمني">${grid}${plotted}${xAxis}</svg></div>`
+        + perfLegend(series.map((line) => ({ label: line.name, color: line.color })));
+    }
+
+    // ---------- أعمدة أفقية (بتقرا أحسن من العمودية مع النصوص العربية) ----------
+    function perfBarChart({ items, formatValue = perfNum, emptyText = 'مفيش بيانات في الفترة دي.', showPercentOf }) {
+      const rows = items.filter((item) => item && item.label !== undefined);
+      if (!rows.length || rows.every((item) => !Number(item.value))) return perfEmpty(emptyText);
+      const max = Math.max(1, ...rows.map((item) => Number(item.value) || 0));
+      return '<div class="perf-bars">' + rows.map((item, index) => {
+        const value = Number(item.value) || 0;
+        const width = value ? Math.max(1.5, (value / max) * 100) : 0;
+        const color = item.color || PERF_PALETTE[index % PERF_PALETTE.length];
+        const percent = showPercentOf ? `<em>${perfPct(value, showPercentOf)}%</em>` : '';
+        return `<div class="perf-bar-row" title="${escapeHtml(item.label)}: ${formatValue(value)}">
+            <span class="perf-bar-label">${escapeHtml(item.label)}</span>
+            <span class="perf-bar-track"><span class="perf-bar-fill" style="width:${width.toFixed(2)}%;background:${color}"></span></span>
+            <span class="perf-bar-value">${formatValue(value)}${percent}</span>
+          </div>`;
+      }).join('') + '</div>';
+    }
+
+    // ---------- حلقة (donut) ----------
+    function perfArcPath(cx, cy, innerR, outerR, start, sweepAngle) {
+      // الحلقة الكاملة نقطة بدايتها = نهايتها فمابترسمش، فبنقص شعرة من الدورة الكاملة
+      const sweep = Math.min(sweepAngle, Math.PI * 2 - 0.0001);
+      const end = start + sweep;
+      const large = sweep > Math.PI ? 1 : 0;
+      const point = (radius, angle) =>
+        `${(cx + radius * Math.cos(angle)).toFixed(2)},${(cy + radius * Math.sin(angle)).toFixed(2)}`;
+      return `M ${point(outerR, start)} A ${outerR} ${outerR} 0 ${large} 1 ${point(outerR, end)}`
+        + ` L ${point(innerR, end)} A ${innerR} ${innerR} 0 ${large} 0 ${point(innerR, start)} Z`;
+    }
+
+    function perfDonut({ items, size = 186, centerLabel = '' }) {
+      const rows = items.filter((item) => Number(item.value) > 0);
+      const total = rows.reduce((sum, item) => sum + Number(item.value), 0);
+      if (!total) return perfEmpty('مفيش بيانات في الفترة دي.');
+      let angle = -Math.PI / 2;
+      const arcs = rows.map((item, index) => {
+        const color = item.color || PERF_PALETTE[index % PERF_PALETTE.length];
+        const path = perfArcPath(size / 2, size / 2, size * 0.28, size / 2 - 5, angle, (Number(item.value) / total) * Math.PI * 2);
+        angle += (Number(item.value) / total) * Math.PI * 2;
+        return `<path d="${path}" fill="${color}"><title>${escapeHtml(item.label)}: ${perfNum(item.value)} (${perfPct(item.value, total)}%)</title></path>`;
+      }).join('');
+      const legend = perfLegend(rows.map((item, index) => ({
+        label: item.label,
+        color: item.color || PERF_PALETTE[index % PERF_PALETTE.length],
+        extra: ` <b>${perfNum(item.value)}</b> <em>${perfPct(item.value, total)}%</em>`,
+      })), true);
+      return `<div class="perf-donut-wrap">
+        <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="توزيع">
+          ${arcs}
+          <text x="${size / 2}" y="${size / 2 - 1}" text-anchor="middle" class="perf-donut-total">${perfNum(total)}</text>
+          <text x="${size / 2}" y="${size / 2 + 17}" text-anchor="middle" class="perf-axis">${escapeHtml(centerLabel)}</text>
+        </svg>${legend}</div>`;
+    }
+
+    // ---------- خريطة حرارية: أيام الأسبوع × ساعات اليوم ----------
+    function perfHeatmap(matrix, title, rgb) {
+      const max = Math.max(1, ...matrix.flat());
+      const hours = Array.from({ length: 24 }, (_, hour) => hour);
+      const head = '<div class="perf-heat-row"><span class="perf-heat-day"></span>'
+        + hours.map((hour) => `<span class="perf-heat-hour">${hour % 3 === 0 ? hour : ''}</span>`).join('') + '</div>';
+      const rows = PERF_WEEK_ORDER.map((dow) => {
+        const cells = hours.map((hour) => {
+          const value = matrix[dow][hour];
+          const intensity = value ? (0.14 + (value / max) * 0.86).toFixed(3) : 0;
+          return `<span class="perf-heat-cell" style="background:rgba(${rgb},${intensity})"
+            title="${PERF_WEEK_LABELS[dow]} — الساعة ${hour}: ${perfNum(value)}"></span>`;
+        }).join('');
+        return `<div class="perf-heat-row"><span class="perf-heat-day">${PERF_WEEK_LABELS[dow]}</span>${cells}</div>`;
+      }).join('');
+      return `<div class="perf-heat"><div class="perf-heat-title">${escapeHtml(title)}
+        <span class="perf-heat-scale">الأغمق = أكتر (الأقصى ${perfNum(max)})</span></div>${head}${rows}</div>`;
+    }
+
+    function perfKpi(label, value, hint, tone) {
+      return `<div class="stat-card perf-kpi${tone ? ' perf-kpi-' + tone : ''}">
+        <div class="label">${escapeHtml(label)}</div>
+        <div class="value">${value}</div>
+        ${hint ? `<div class="perf-kpi-hint">${hint}</div>` : ''}</div>`;
+    }
+
+    // ---------- تحميل البيانات ----------
+    function perfQueryString() {
+      const params = new URLSearchParams();
+      const from = document.getElementById('perf-from').value;
+      const to = document.getElementById('perf-to').value;
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      return params.toString();
+    }
+
+    function perfSetRange(days) {
+      const today = new Date();
+      const toText = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      const fromDate = new Date(`${toText}T00:00:00Z`);
+      fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1));
+      document.getElementById('perf-from').value = fromDate.toISOString().slice(0, 10);
+      document.getElementById('perf-to').value = toText;
+    }
+
+    function perfRangeNote(range) {
+      const note = document.getElementById('perf-range-note');
+      if (!note) return;
+      note.textContent = range.capped
+        ? `الفترة اتقصّت لـ ${range.days} يوم (${range.from} → ${range.to}) — ده أقصى مدى معروض`
+        : `${range.from} → ${range.to} (${range.days} يوم)`;
+      note.classList.toggle('perf-note-warning', Boolean(range.capped));
+    }
+
+    async function loadPerformance() {
+      const query = perfQueryString();
+      document.getElementById('perf-kpis').innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const [summary, staff] = await Promise.all([
+          api('/api/performance/summary?' + query),
+          api('/api/performance/staff?' + query),
+        ]);
+        perfSummaryData = summary;
+        perfStaffData = staff;
+        perfRangeNote(summary.range);
+        renderPerfPlatform(summary);
+        renderPerfStaff(staff);
+        perfFillEmployeeSelect(staff.staff);
+        const selected = document.getElementById('perf-employee').value;
+        if (selected) loadPerfMember(selected);
+      } catch (error) {
+        document.getElementById('perf-kpis').innerHTML = perfEmpty(error.message);
+        showToast(error.message);
+      }
+    }
+
+    // ---------- نبض المنصة ----------
+    function renderPerfPlatform(data) {
+      const volume = data.volume;
+      const tickets = data.tickets;
+      const calls = data.calls;
+      const response = data.response;
+      const replyRatio = perfPct(volume.agent_replies, volume.incoming_messages);
+
+      document.getElementById('perf-kpis').innerHTML = [
+        perfKpi('رسايل الطلاب', perfNum(volume.incoming_messages),
+          `من ${perfNum(volume.active_students)} طالب متفاعل`),
+        perfKpi('ردود الفريق', perfNum(volume.agent_replies),
+          `${replyRatio}% من الوارد · ${perfNum(volume.conversations_touched)} محادثة`),
+        perfKpi('وسيط سرعة الرد', perfDur(response.median_seconds),
+          `متوسط ${perfDur(response.avg_seconds)} · ٩٠% خلال ${perfDur(response.p90_seconds)}`,
+          response.median_seconds !== null && response.median_seconds <= 900 ? 'good' : 'warn'),
+        perfKpi('مستنية رد دلوقتي', perfNum(tickets.awaiting_reply),
+          tickets.oldest_waiting_seconds ? `أطول انتظار ${perfDur(tickets.oldest_waiting_seconds)}` : 'مفيش تأخير',
+          tickets.awaiting_reply ? 'warn' : 'good'),
+        perfKpi('المكالمات', perfNum(calls.total),
+          `${perfNum(calls.students_called)} طالب · ${perfNum(calls.with_notes)} فيها ملاحظات`),
+        perfKpi('مكالمات وصلنا فيها', perfNum(calls.reached),
+          `${perfPct(calls.reached, calls.total)}% من المكالمات · ${perfNum(calls.unreached)} مردّوش`,
+          perfPct(calls.reached, calls.total) >= 50 ? 'good' : 'warn'),
+        perfKpi('المسافة بين رسالتين', perfDur(data.reply_gap.median_seconds),
+          `وسيط التواصل التالي في نفس المحادثة (الدفعة الواحدة مستبعدة)`),
+        perfKpi('المسافة بين مكالمتين', perfDur(data.call_gap.median_seconds),
+          'وسيط الوقت لحد المكالمة الجاية لنفس الطالب'),
+        perfKpi('محادثات جديدة', perfNum(volume.new_conversations),
+          `${perfNum(volume.welcome_messages)} رسالة ترحيب اتبعتت`),
+        perfKpi('رسايل تلقائية', perfNum(volume.auto_follow_ups),
+          `متابعات تلقائية · ${perfNum(volume.broadcast_sent)} إرسال جماعي`),
+      ].join('');
+
+      const labels = data.timeseries.map((row) => row.day);
+      document.getElementById('perf-trend').innerHTML = perfLineChart({
+        labels,
+        series: [
+          { name: 'رسايل واردة', color: PERF_PALETTE[0], values: data.timeseries.map((row) => row.incoming) },
+          { name: 'ردود الفريق', color: PERF_PALETTE[1], values: data.timeseries.map((row) => row.replies) },
+          { name: 'مكالمات', color: PERF_PALETTE[2], values: data.timeseries.map((row) => row.calls) },
+          { name: 'محادثات جديدة', color: PERF_PALETTE[4], values: data.timeseries.map((row) => row.new_conversations) },
+        ],
+      });
+
+      document.getElementById('perf-response-hist').innerHTML =
+        (response.count
+          ? `<p class="perf-inline-note">${perfNum(response.count)} موجة رد مقيسة · أطول رد ${perfDur(response.max_seconds)}</p>`
+          : '')
+        + perfBarChart({
+          items: response.buckets.map((bucket, index) => ({
+            label: bucket.label,
+            value: bucket.count,
+            color: index <= 1 ? PERF_PALETTE[1] : index <= 3 ? PERF_PALETTE[2] : PERF_PALETTE[3],
+          })),
+          emptyText: 'مفيش ردود مقيسة في الفترة دي.',
+          showPercentOf: response.count,
+        });
+
+      document.getElementById('perf-outcomes').innerHTML = perfDonut({
+        items: data.call_outcomes.map((row) => ({ label: row.name, value: row.count })),
+        centerLabel: 'مكالمة',
+      });
+
+      const reach = data.reach;
+      document.getElementById('perf-reach').innerHTML = `
+        <div class="perf-two-col">
+          <div>
+            <h3 class="perf-subhead">مسار البوت</h3>
+            ${perfBarChart({
+              items: [
+                { label: 'كل طلاب المنصة', value: reach.students_total, color: PERF_PALETTE[5] },
+                { label: 'مرتبطين بتيليجرام', value: reach.linked_telegram, color: PERF_PALETTE[0] },
+                { label: 'بدأوا محادثة مع البوت', value: reach.started_bot, color: PERF_PALETTE[0] },
+                { label: 'وصلهم ترحيب', value: reach.got_welcome, color: PERF_PALETTE[1] },
+                { label: 'ردّوا بعد الترحيب', value: reach.replied_after_welcome, color: PERF_PALETTE[1] },
+              ],
+              showPercentOf: reach.students_total,
+            })}
+          </div>
+          <div>
+            <h3 class="perf-subhead">مسار التليفون</h3>
+            ${perfBarChart({
+              items: [
+                { label: 'كل طلاب المنصة', value: reach.students_total, color: PERF_PALETTE[5] },
+                { label: 'مسندين لمتابعة تليفونية', value: reach.assigned_for_calls, color: PERF_PALETTE[2] },
+                { label: 'اتعمل معاهم مكالمة', value: reach.called_at_least_once, color: PERF_PALETTE[2] },
+                { label: 'وصلنا لهم فعلًا', value: reach.reached_by_phone, color: PERF_PALETTE[1] },
+              ],
+              showPercentOf: reach.students_total,
+            })}
+          </div>
+        </div>
+        <p class="perf-inline-note">إجمالي اللي وصلنا له بأي وسيلة (بوت أو تليفون):
+          <b>${perfNum(reach.reached_any_channel)}</b> طالب — ${perfPct(reach.reached_any_channel, reach.students_total)}% من طلاب المنصة</p>`;
+
+      const movesByIdea = new Map(data.idea_moves.map((row) => [Number(row.idea_number), row]));
+      document.getElementById('perf-ideas').innerHTML = perfBarChart({
+        items: data.ideas.map((row) => {
+          const moves = movesByIdea.get(Number(row.idea_number));
+          const base = row.idea_number === 0 ? 'لم تُحدَّد بعد' : `فكرة ${row.idea_number}`;
+          return {
+            // عدد اللي اتنقلوا للفكرة دي في الفترة بيتحط جنب اسمها — بيفرّق بين فكرة واقف عندها
+            // كتير لأنها صعبة، وفكرة واقف عندها كتير لأنهم لسه واصلينها دلوقتي
+            label: moves ? `${base} · +${perfNum(moves.students)} في الفترة` : base,
+            value: row.conversations,
+            color: row.idea_number === 0 ? PERF_PALETTE[3] : PERF_PALETTE[0],
+          };
+        }),
+        emptyText: 'مفيش محادثات لسه.',
+      });
+
+      const statusItems = [
+        { label: 'جديدة', value: tickets.status_new, color: PERF_PALETTE[0] },
+        { label: 'قيد المتابعة', value: tickets.status_in_progress, color: PERF_PALETTE[2] },
+        { label: 'بانتظار الطالب', value: tickets.status_waiting_student, color: PERF_PALETTE[5] },
+        { label: 'مكتملة', value: tickets.status_resolved, color: PERF_PALETTE[1] },
+        { label: 'مغلقة', value: tickets.status_closed, color: PERF_PALETTE[6] },
+      ];
+      document.getElementById('perf-inbox-state').innerHTML = perfBarChart({
+        items: statusItems, showPercentOf: tickets.total,
+      }) + `<div class="perf-pill-row">
+        <span class="stat-pill ${tickets.awaiting_reply ? 'stat-warning' : 'stat-success'}">مستنية رد: ${perfNum(tickets.awaiting_reply)}</span>
+        <span class="stat-pill stat-muted">غير مقروءة: ${perfNum(tickets.unread)}</span>
+        <span class="stat-pill stat-muted">غير مسندة: ${perfNum(tickets.unassigned)}</span>
+        <span class="stat-pill ${tickets.urgent ? 'stat-warning' : 'stat-muted'}">عاجلة: ${perfNum(tickets.urgent)}</span>
+        <span class="stat-pill stat-muted">متابعة حان موعدها: ${perfNum(tickets.follow_up_due)}</span>
+        <span class="stat-pill stat-muted">الإجمالي: ${perfNum(tickets.total)}</span>
+      </div>` + (data.subtitles.length > 1
+        ? `<h3 class="perf-subhead">العناوين الفرعية</h3>${perfBarChart({ items: data.subtitles.map((row) => ({ label: row.name, value: row.count })) })}`
+        : '');
+
+      document.getElementById('perf-heatmap').innerHTML =
+        perfHeatmap(data.heatmap.incoming, 'رسايل الطلاب الواردة', '54,72,209')
+        + perfHeatmap(data.heatmap.replies, 'ردود الفريق', '31,157,99');
+    }
+
+    // ---------- مقارنة الفريق ----------
+    const PERF_STAFF_COLUMNS = [
+      { key: 'name', label: 'الموظف', sortable: true, value: (row) => row.name, cell: (row) =>
+        `<b>${escapeHtml(row.name)}</b>${row.is_active ? '' : ' <span class="badge badge-muted">متوقف</span>'}` },
+      { key: 'replies', label: 'ردود', value: (row) => row.chat.replies_sent, cell: (row) => perfNum(row.chat.replies_sent) },
+      { key: 'conversations', label: 'محادثات', value: (row) => row.chat.conversations_touched, cell: (row) => perfNum(row.chat.conversations_touched) },
+      { key: 'median', label: 'وسيط الرد', value: (row) => (row.chat.median_seconds === null ? Infinity : row.chat.median_seconds),
+        cell: (row) => perfDur(row.chat.median_seconds), asc: true },
+      { key: 'fast', label: 'خلال ١٥ دقيقة', value: (row) => row.chat.within_15m,
+        cell: (row) => (row.chat.responses_measured
+          ? `${perfNum(row.chat.within_15m)} <em>${perfPct(row.chat.within_15m, row.chat.responses_measured)}%</em>` : '—') },
+      { key: 'slow', label: 'فوق يوم', value: (row) => row.chat.over_24h, cell: (row) => perfNum(row.chat.over_24h) },
+      { key: 'awaiting', label: 'مستنية رد الآن', value: (row) => row.chat.awaiting_tickets,
+        cell: (row) => (row.chat.awaiting_tickets
+          ? `<span class="badge badge-warning">${perfNum(row.chat.awaiting_tickets)}</span>` : '0') },
+      { key: 'oldest', label: 'أطول انتظار', value: (row) => row.chat.oldest_waiting_seconds || 0,
+        cell: (row) => perfDur(row.chat.oldest_waiting_seconds) },
+      { key: 'calls', label: 'مكالمات', value: (row) => row.calls.total, cell: (row) => perfNum(row.calls.total) },
+      { key: 'reached', label: 'وصلنا لهم', value: (row) => row.calls.reached, cell: (row) => perfNum(row.calls.reached) },
+      { key: 'reach_rate', label: 'نسبة الوصول', value: (row) => (row.calls.reach_rate === null ? -1 : row.calls.reach_rate),
+        cell: (row) => (row.calls.reach_rate === null ? '—' : `${row.calls.reach_rate}%`) },
+      { key: 'coverage', label: 'تغطية المسندين', value: (row) => (row.calls.coverage_rate === null ? -1 : row.calls.coverage_rate),
+        cell: (row) => (row.calls.students_assigned
+          ? `${perfNum(row.calls.students_done)}/${perfNum(row.calls.students_assigned)} <em>${row.calls.coverage_rate}%</em>` : '—') },
+      { key: 'ideas', label: 'تحرّك أفكار', value: (row) => row.ideas.moves, cell: (row) => perfNum(row.ideas.moves) },
+      { key: 'days', label: 'أيام نشاط', value: (row) => Math.max(row.chat.active_days, row.calls.active_days),
+        cell: (row) => perfNum(Math.max(row.chat.active_days, row.calls.active_days)) },
+      { key: 'last', label: 'آخر نشاط', value: (row) => (row.last_activity_at ? Date.parse(row.last_activity_at) : 0),
+        cell: (row) => (row.last_activity_at ? fmtDate(row.last_activity_at) : '—') },
+    ];
+
+    function renderPerfStaff(data) {
+      // الموظف اللي مالوش أي أثر في الفترة ولا حِمل قايم دلوقتي مابيتعرضش — الجدول للمقارنة
+      // مش لسرد الحسابات، والصفوف الفاضية بتشتت النظر عن اللي شغال فعلاً
+      const rows = data.staff.filter((row) => row.chat.replies_sent || row.calls.total || row.ideas.moves
+        || row.chat.awaiting_tickets || row.chat.tickets_total || row.calls.students_assigned);
+      const table = document.getElementById('perf-staff-table');
+      if (!rows.length) { table.innerHTML = `<tbody><tr><td>${escapeHtml('مفيش نشاط في الفترة دي.')}</td></tr></tbody>`; return; }
+
+      const column = PERF_STAFF_COLUMNS.find((item) => item.key === perfStaffSort.key) || PERF_STAFF_COLUMNS[1];
+      const direction = perfStaffSort.dir === 'asc' ? 1 : -1;
+      const sorted = [...rows].sort((a, b) => {
+        const left = column.value(a);
+        const right = column.value(b);
+        if (typeof left === 'string') return left.localeCompare(right, 'ar') * direction;
+        return (left - right) * direction;
+      });
+
+      const head = PERF_STAFF_COLUMNS.map((item) =>
+        `<th class="perf-sortable${perfStaffSort.key === item.key ? ' perf-sorted' : ''}" data-perf-sort="${item.key}">
+          ${escapeHtml(item.label)}${perfStaffSort.key === item.key ? (perfStaffSort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`).join('');
+      const body = sorted.map((row) =>
+        `<tr>${PERF_STAFF_COLUMNS.map((item) => `<td>${item.cell(row)}</td>`).join('')}</tr>`).join('');
+      table.innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
+
+      table.querySelectorAll('[data-perf-sort]').forEach((cell) => {
+        cell.addEventListener('click', () => {
+          const key = cell.dataset.perfSort;
+          const target = PERF_STAFF_COLUMNS.find((item) => item.key === key);
+          if (perfStaffSort.key === key) perfStaffSort.dir = perfStaffSort.dir === 'asc' ? 'desc' : 'asc';
+          else perfStaffSort = { key, dir: target && target.asc ? 'asc' : 'desc' };
+          renderPerfStaff(perfStaffData);
+        });
+      });
+
+      document.getElementById('perf-staff-volume').innerHTML = perfBarChart({
+        items: sorted.flatMap((row) => [
+          ...(row.chat.replies_sent ? [{ label: `${row.name} · ردود`, value: row.chat.replies_sent, color: PERF_PALETTE[0] }] : []),
+          ...(row.calls.total ? [{ label: `${row.name} · مكالمات`, value: row.calls.total, color: PERF_PALETTE[2] }] : []),
+        ]),
+        emptyText: 'مفيش شغل مسجّل في الفترة دي.',
+      });
+
+      document.getElementById('perf-staff-speed').innerHTML = perfBarChart({
+        items: sorted.filter((row) => row.chat.median_seconds !== null)
+          .sort((a, b) => a.chat.median_seconds - b.chat.median_seconds)
+          .map((row) => ({
+            label: `${row.name} (${perfNum(row.chat.responses_measured)} رد)`,
+            value: row.chat.median_seconds,
+            color: row.chat.median_seconds <= 900 ? PERF_PALETTE[1] : row.chat.median_seconds <= 3600 ? PERF_PALETTE[2] : PERF_PALETTE[3],
+          })),
+        formatValue: perfDur,
+        emptyText: 'مفيش ردود مقيسة في الفترة دي.',
+      });
+    }
+
+    function perfFillEmployeeSelect(staff) {
+      const select = document.getElementById('perf-employee');
+      const previous = select.value;
+      select.innerHTML = '<option value="">اختار موظف...</option>' + staff
+        .map((row) => `<option value="${row.id}">${escapeHtml(row.name)}${row.is_active ? '' : ' (متوقف)'}</option>`).join('');
+      if (previous && select.querySelector(`option[value="${previous}"]`)) select.value = previous;
+      document.getElementById('perf-print-report').disabled = !select.value;
+    }
+
+    // ---------- تقرير موظف واحد ----------
+    async function loadPerfMember(userId) {
+      const wrap = document.getElementById('perf-member-report');
+      wrap.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const data = await api(`/api/performance/staff/${userId}?` + perfQueryString());
+        const summaryRow = (perfStaffData?.staff || []).find((row) => Number(row.id) === Number(userId)) || null;
+        wrap.innerHTML = renderPerfMemberReport(data, summaryRow);
+      } catch (error) {
+        wrap.innerHTML = perfEmpty(error.message);
+      }
+    }
+
+    function renderPerfMemberReport(data, summaryRow) {
+      const chat = summaryRow ? summaryRow.chat : null;
+      const calls = summaryRow ? summaryRow.calls : null;
+      const response = data.response;
+      const labels = data.timeseries.map((row) => row.day);
+
+      const kpis = [
+        perfKpi('ردود الشات', perfNum(chat ? chat.replies_sent : 0),
+          chat ? `${perfNum(chat.conversations_touched)} محادثة · ${perfNum(chat.active_days)} يوم نشاط` : ''),
+        perfKpi('وسيط سرعة الرد', perfDur(response.median_seconds),
+          `${perfNum(response.count)} موجة مقيسة · ٩٠% خلال ${perfDur(response.p90_seconds)}`,
+          response.median_seconds !== null && response.median_seconds <= 900 ? 'good' : 'warn'),
+        perfKpi('مستنية رد دلوقتي', perfNum(chat ? chat.awaiting_tickets : 0),
+          chat && chat.oldest_waiting_seconds ? `أطول انتظار ${perfDur(chat.oldest_waiting_seconds)}` : 'مفيش تأخير',
+          chat && chat.awaiting_tickets ? 'warn' : 'good'),
+        perfKpi('المكالمات', perfNum(calls ? calls.total : 0),
+          calls ? `${perfNum(calls.reached)} وصلنا لهم · ${calls.reach_rate === null ? '—' : calls.reach_rate + '%'}` : ''),
+        perfKpi('طلاب المتابعة',
+          calls && calls.students_assigned ? `${perfNum(calls.students_done)}/${perfNum(calls.students_assigned)}` : '—',
+          !calls || !calls.students_assigned ? 'مش مسند له طلاب متابعة'
+            : calls.students_pending ? `${perfNum(calls.students_pending)} لسه ما اتكلمناش معاهم` : 'كلهم اتغطّوا',
+          !calls || !calls.students_assigned ? null : calls.students_pending ? 'warn' : 'good'),
+        perfKpi('تحرّك الأفكار', perfNum(summaryRow ? summaryRow.ideas.moves : 0),
+          summaryRow ? `${perfNum(summaryRow.ideas.students)} طالب اتنقل لفكرة جديدة` : ''),
+      ].join('');
+
+      const waiting = data.longest_waiting.length
+        ? `<div class="card"><h2>أطول محادثات مستنية رد عنده دلوقتي</h2>
+            <table><thead><tr><th>الطالب</th><th>مستنية من</th></tr></thead><tbody>${
+              data.longest_waiting.map((row) =>
+                `<tr><td>${escapeHtml(row.student_name || '—')}</td><td>${perfDur(row.waiting_seconds)}</td></tr>`).join('')
+            }</tbody></table></div>`
+        : '';
+
+      return `
+        <div class="perf-print-header">
+          <h2>تقرير أداء — ${escapeHtml(data.user.name)}</h2>
+          <p>${escapeHtml(data.range.from)} → ${escapeHtml(data.range.to)} (${data.range.days} يوم)
+             · اتولّد في ${escapeHtml(fmtDate(new Date().toISOString()))}</p>
+        </div>
+        <div class="perf-kpi-grid">${kpis}</div>
+        <div class="card"><h2>الحركة اليومية</h2>
+          ${perfLineChart({
+            labels,
+            series: [
+              { name: 'ردود', color: PERF_PALETTE[0], values: data.timeseries.map((row) => row.replies) },
+              { name: 'مكالمات', color: PERF_PALETTE[2], values: data.timeseries.map((row) => row.calls) },
+              { name: 'مكالمات وصلنا فيها', color: PERF_PALETTE[1], values: data.timeseries.map((row) => row.calls_reached) },
+              { name: 'تحرّك أفكار', color: PERF_PALETTE[4], values: data.timeseries.map((row) => row.idea_moves) },
+            ],
+          })}
+        </div>
+        <div class="perf-two-col">
+          <div class="card"><h2>توزيع سرعة الرد</h2>
+            ${perfBarChart({
+              items: response.buckets.map((bucket, index) => ({
+                label: bucket.label, value: bucket.count,
+                color: index <= 1 ? PERF_PALETTE[1] : index <= 3 ? PERF_PALETTE[2] : PERF_PALETTE[3],
+              })),
+              emptyText: 'مفيش ردود مقيسة في الفترة دي.',
+              showPercentOf: response.count,
+            })}
+          </div>
+          <div class="card"><h2>نتايج مكالماته</h2>
+            ${perfDonut({ items: data.call_outcomes.map((row) => ({ label: row.name, value: row.count })), centerLabel: 'مكالمة' })}
+          </div>
+        </div>
+        <div class="perf-two-col">
+          <div class="card"><h2>الأفكار اللي حرّكها</h2>
+            ${perfBarChart({
+              items: data.idea_moves.map((row) => ({ label: `فكرة ${row.idea_number}`, value: row.moves })),
+              emptyText: 'ماحرّكش أفكار في الفترة دي.',
+            })}
+          </div>
+          <div class="card"><h2>المحادثات المسندة له دلوقتي</h2>
+            ${perfBarChart({
+              items: data.subtitle_mix.map((row) => ({ label: row.name, value: row.count })),
+              emptyText: 'مفيش محادثات مسندة له.',
+            })}
+          </div>
+        </div>
+        ${waiting}`;
+    }
+
+    // ---------- التهيئة ----------
+    async function initPerformance() {
+      if (!perfInitialised) {
+        perfInitialised = true;
+        perfSetRange(30);
+        registerFilterGroup('performance', ['perf-from', 'perf-to', 'perf-employee']);
+
+        document.getElementById('perf-refresh').addEventListener('click', loadPerformance);
+        document.getElementById('perf-from').addEventListener('change', loadPerformance);
+        document.getElementById('perf-to').addEventListener('change', loadPerformance);
+        document.getElementById('perf-quick-ranges').addEventListener('click', (event) => {
+          const button = event.target.closest('[data-perf-days]');
+          if (!button) return;
+          perfSetRange(Number(button.dataset.perfDays));
+          loadPerformance();
+        });
+        document.getElementById('perf-subtabs').addEventListener('click', (event) => {
+          const button = event.target.closest('[data-perf-tab]');
+          if (!button) return;
+          document.querySelectorAll('#perf-subtabs .subtab-btn').forEach((item) => item.classList.remove('active'));
+          button.classList.add('active');
+          document.querySelectorAll('#tab-performance .perf-section').forEach((section) => {
+            section.style.display = section.dataset.perfTab === button.dataset.perfTab ? '' : 'none';
+          });
+        });
+        document.getElementById('perf-employee').addEventListener('change', (event) => {
+          document.getElementById('perf-print-report').disabled = !event.target.value;
+          if (event.target.value) loadPerfMember(event.target.value);
+          else document.getElementById('perf-member-report').innerHTML = perfEmpty('اختار موظف من القايمة عشان تشوف تقريره.');
+        });
+        // الطباعة بتشتغل على الصفحة نفسها: كلاس على body بيخلّي ستايل الطباعة يسيب تقرير
+        // الموظف بس ويخفي اللوحة كلها. أرخص وأسرع من توليد PDF على السيرفر
+        document.getElementById('perf-print-report').addEventListener('click', () => {
+          document.body.classList.add('printing-report');
+          window.addEventListener('afterprint', () => document.body.classList.remove('printing-report'), { once: true });
+          window.print();
+        });
+      }
+      await loadPerformance();
+    }
+
     // ---------- التنقل بين التابات ----------
     const navItems = document.querySelectorAll('.nav-item');
     navItems.forEach((item) => {
@@ -2215,6 +2894,7 @@
       if (tab === 'tafra-students') initTafraStudents();
       if (tab === 'new-bot') initNewBotTab();
       if (tab === 'reports') initReports();
+      if (tab === 'performance') initPerformance();
       if (tab === 'templates') loadTemplates();
       if (tab === 'settings') loadSettings();
     }

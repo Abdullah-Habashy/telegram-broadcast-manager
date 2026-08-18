@@ -733,6 +733,122 @@ tr:last-child td { border-bottom: none; }
   }
 }
 
+
+/* ===== متابعة الأداء ===== */
+.perf-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px;
+}
+.perf-quick-ranges { display: flex; gap: 6px; flex-wrap: wrap; }
+/* .btn-primary عندها width:100% عامة في اللوحة — هنا الأزرار جنب حقول التاريخ فلازم تاخد عرض محتواها */
+.perf-toolbar > .btn, .perf-member-picker > .btn, .perf-quick-ranges > .btn { flex: 0 0 auto; width: auto; }
+.perf-quick-ranges .btn { padding: 6px 12px; }
+.perf-date-label {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 12.5px; color: var(--text-muted); font-weight: 600;
+}
+.perf-date-label .compact-input, .perf-date-label .compact-select { flex: 0 0 auto; min-width: 0; width: auto; }
+.perf-toolbar-note { margin-inline-start: auto; font-size: 12.5px; color: var(--text-muted); }
+.perf-toolbar-note.perf-note-warning { color: var(--warning); font-weight: 600; }
+
+.perf-kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px; margin-bottom: 16px;
+}
+.perf-kpi { border-inline-start: 3px solid var(--border); }
+.perf-kpi .value { font-size: 23px; line-height: 1.25; }
+.perf-kpi-hint { margin-top: 6px; font-size: 11.5px; color: var(--text-faint); line-height: 1.5; }
+.perf-kpi-good { border-inline-start-color: var(--success); }
+.perf-kpi-warn { border-inline-start-color: var(--warning); }
+
+.perf-two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.perf-subhead { font-size: 13px; color: var(--text-muted); margin: 4px 0 10px; font-weight: 700; }
+.perf-inline-note { font-size: 12.5px; color: var(--text-muted); margin: 0 0 10px; }
+.perf-pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+/* المخططات الخطية: SVG بيتمدد على عرض الحاوية بـ viewBox */
+.perf-chart svg { display: block; width: 100%; height: auto; }
+.perf-chart .perf-grid { stroke: var(--border); stroke-width: 1; }
+.perf-axis { font-size: 10.5px; fill: var(--text-faint); font-family: var(--font-main); }
+.perf-donut-total { font-size: 21px; font-weight: 700; fill: var(--text); font-family: var(--font-main); }
+
+.perf-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12px; color: var(--text-muted); }
+.perf-legend-column { flex-direction: column; gap: 6px; margin-top: 0; }
+.perf-legend-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.perf-legend-item i { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.perf-legend-item b { color: var(--text); font-weight: 700; }
+.perf-legend-item em { font-style: normal; color: var(--text-faint); }
+
+/* الأعمدة أفقية عن قصد: أسماء الفلاتر والأفكار عربية وطويلة، وأفقيًا بتتقرا من غير تدوير */
+.perf-bars { display: flex; flex-direction: column; gap: 7px; }
+.perf-bar-row { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; align-items: center; gap: 10px; font-size: 12.5px; }
+.perf-bar-label { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perf-bar-track { background: var(--surface-sunken); border-radius: 999px; height: 14px; overflow: hidden; }
+.perf-bar-fill { display: block; height: 100%; border-radius: 999px; min-width: 2px; transition: width 0.25s ease; }
+.perf-bar-value {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.perf-bar-value em { font-style: normal; color: var(--text-faint); font-weight: 600; font-size: 11.5px; }
+
+.perf-donut-wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+
+/* خريطة الساعات — شبكة ثابتة الأعمدة عشان الساعات تفضل متحاذية بين الجدولين */
+.perf-heat { margin-bottom: 18px; }
+.perf-heat-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.perf-heat-scale { font-size: 11px; font-weight: 500; color: var(--text-faint); }
+.perf-heat-row { display: grid; grid-template-columns: 56px repeat(24, 1fr); gap: 2px; align-items: center; margin-bottom: 2px; }
+.perf-heat-day { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.perf-heat-hour { font-size: 9.5px; color: var(--text-faint); text-align: center; }
+.perf-heat-cell { height: 15px; border-radius: 2px; background: var(--surface-sunken); }
+
+.perf-table-scroll { overflow-x: auto; }
+.perf-table-scroll table { min-width: 1000px; }
+#perf-staff-table th, #perf-staff-table td { white-space: nowrap; }
+th.perf-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.perf-sortable:hover { color: var(--primary); }
+th.perf-sorted { color: var(--primary); }
+#perf-staff-table td em { font-style: normal; color: var(--text-faint); font-size: 11.5px; }
+
+.perf-member-picker { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; margin-bottom: 12px; }
+.perf-print-header { margin-bottom: 14px; }
+.perf-print-header h2 { font-size: 18px; }
+.perf-print-header p { margin: 4px 0 0; font-size: 12.5px; color: var(--text-muted); }
+
+@media (max-width: 760px) {
+  .perf-toolbar-note { margin-inline-start: 0; width: 100%; }
+  .perf-bar-row { grid-template-columns: minmax(74px, 42%) 1fr auto; font-size: 12px; }
+  .perf-heat-row { grid-template-columns: 40px repeat(24, 1fr); gap: 1px; }
+  .perf-heat-cell { height: 12px; }
+  .perf-donut-wrap { justify-content: center; }
+}
+
+/* ===== الطباعة =====
+   زرار "طباعة التقرير" بيحط الكلاس ده على body، فالمتصفح بيطبع تقرير الموظف لوحده من غير
+   شريط جانبي ولا أدوات ولا باقي التابات. أرخص وأسرع من توليد PDF على السيرفر، وبيطلع بنفس
+   شكل الشاشة بالظبط */
+@media print {
+  body.printing-report { background: #fff; }
+  body.printing-report .sidebar,
+  body.printing-report .no-print,
+  body.printing-report .toast,
+  body.printing-report .push-toggle-btn,
+  body.printing-report .account-menu-wrap { display: none !important; }
+  body.printing-report .app-shell { display: block; }
+  body.printing-report .main { padding: 0; overflow: visible; }
+  body.printing-report .tab-panel { display: none !important; }
+  body.printing-report #tab-performance { display: block !important; }
+  body.printing-report #tab-performance > *:not(#perf-member-section) { display: none !important; }
+  body.printing-report #perf-member-section > *:not(#perf-member-report) { display: none !important; }
+  body.printing-report .card {
+    box-shadow: none; border: 1px solid #d8dbe6; break-inside: avoid; page-break-inside: avoid;
+  }
+  body.printing-report .perf-kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  body.printing-report .perf-two-col { grid-template-columns: 1fr 1fr; }
+  /* الألوان جزء من المعنى هنا (أخضر = سريع، أحمر = متأخر)، فلازم تتطبع مش تتشال */
+  body.printing-report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { size: A4; margin: 12mm; }
+}
+
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* ===== شارات تتبع الأفكار ===== */

@@ -4,6 +4,7 @@ const { TafraReadOnlyClient, BASE_URL } = require('../integrations/tafraClient')
 const reportExport = require('../utils/reportExport');
 const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
 const { inferGenderFromName } = require('../utils/genderInference');
+const { UNREACHED_NAMES_SQL } = require('../utils/callOutcomes');
 
 // نفس علامة الباب المستخدمة في صندوق الدعم — بس هنا بنجيبها مباشرة عن طريق s.tafra_student_id
 // من غير ما نحتاج نلف على جدول contacts، لأن استعلامات الطلاب أصلاً بتبدأ من tafra_students
@@ -205,7 +206,7 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   if (query.call_outcome && /^\d+$/.test(String(query.call_outcome))) {
     addCondition(Number(query.call_outcome), 'last_call.outcome_id = ?');
   }
-  const UNREACHED_NAMES = `('لم يرد', 'الخط مشغول')`;
+  const UNREACHED_NAMES = UNREACHED_NAMES_SQL;
   const UNREACHED_STREAK_SQL = `(
     SELECT COUNT(*) FROM call_logs cl_un
     JOIN call_outcomes co_un ON co_un.id = cl_un.outcome_id
