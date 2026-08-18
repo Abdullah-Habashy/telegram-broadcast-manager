@@ -346,6 +346,13 @@ tr:last-child td { border-bottom: none; }
 .mobile-ticket-back { display: none; }
 .mobile-ticket-details-toggle { display: none; }
 .mobile-ticket-option-buttons { display: none; }
+/* الشريط ده كان موبايل فقط لأنه اتعمل لأزرار التفاصيل المطوية. بقى فيه دلوقتي أزرار حقيقية
+   (عاجل / تعديل رسالة المتابعة) محتاجة تبان على الكمبيوتر كمان — فبنظهره على الشاشات الكبيرة
+   ونسيب أزرار الطي المخصّصة للموبايل مخفية زي ما هي */
+@media (min-width: 761px) {
+  .mobile-ticket-option-buttons { display: flex; gap: 6px; margin-bottom: 8px; }
+  .mobile-ticket-option-buttons .mobile-ticket-details-toggle { display: none; }
+}
 .ticket-list-item {
   display: block; width: 100%; padding: 12px; border: 0; border-bottom: 1px solid var(--border);
   background: transparent; color: var(--text); text-align: right; font-family: inherit; cursor: pointer;

@@ -3706,6 +3706,12 @@ ${mark}${percent}`;
             </div>
           </div>
           <div class="mobile-ticket-option-buttons">
+            <!-- هنا مش جوه صندوق المتابعة: الصندوق ده كلاسه admin-ticket-details ومخفي عن الموظف
+                 في الـ CSS، والموظف هو أكتر حد محتاج يعدّل رسالة المتابعة للطالب اللي بيتابعه -->
+            <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="edit-next-follow-up-msg"
+              title="${ticket.next_follow_up_message ? 'رسالة المتابعة القادمة مخصّصة — اضغط للتعديل' : 'تعديل رسالة المتابعة التلقائية القادمة'}"
+              aria-label="تعديل رسالة المتابعة"
+              style="${ticket.next_follow_up_message ? 'background:var(--primary-tint)' : ''}">✏️</button>
             <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-urgent-toggle"
               title="${ticket.is_urgent ? 'إلغاء علامة عاجل' : 'وسم كحالة عاجلة'}" aria-label="عاجل"
               style="${ticket.is_urgent ? 'background:var(--danger-tint,#fdeaea)' : ''}">🚨</button>
@@ -3727,8 +3733,7 @@ ${mark}${percent}`;
             </label>
             <button type="button" class="btn btn-primary btn-sm" id="save-ticket-follow-up" style="width:auto">حفظ الموعد</button>
             <button type="button" class="btn btn-ghost btn-sm" id="clear-ticket-follow-up" ${ticket.next_follow_up_at ? '' : 'disabled'}>تم التواصل / إلغاء الموعد</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="edit-next-follow-up-msg" style="width:auto"
-              title="تعديل نص رسالة المتابعة التلقائية القادمة لهذا الطالب وحده">✏️ ${ticket.next_follow_up_message ? 'رسالة مخصّصة ✓' : 'تعديل رسالة المتابعة'}</button>
+
             <div class="quick-follow-up-buttons">
               <span>اختيار سريع:</span>
               ${[1, 2, 3, 4, 5, 6, 7].map((days) => `
