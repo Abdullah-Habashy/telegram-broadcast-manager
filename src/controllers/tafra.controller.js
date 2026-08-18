@@ -594,7 +594,9 @@ async function getFollowUpBotStartLog(req, res) {
   if (search) {
     params.push(`%${search}%`);
     conditions.push(`(c.first_name ILIKE $${params.length} OR c.last_name ILIKE $${params.length}
-      OR c.telegram_username ILIKE $${params.length} OR c.phone ILIKE $${params.length})`);
+      OR c.telegram_username ILIKE $${params.length} OR c.phone ILIKE $${params.length}
+      OR EXISTS (SELECT 1 FROM tafra_students ts WHERE ts.telegram_chat_id = c.chat_id
+                 AND ts.name ILIKE $${params.length}))`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   try {
@@ -605,8 +607,11 @@ async function getFollowUpBotStartLog(req, res) {
     const listParams = [...params, limit, offset];
     const result = await pool.query(
       `SELECT c.id AS contact_id, c.chat_id, c.telegram_username, c.first_name, c.last_name, c.phone,
-        t.created_at AS started_at
+        t.created_at AS started_at, tafra_match.name AS tafra_name
        FROM contacts c JOIN tickets t ON t.contact_id = c.id
+       LEFT JOIN LATERAL (
+         SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) tafra_match ON true
        ${where}
        ORDER BY t.created_at DESC
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,

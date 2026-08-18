@@ -158,9 +158,13 @@ async function listTickets(req, res) {
         latest.content AS last_message_preview,
         latest.direction AS last_message_direction,
         bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
-        (c.last_contacted_at IS NOT NULL) AS can_message
+        (c.last_contacted_at IS NOT NULL) AS can_message,
+        tafra_match.name AS tafra_name
        FROM tickets t
        JOIN contacts c ON c.id = t.contact_id
+       LEFT JOIN LATERAL (
+         SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) tafra_match ON true
        LEFT JOIN users u ON u.id = t.assigned_to
        LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
        LEFT JOIN LATERAL (
@@ -237,9 +241,14 @@ async function getTicket(req, res) {
        SELECT updated.*, c.chat_id, c.telegram_username, c.first_name, c.last_name, c.phone,
          ts.name AS subtitle_name,
          bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
-         (c.last_contacted_at IS NOT NULL) AS can_message
+         (c.last_contacted_at IS NOT NULL) AS can_message,
+         tafra_match.name AS tafra_name
        FROM updated
        JOIN contacts c ON c.id = updated.contact_id
+       LEFT JOIN LATERAL (
+         SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) tafra_match ON true
+
        LEFT JOIN ticket_subtitles ts ON ts.id = updated.subtitle_id
        ${BOOTCAMP_MARKS_JOIN_SQL}`,
       [ticketId]
@@ -804,10 +813,15 @@ async function listFlaggedMessages(req, res) {
     const listParams = [...params, limit, offset];
     const result = await pool.query(
       `SELECT im.id, im.content, im.image_path, im.received_at, im.flag,
-        t.id AS ticket_id, c.first_name, c.last_name, c.telegram_username, c.chat_id
+        t.id AS ticket_id, c.first_name, c.last_name, c.telegram_username, c.chat_id,
+        tafra_match.name AS tafra_name
        FROM incoming_messages im
        JOIN contacts c ON c.id = im.contact_id
        JOIN tickets t ON t.contact_id = im.contact_id
+       LEFT JOIN LATERAL (
+         SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) tafra_match ON true
+
        ${where}
        ORDER BY im.received_at DESC
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
