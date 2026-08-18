@@ -352,85 +352,7 @@
           <p>تواصل الموظفين مع الطلاب تليفونيًا وتسجيل نتيجة كل مكالمة في بروفايل الطالب</p>
         </div>
 
-        <div class="card tafra-student-filters">
-          <input type="search" id="calls-search" class="compact-input" placeholder="بحث بالاسم أو الهاتف أو الكود أو رقم المحادثة">
-          <input type="hidden" id="calls-level-filter" value="">
-          <select id="calls-education-type-filter" class="compact-select">
-            <option value="">كل أنواع التعليم</option>
-            <option value="general">عام</option>
-            <option value="azhar">أزهري</option>
-          </select>
-          <select id="calls-gender-filter" class="compact-select" title="نوع الطالب متخمّن من اسمه، مش بيانات مؤكدة من المنصة">
-            <option value="">كل الأنواع (ولد/بنت)</option>
-            <option value="male">ولد</option>
-            <option value="female">بنت</option>
-            <option value="unknown">غير محدد</option>
-          </select>
-          <select id="calls-telegram-filter" class="compact-select">
-            <option value="">الكل حسب تيليجرام</option>
-            <option value="started">بدأ محادثة (يمكن مراسلته)</option>
-            <option value="linked_not_started">مرتبط ولم يبدأ محادثة</option>
-            <option value="linked">كل المرتبطين بتيليجرام</option>
-            <option value="unlinked">غير مرتبط</option>
-          </select>
-          <select id="calls-conversation-filter" class="compact-select">
-            <option value="">كل حالات التواصل</option>
-            <option value="start_only">ضغط Start بس (لسه مفيش محادثة)</option>
-            <option value="chatted">تمت محادثة (بدون موعد متابعة)</option>
-            <option value="chatted_with_follow_up">تمت محادثة + موعد متابعة محدد</option>
-          </select>
-          <input type="hidden" id="calls-status-filter" value="">
-          <input type="hidden" id="calls-bootcamp-filter" value="">
-          <input type="hidden" id="calls-exam-filter" value="">
-          <select id="calls-exam-attendance-filter" class="compact-select">
-            <option value="entered">دخل الاختبار</option>
-            <option value="not_entered">لم يدخل الاختبار</option>
-          </select>
-          <select id="calls-exam-mark-range-filter" class="compact-select">
-            <option value="">كل الدرجات</option>
-            <option value="over_90">فوق 90%</option>
-            <option value="over_75">فوق 75%</option>
-            <option value="over_50">فوق 50%</option>
-            <option value="under_75">تحت 75%</option>
-            <option value="under_50">تحت 50%</option>
-          </select>
-          <select id="calls-idea-filter" class="compact-select">
-            <option value="">كل الأفكار</option>
-            <option value="0">لم يُحدَّد بعد</option>
-          </select>
-          <input type="date" id="calls-enrolled-from" class="compact-input" title="تاريخ الاشتراك من">
-          <input type="date" id="calls-enrolled-to" class="compact-input" title="تاريخ الاشتراك إلى">
-          <% if (userRole === 'admin' || canAssignCalls) { %>
-            <select id="calls-scope-filter" class="compact-select">
-              <option value="">كل الطلاب</option>
-              <option value="unassigned">غير مسند</option>
-            </select>
-            <select id="calls-called-by-filter" class="compact-select">
-              <option value="">أي موظف اتصل</option>
-            </select>
-          <% } %>
-          <select id="calls-follow-up-filter" class="compact-select">
-            <option value="">كل المواعيد</option>
-            <option value="due">حان موعد المتابعة</option>
-            <option value="none">لسه متعملهاش مكالمة</option>
-            <option value="called">تم الاتصال بهم</option>
-          </select>
-          <!-- بره بلوك صلاحيات الإسناد عن قصد — الموظف محتاج يفلتر قايمته بنتيجة آخر مكالمة زي الأدمن.
-               الخيارات بتتملى من جدول call_outcomes في loadCallOutcomes() مش مكتوبة هنا -->
-          <select id="calls-outcome-filter" class="compact-select" title="نتيجة آخر مكالمة اتسجّلت للطالب">
-            <option value="">كل نتائج المكالمات</option>
-          </select>
-          <!-- محاولات متتالية معرفناش نوصله فيها ("لم يرد" أو "الخط مشغول") تنتهي عند آخر مكالمة.
-               مكمّل لفلتر النتيجة اللي فوق: ده بيقيس إصرار عدم الوصول، وده بيقول آخر نتيجة إيه -->
-          <select id="calls-unreached-filter" class="compact-select" title="محاولات متتالية معرفناش نوصله فيها — لم يرد أو الخط مشغول. أي نتيجة تانية بتكسر السلسلة">
-            <option value="">كل حالات الوصول</option>
-            <option value="1">معرفناش نوصله مرة</option>
-            <option value="2">معرفناش نوصله مرتين ورا بعض</option>
-            <option value="3plus">معرفناش نوصله ٣ مرات أو أكثر ورا بعض</option>
-          </select>
-          <button type="button" class="btn btn-ghost" id="clear-calls-filters">مسح الفلاتر</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="refresh-calls-btn">تحديث</button>
-        </div>
+        <div class="card tafra-student-filters" id="calls-filter-bar"></div>
 
         <% if (userRole === 'admin' || canAssignCalls) { %>
           <div class="card" style="padding-block:12px">
@@ -672,74 +594,7 @@
           <h1>طلاب منصة طفرة</h1>
           <p>بيانات الطلاب المحفوظة محليًا من آخر تحديث للمنصة</p>
         </div>
-        <div class="card tafra-student-filters">
-          <input type="search" id="tafra-student-search" class="compact-input" placeholder="بحث بالاسم أو الهاتف أو الكود أو رقم المحادثة">
-          <input type="hidden" id="tafra-level-filter" value="">
-          <select id="tafra-education-type-filter" class="compact-select">
-            <option value="">كل أنواع التعليم</option>
-            <option value="general">عام</option>
-            <option value="azhar">أزهري</option>
-          </select>
-          <select id="tafra-gender-filter" class="compact-select" title="نوع الطالب متخمّن من اسمه، مش بيانات مؤكدة من المنصة">
-            <option value="">كل الأنواع (ولد/بنت)</option>
-            <option value="male">ولد</option>
-            <option value="female">بنت</option>
-            <option value="unknown">غير محدد</option>
-          </select>
-          <select id="tafra-telegram-filter" class="compact-select">
-            <option value="">الكل حسب تيليجرام</option>
-            <option value="started">بدأ محادثة (يمكن مراسلته)</option>
-            <option value="linked_not_started">مرتبط ولم يبدأ محادثة</option>
-            <option value="linked">كل المرتبطين بتيليجرام</option>
-            <option value="unlinked">غير مرتبط</option>
-          </select>
-          <select id="tafra-conversation-filter" class="compact-select">
-            <option value="">كل حالات التواصل</option>
-            <option value="start_only">ضغط Start بس (لسه مفيش محادثة)</option>
-            <option value="chatted">تمت محادثة (بدون موعد متابعة)</option>
-            <option value="chatted_with_follow_up">تمت محادثة + موعد متابعة محدد</option>
-          </select>
-          <select id="tafra-assignee-filter" class="compact-select" title="الموظف المسؤول عن تذكرة الطالب في صندوق الدعم">
-            <option value="">كل الموظفين</option>
-            <option value="unassigned">غير مسند</option>
-          </select>
-          <input type="hidden" id="tafra-status-filter" value="">
-          <input type="hidden" id="tafra-bootcamp-filter" value="">
-          <input type="hidden" id="tafra-exam-filter" value="">
-          <select id="tafra-exam-attendance-filter" class="compact-select">
-            <option value="entered">دخل الاختبار</option>
-            <option value="not_entered">لم يدخل الاختبار</option>
-          </select>
-          <select id="tafra-exam-mark-range-filter" class="compact-select">
-            <option value="">كل الدرجات</option>
-            <option value="over_90">فوق 90%</option>
-            <option value="over_75">فوق 75%</option>
-            <option value="over_50">فوق 50%</option>
-            <option value="under_75">تحت 75%</option>
-            <option value="under_50">تحت 50%</option>
-          </select>
-          <select id="tafra-idea-filter" class="compact-select">
-            <option value="">كل الأفكار</option>
-            <option value="0">لم يُحدَّد بعد</option>
-          </select>
-          <input type="date" id="tafra-enrolled-from" class="compact-input" title="تاريخ الاشتراك من">
-          <input type="date" id="tafra-enrolled-to" class="compact-input" title="تاريخ الاشتراك إلى">
-          <select id="tafra-welcome-status-filter" class="compact-select" title="حالة رسالة الترحيب — الرد التلقائي عند أول دخول للبوت. كل الحالات مشروطة بأن الطالب دخل البوت فعلاً">
-            <option value="">حالة رسالة الترحيب</option>
-            <option value="no_welcome">دخل البوت ومجاش له ترحيب</option>
-            <option value="welcome_no_reply">وصله ترحيب ومردّش</option>
-            <option value="welcome_replied">وصله ترحيب ورد</option>
-          </select>
-          <input type="date" id="tafra-last-sent-from" class="compact-input" title="آخر إرسال من">
-          <input type="date" id="tafra-last-sent-to" class="compact-input" title="آخر إرسال إلى">
-          <input type="date" id="tafra-last-received-from" class="compact-input" title="آخر استقبال من">
-          <input type="date" id="tafra-last-received-to" class="compact-input" title="آخر استقبال إلى">
-          <label class="row" style="gap:8px; cursor:pointer; white-space:nowrap; flex-wrap:nowrap" title="استبعاد من أُرسلت له رسالة جماعية اليوم بالفعل، لتفادي تكرار الإرسال لنفس الطالب مرتين في نفس اليوم">
-            <input type="checkbox" id="tafra-exclude-sent-today" style="width:auto">
-            <span>استبعاد من أُرسل له اليوم</span>
-          </label>
-          <button type="button" class="btn btn-ghost" id="clear-tafra-filters">مسح الفلاتر</button>
-        </div>
+        <div class="card tafra-student-filters" id="tafra-filter-bar"></div>
         <div class="card" style="padding-block:12px">
           <div class="row-between" style="gap:12px; flex-wrap:wrap">
             <span id="tafra-enrollment-sync-status" class="card-desc">لم يتم تحديث اشتراكات الأبواب بعد.</span>
@@ -1396,6 +1251,146 @@
     // القيم المحددة بتتخزن كـ comma-separated جوه نفس الـ input اللي كان <select> عادي، عشان كل كود
     // بناء الاستعلام والمزامنة بين التابات ومسح الفلاتر يفضل شغال زي ما هو من غير أي تعديل
     const multiSelectControllers = {};
+
+    // ===================== تعريف موحّد لفلاتر الطلاب =====================
+    // مصدر واحد للحقيقة: شاشة "طلاب المنصة" وشاشة "المتابعة التليفونية" بيترسموا منه، فأي فلتر
+    // يتضاف هنا بيظهر في الاتنين تلقائيًا. الـ id بيفضل زي ما هو لكل شاشة عشان الكود اللي بيناديه
+    // بالاسم مايكسرش. الباك إند بيقبل نفس الأسماء في الشاشتين عن طريق buildTafraStudentFilters
+    const STUDENT_FILTER_DEFS = [
+      { key: 'search', type: 'search', ids: { tafra: 'tafra-student-search', calls: 'calls-search' },
+        placeholder: 'بحث بالاسم أو الهاتف أو الكود أو رقم المحادثة' },
+      { key: 'level', type: 'hidden', ids: { tafra: 'tafra-level-filter', calls: 'calls-level-filter' } },
+      { key: 'education_type', type: 'select', ids: { tafra: 'tafra-education-type-filter', calls: 'calls-education-type-filter' },
+        options: [['', 'كل أنواع التعليم'], ['general', 'عام'], ['azhar', 'أزهري']] },
+      { key: 'gender', type: 'select', ids: { tafra: 'tafra-gender-filter', calls: 'calls-gender-filter' },
+        title: 'نوع الطالب متخمّن من اسمه، مش بيانات مؤكدة من المنصة',
+        options: [['', 'كل الأنواع (ولد/بنت)'], ['male', 'ولد'], ['female', 'بنت'], ['unknown', 'غير محدد']] },
+      { key: 'telegram', type: 'select', ids: { tafra: 'tafra-telegram-filter', calls: 'calls-telegram-filter' },
+        options: [['', 'الكل حسب تيليجرام'], ['started', 'بدأ محادثة (يمكن مراسلته)'],
+          ['linked_not_started', 'مرتبط ولم يبدأ محادثة'], ['linked', 'كل المرتبطين بتيليجرام'], ['unlinked', 'غير مرتبط']] },
+      { key: 'conversation_status', type: 'select', ids: { tafra: 'tafra-conversation-filter', calls: 'calls-conversation-filter' },
+        options: [['', 'كل حالات التواصل'], ['start_only', 'ضغط Start بس (لسه مفيش محادثة)'],
+          ['chatted', 'تمت محادثة (بدون موعد متابعة)'], ['chatted_with_follow_up', 'تمت محادثة + موعد متابعة محدد']] },
+      { key: 'assigned_to', type: 'select', ids: { tafra: 'tafra-assignee-filter', calls: 'calls-assignee-filter' },
+        title: 'الموظف المسؤول عن تذكرة الطالب في صندوق الدعم',
+        options: [['', 'كل الموظفين'], ['unassigned', 'غير مسند']] },
+      { key: 'status', type: 'hidden', ids: { tafra: 'tafra-status-filter', calls: 'calls-status-filter' } },
+      { key: 'bootcamp', type: 'hidden', ids: { tafra: 'tafra-bootcamp-filter', calls: 'calls-bootcamp-filter' } },
+      { key: 'exam', type: 'hidden', ids: { tafra: 'tafra-exam-filter', calls: 'calls-exam-filter' } },
+      { key: 'attendance', type: 'select', ids: { tafra: 'tafra-exam-attendance-filter', calls: 'calls-exam-attendance-filter' },
+        options: [['entered', 'دخل الاختبار'], ['not_entered', 'لم يدخل الاختبار']] },
+      { key: 'mark_range', type: 'select', ids: { tafra: 'tafra-exam-mark-range-filter', calls: 'calls-exam-mark-range-filter' },
+        options: [['', 'كل الدرجات'], ['over_90', 'فوق 90%'], ['over_75', 'فوق 75%'], ['over_50', 'فوق 50%'],
+          ['under_75', 'تحت 75%'], ['under_50', 'تحت 50%']] },
+      { key: 'idea_number', type: 'select', ids: { tafra: 'tafra-idea-filter', calls: 'calls-idea-filter' },
+        options: [['', 'كل الأفكار'], ['0', 'لم يُحدَّد بعد']] },
+      { key: 'enrolled_from', type: 'date', ids: { tafra: 'tafra-enrolled-from', calls: 'calls-enrolled-from' }, title: 'تاريخ الاشتراك من' },
+      { key: 'enrolled_to', type: 'date', ids: { tafra: 'tafra-enrolled-to', calls: 'calls-enrolled-to' }, title: 'تاريخ الاشتراك إلى' },
+      { key: 'welcome_status', type: 'select', ids: { tafra: 'tafra-welcome-status-filter', calls: 'calls-welcome-status-filter' },
+        title: 'حالة رسالة الترحيب — كل الحالات مشروطة بأن الطالب دخل البوت فعلاً',
+        options: [['', 'حالة رسالة الترحيب'], ['no_welcome', 'دخل البوت ومجاش له ترحيب'],
+          ['welcome_no_reply', 'وصله ترحيب ومردّش'], ['welcome_replied', 'وصله ترحيب ورد']] },
+      { key: 'follow_up', type: 'select', ids: { tafra: 'tafra-follow-up-filter', calls: 'calls-follow-up-filter' },
+        options: [['', 'كل المواعيد'], ['due', 'حان موعد المتابعة'], ['none', 'لسه متعملهاش مكالمة'], ['called', 'تم الاتصال بهم']] },
+      { key: 'call_outcome', type: 'select', ids: { tafra: 'tafra-outcome-filter', calls: 'calls-outcome-filter' },
+        title: 'نتيجة آخر مكالمة اتسجّلت للطالب', options: [['', 'كل نتائج المكالمات']] },
+      { key: 'unreached_streak', type: 'select', ids: { tafra: 'tafra-unreached-filter', calls: 'calls-unreached-filter' },
+        title: 'محاولات متتالية معرفناش نوصله فيها — لم يرد أو الخط مشغول. أي نتيجة تانية بتكسر السلسلة',
+        options: [['', 'كل حالات الوصول'], ['1', 'معرفناش نوصله مرة'], ['2', 'معرفناش نوصله مرتين ورا بعض'],
+          ['3plus', 'معرفناش نوصله ٣ مرات أو أكثر ورا بعض']] },
+      { key: 'last_sent_from', type: 'date', ids: { tafra: 'tafra-last-sent-from', calls: 'calls-last-sent-from' }, title: 'آخر إرسال من' },
+      { key: 'last_sent_to', type: 'date', ids: { tafra: 'tafra-last-sent-to', calls: 'calls-last-sent-to' }, title: 'آخر إرسال إلى' },
+      { key: 'last_received_from', type: 'date', ids: { tafra: 'tafra-last-received-from', calls: 'calls-last-received-from' }, title: 'آخر استقبال من' },
+      { key: 'last_received_to', type: 'date', ids: { tafra: 'tafra-last-received-to', calls: 'calls-last-received-to' }, title: 'آخر استقبال إلى' },
+      { key: 'assigned', type: 'select', adminOnly: true, ids: { tafra: 'tafra-scope-filter', calls: 'calls-scope-filter' },
+        options: [['', 'كل الطلاب'], ['unassigned', 'غير مسند']] },
+      { key: 'called_by', type: 'select', adminOnly: true, ids: { tafra: 'tafra-called-by-filter', calls: 'calls-called-by-filter' },
+        options: [['', 'أي موظف اتصل']] },
+      { key: 'exclude_sent_today', type: 'checkbox', ids: { tafra: 'tafra-exclude-sent-today', calls: 'calls-exclude-sent-today' },
+        label: 'استبعاد من أُرسل له اليوم',
+        title: 'استبعاد من اتبعتله رسالة جماعية اليوم بالفعل، لتفادي تكرار الإرسال لنفس الطالب مرتين في نفس اليوم' },
+    ];
+
+    function filterId(def, prefix) { return (def.ids && def.ids[prefix]) || (prefix + '-' + def.key + '-filter'); }
+
+    // الفلاتر المتاحة لشاشة معيّنة بعد استبعاد اللي محتاج صلاحية إسناد
+    function filtersFor(prefix) {
+      const canAssign = currentUserRole === 'admin' || canAssignCalls;
+      return STUDENT_FILTER_DEFS.filter((def) => !def.adminOnly || canAssign);
+    }
+
+    // بيرسم بار الفلاتر لشاشة معيّنة من التعريف الموحّد
+    function renderStudentFilterBar(prefix) {
+      const bar = document.getElementById(prefix + '-filter-bar');
+      if (!bar) return;
+      const html = filtersFor(prefix).map((def) => {
+        const id = filterId(def, prefix);
+        const title = def.title ? ' title="' + escapeHtml(def.title) + '"' : '';
+        if (def.type === 'hidden') return '<input type="hidden" id="' + id + '" value="">';
+        if (def.type === 'search') return '<input type="search" id="' + id + '" class="compact-input" placeholder="' + escapeHtml(def.placeholder || '') + '"' + title + '>';
+        if (def.type === 'date') return '<input type="date" id="' + id + '" class="compact-input"' + title + '>';
+        if (def.type === 'checkbox') {
+          return '<label class="row" style="gap:8px; cursor:pointer; white-space:nowrap; flex-wrap:nowrap"' + title + '>'
+            + '<input type="checkbox" id="' + id + '" style="width:auto"><span>' + escapeHtml(def.label || '') + '</span></label>';
+        }
+        const options = (def.options || []).map((pair) =>
+          '<option value="' + escapeHtml(pair[0]) + '">' + escapeHtml(pair[1]) + '</option>').join('');
+        return '<select id="' + id + '" class="compact-select"' + title + '>' + options + '</select>';
+      }).join('\n');
+      bar.innerHTML = html
+        + '\n<button type="button" class="btn btn-ghost" id="clear-' + prefix + '-filters">مسح الفلاتر</button>'
+        + (prefix === 'calls' ? '\n<button type="button" class="btn btn-ghost btn-sm" id="refresh-calls-btn">تحديث</button>' : '');
+    }
+
+    // بناء الباراميترز من التعريف الموحّد — الشاشتين بيستخدموه، فأي فلتر يتضاف للتعريف بيتبعت
+    // تلقائيًا من غير ما نفتكر نضيفه في كل شاشة على حدة (ده كان مصدر النسيان المتكرر)
+    function studentFilterParams(prefix, params) {
+      filtersFor(prefix).forEach((def) => {
+        const el = document.getElementById(filterId(def, prefix));
+        if (!el) return;
+        if (def.type === 'checkbox') {
+          if (el.checked) params.set(def.key, 'true');
+          return;
+        }
+        const value = String(el.value || '').trim();
+        if (!value) return;
+        // الحضور ومدى الدرجة مالهمش معنى من غير اختبار محدد
+        if ((def.key === 'attendance' || def.key === 'mark_range')
+          && !String(document.getElementById(filterId({ key: 'exam', ids: { tafra: 'tafra-exam-filter', calls: 'calls-exam-filter' } }, prefix))?.value || '').trim()) return;
+        if (def.key === 'mark_range'
+          && String(document.getElementById(filterId({ key: 'attendance', ids: { tafra: 'tafra-exam-attendance-filter', calls: 'calls-exam-attendance-filter' } }, prefix))?.value || '') === 'not_entered') return;
+        params.set(def.key, value);
+      });
+      return params;
+    }
+
+    // مستمعي التغيير لكل فلاتر الشاشة — من نفس التعريف
+    function bindStudentFilterEvents(prefix, onChange) {
+      filtersFor(prefix).forEach((def) => {
+        const el = document.getElementById(filterId(def, prefix));
+        // الحارس ده مهم: بعض الفلاتر ليها مستمعين مكتوبين بالإيد من قبل التوحيد، والربط مرتين
+        // معناه تحميل القائمة مرتين مع كل تغيير
+        if (!el || el.dataset.filterBound === '1') return;
+        el.dataset.filterBound = '1';
+        const evt = def.type === 'search' ? 'input' : 'change';
+        el.addEventListener(evt, () => onChange(def));
+      });
+    }
+
+    // تصفير كل الفلاتر — نفس المصدر برضه
+    function resetStudentFilters(prefix) {
+      filtersFor(prefix).forEach((def) => {
+        const el = document.getElementById(filterId(def, prefix));
+        if (!el) return;
+        if (def.type === 'checkbox') { el.checked = false; return; }
+        el.value = def.key === 'attendance' ? 'entered' : '';
+        if (multiSelectControllers[filterId(def, prefix)]) multiSelectControllers[filterId(def, prefix)].refresh();
+      });
+    }
+
+    // الشاشتين بيترسموا فورًا عند تحميل الصفحة — قبل أي تهيئة بتدوّر على العناصر بالـ id
+    renderStudentFilterBar('tafra');
+    renderStudentFilterBar('calls');
 
     function createMultiSelectFilter(hiddenInputId, placeholder) {
       if (multiSelectControllers[hiddenInputId]) return multiSelectControllers[hiddenInputId];
@@ -2267,30 +2262,8 @@
 
     function tafraStudentQuery() {
       const params = new URLSearchParams({ page: tafraStudentsPage, limit: 50 });
-      const fields = {
-        search: 'tafra-student-search', level: 'tafra-level-filter',
-        education_type: 'tafra-education-type-filter', gender: 'tafra-gender-filter', telegram: 'tafra-telegram-filter',
-        conversation_status: 'tafra-conversation-filter', assigned_to: 'tafra-assignee-filter',
-        status: 'tafra-status-filter', bootcamp: 'tafra-bootcamp-filter', exam: 'tafra-exam-filter',
-        idea_number: 'tafra-idea-filter',
-        enrolled_from: 'tafra-enrolled-from', enrolled_to: 'tafra-enrolled-to',
-        welcome_status: 'tafra-welcome-status-filter',
-        last_sent_from: 'tafra-last-sent-from', last_sent_to: 'tafra-last-sent-to',
-        last_received_from: 'tafra-last-received-from', last_received_to: 'tafra-last-received-to',
-      };
-      Object.entries(fields).forEach(([key, id]) => {
-        const value = document.getElementById(id).value.trim();
-        if (value) params.set(key, value);
-      });
-      if (document.getElementById('tafra-exclude-sent-today').checked) params.set('exclude_sent_today', 'true');
-      if (document.getElementById('tafra-exam-filter').value) {
-        const attendance = document.getElementById('tafra-exam-attendance-filter').value;
-        params.set('attendance', attendance);
-        const markRange = document.getElementById('tafra-exam-mark-range-filter').value;
-        if (attendance !== 'not_entered' && markRange) params.set('mark_range', markRange);
-      }
       if (tafraSort.key) { params.set('sort', tafraSort.key); params.set('order', tafraSort.dir); }
-      return params.toString();
+      return studentFilterParams('tafra', params).toString();
     }
 
     // جدول الطلاب مستخدم في تابين: طلاب المنصة (بتحديد للمراسلة) والتقارير (معاينة بس من غير تحديد)
@@ -2428,6 +2401,7 @@
     async function initTafraStudents() {
       try {
         await loadTafraStudentFilters();
+        bindStudentFilterEvents('tafra', () => { tafraStudentsPage = 1; loadTafraStudents(); });
         await loadTafraStudents();
       } catch (error) { showToast(error.message); }
     }
@@ -2445,38 +2419,12 @@
 
     function callsQuery() {
       const params = new URLSearchParams({ page: callsPage, limit: 50 });
-      Object.entries(CALLS_FILTER_FIELDS).forEach(([key, id]) => {
-        const value = document.getElementById(id).value.trim();
-        if (value) params.set(key, value);
-      });
-      if (document.getElementById('calls-exam-filter').value) {
-        const attendance = document.getElementById('calls-exam-attendance-filter').value;
-        params.set('attendance', attendance);
-        const markRange = document.getElementById('calls-exam-mark-range-filter').value;
-        if (attendance !== 'not_entered' && markRange) params.set('mark_range', markRange);
-      }
-      const followUp = document.getElementById('calls-follow-up-filter').value;
-      if (followUp) params.set('follow_up', followUp);
-      if (currentUserRole === 'admin' || canAssignCalls) {
-        const scope = document.getElementById('calls-scope-filter').value;
-        if (scope) params.set('assigned', scope);
-        const calledBy = document.getElementById('calls-called-by-filter').value;
-        if (calledBy) params.set('called_by', calledBy);
-      }
-      return params.toString();
+      return studentFilterParams('calls', params).toString();
     }
 
     function clearCallsFilters() {
       filterGroups.calls?.reset();
-      Object.values(CALLS_FILTER_FIELDS).forEach((id) => { document.getElementById(id).value = ''; });
-      ['calls-level-filter', 'calls-status-filter', 'calls-bootcamp-filter', 'calls-exam-filter']
-        .forEach((id) => multiSelectControllers[id]?.refresh());
-      document.getElementById('calls-exam-attendance-filter').value = 'entered';
-      document.getElementById('calls-follow-up-filter').value = '';
-      if (currentUserRole === 'admin' || canAssignCalls) {
-        document.getElementById('calls-scope-filter').value = '';
-        document.getElementById('calls-called-by-filter').value = '';
-      }
+      resetStudentFilters('calls');
       callsPage = 1;
       loadCalls();
     }
@@ -2994,6 +2942,7 @@ ${mark}${percent}`;
         // بنجيب قائمة الموظفين من جديد في كل مرة (مش بس أول مرة) عشان أي موظف اتضاف حديثًا يظهر فورًا
         if (currentUserRole === 'admin' || canAssignCalls) await loadCallAssignees();
         registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter','calls-unreached-filter']);
+        bindStudentFilterEvents('calls', () => { callsPage = 1; loadCalls(); });
         callsPage = 1;
         await loadCalls();
       } catch (error) { showToast(error.message); }
