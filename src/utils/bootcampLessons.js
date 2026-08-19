@@ -13,7 +13,20 @@ const STABLE_PAGES_BEFORE_STOP = 12;
 // سقف مطلق يحمي من كورس ضخم أو من درس نادر بيظهر كل شوية
 const MAX_PAGES_PER_BOOTCAMP = 120;
 
-async function buildBootcampCatalogue(client, bootcampId, { onProgress } = {}) {
+// خريطة اسم الدرس → معرّفه على المنصة. بتتجاب مرة واحدة وتتمرّر لكل الكورسات، لأن النقطة
+// بترجّع كل دروس المادة مش دروس كورس
+async function fetchLessonIdMap(client) {
+  const lessons = await client.getAllOnlineLessons();
+  const map = new Map();
+  lessons.forEach((lesson) => {
+    const name = String(lesson.name || '').trim();
+    const id = Number(lesson.id);
+    if (name && Number.isInteger(id) && !map.has(name)) map.set(name, id);
+  });
+  return map;
+}
+
+async function buildBootcampCatalogue(client, bootcampId, { onProgress, lessonIds } = {}) {
   const lessons = new Map();
   let stablePages = 0;
   let pagesRead = 0;
@@ -35,7 +48,12 @@ async function buildBootcampCatalogue(client, bootcampId, { onProgress } = {}) {
       const duration = Math.max(0, Math.round(Number(row.lesson_duration_seconds) || 0));
       // المدة صفر = مذكرة أو ملف مش فيديو، فمابتدخلش الكتالوج أصلًا
       if (row.is_video === false || !duration) return;
-      lessons.set(name, { name, duration_seconds: duration, is_video: true });
+      lessons.set(name, {
+        name,
+        duration_seconds: duration,
+        is_video: true,
+        platform_lesson_id: lessonIds ? (lessonIds.get(name) ?? null) : null,
+      });
     });
     stablePages = lessons.size === before ? stablePages + 1 : 0;
     if (onProgress) onProgress({ page, lessons: lessons.size, stablePages });
@@ -57,11 +75,14 @@ async function saveBootcampCatalogue(bootcampId, lessons) {
     await client.query('BEGIN');
     await client.query('DELETE FROM tafra_bootcamp_lessons WHERE tafra_bootcamp_id = $1', [bootcampId]);
     await client.query(
-      `INSERT INTO tafra_bootcamp_lessons (tafra_bootcamp_id, lesson_name, duration_seconds, is_video, updated_at)
-       SELECT $1, x.lesson_name, x.duration_seconds, x.is_video, NOW()
-       FROM jsonb_to_recordset($2::jsonb) AS x(lesson_name text, duration_seconds integer, is_video boolean)`,
+      `INSERT INTO tafra_bootcamp_lessons
+         (tafra_bootcamp_id, lesson_name, duration_seconds, is_video, platform_lesson_id, updated_at)
+       SELECT $1, x.lesson_name, x.duration_seconds, x.is_video, x.platform_lesson_id, NOW()
+       FROM jsonb_to_recordset($2::jsonb) AS x(
+         lesson_name text, duration_seconds integer, is_video boolean, platform_lesson_id integer)`,
       [bootcampId, JSON.stringify(lessons.map((lesson) => ({
         lesson_name: lesson.name, duration_seconds: lesson.duration_seconds, is_video: lesson.is_video,
+        platform_lesson_id: lesson.platform_lesson_id ?? null,
       })))]
     );
     await client.query('COMMIT');
@@ -105,22 +126,29 @@ async function getCatalogueTotals(bootcampIds) {
 // فتحه بس. مفرّدة بالاسم لنفس سبب getCatalogueTotals (درس واحد في كورسين)
 async function getCatalogueLessons(bootcampIds) {
   if (!bootcampIds.length) return [];
+  // التفريد بالاسم لازم يحصل قبل الترتيب النهائي، فالاستعلام على مرحلتين: DISTINCT ON محتاج
+  // ORDER BY يبدأ بالاسم، والترتيب اللي عايزينه بالمعرّف — فبنرتّب برّه
   const result = await pool.query(
-    `SELECT DISTINCT ON (l.lesson_name) l.lesson_name, l.duration_seconds, tb.name AS bootcamp_name
-     FROM tafra_bootcamp_lessons l
-     JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = l.tafra_bootcamp_id
-     WHERE l.tafra_bootcamp_id = ANY($1::bigint[]) AND l.is_video AND l.duration_seconds > 0
-     ORDER BY l.lesson_name, l.duration_seconds DESC`,
+    `SELECT lesson_name, duration_seconds, bootcamp_name, platform_lesson_id FROM (
+       SELECT DISTINCT ON (l.lesson_name)
+         l.lesson_name, l.duration_seconds, l.platform_lesson_id, tb.name AS bootcamp_name
+       FROM tafra_bootcamp_lessons l
+       JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = l.tafra_bootcamp_id
+       WHERE l.tafra_bootcamp_id = ANY($1::bigint[]) AND l.is_video AND l.duration_seconds > 0
+       ORDER BY l.lesson_name, l.duration_seconds DESC
+     ) unique_lessons
+     ORDER BY platform_lesson_id NULLS LAST, lesson_name`,
     [bootcampIds]
   );
   return result.rows.map((row) => ({
     lesson_name: row.lesson_name,
     duration_seconds: Number(row.duration_seconds) || 0,
     bootcamp_name: (row.bootcamp_name || '').trim(),
+    platform_lesson_id: row.platform_lesson_id === null ? null : Number(row.platform_lesson_id),
   }));
 }
 
 module.exports = {
-  buildBootcampCatalogue, saveBootcampCatalogue, getCatalogueTotals, getCatalogueLessons,
+  buildBootcampCatalogue, saveBootcampCatalogue, getCatalogueTotals, getCatalogueLessons, fetchLessonIdMap,
   STABLE_PAGES_BEFORE_STOP, MAX_PAGES_PER_BOOTCAMP,
 };

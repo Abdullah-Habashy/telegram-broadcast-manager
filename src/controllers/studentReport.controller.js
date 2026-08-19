@@ -406,15 +406,10 @@ function mergeCatalogueRows(views, catalogueLessons) {
   });
   // أي درس الطالب فتحه ومش في الكتالوج (درس جديد لسه ما اتمسحش) بيتضاف في الآخر مش بيتجاهل
   rows.push(...watchedByLesson.values());
-  // اللي اتفرّج عليه الأول بالأحدث، وبعديهم اللي لسه مافتحهمش — ده الترتيب اللي ولي الأمر
-  // بيقراه: إيه اللي عمله، وإيه اللي فاضل
-  return rows.sort((a, b) => {
-    const aOpened = Number(a.progress_percentage) > 0 ? 1 : 0;
-    const bOpened = Number(b.progress_percentage) > 0 ? 1 : 0;
-    if (aOpened !== bOpened) return bOpened - aOpened;
-    if (aOpened) return String(b.viewed_at || '').localeCompare(String(a.viewed_at || ''));
-    return String(a.lesson_name || '').localeCompare(String(b.lesson_name || ''), 'ar');
-  });
+  // مفيش ترتيب هنا عن قصد: الكتالوج جايي مرتّب بترتيب الكورس على المنصة (شرح فكرة ١ ← حل
+  // اختبار فكرة ١ ← شرح فكرة ٢ ...)، وده الترتيب اللي الطالب وولي الأمر شايفينه على المنصة
+  // نفسها، فمتابعة التقدّم بتبقى مفهومة بدل قايمة مبعترة
+  return rows;
 }
 
 // بيستبدل المقام بأرقام الكتالوج ويعيد حساب نسبة الوقت. الوقت المتفرَّج بيفضل بتاع الطالب،

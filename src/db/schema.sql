@@ -582,6 +582,11 @@ CREATE TABLE IF NOT EXISTS tafra_bootcamp_lessons (
 );
 CREATE INDEX IF NOT EXISTS idx_tafra_bootcamp_lessons_video
     ON tafra_bootcamp_lessons (tafra_bootcamp_id) WHERE is_video;
+-- معرّف الدرس على المنصة — أساس ترتيب الفيديوهات في التقرير بنفس ترتيب الكورس.
+-- سجل المشاهدات مابيسمحش بترتيب غير viewed_at، لكن /online-lessons بيدّي id لكل درس والترتيب
+-- التصاعدي بيطلع ترتيب الكورس بالظبط (شرح فكرة ١ ← حل اختبار فكرة ١ ← شرح فكرة ٢ ...).
+-- بيفضل NULL للدرس اللي اسمه مااتلاقاش في القايمة، وساعتها بيتعرض في الآخر
+ALTER TABLE tafra_bootcamp_lessons ADD COLUMN IF NOT EXISTS platform_lesson_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS tafra_exams (
     exam_type VARCHAR(10) NOT NULL CHECK (exam_type IN ('online', 'offline')),

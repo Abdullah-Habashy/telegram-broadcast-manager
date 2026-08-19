@@ -190,6 +190,21 @@ class TafraReadOnlyClient {
     return this.getWithRetry(`${BASE_URL}/online-exams/${safeExamId}/students?page=${safePage}`);
   }
 
+  // كل دروس المنصة بمعرّفاتها ومددها. مافيهاش meta فالترقيم بيقف لما صفحة ترجع أقل من ١٥ صف.
+  // مابتربطش الدرس بكورس (الفلتر المسموح search و material_id بس)، فبنستخدمها للمعرّف والترتيب
+  // بس، والربط بالكورس بييجي من سجل المشاهدات
+  async getAllOnlineLessons(maxPages = 40) {
+    const rows = [];
+    for (let page = 1; page <= maxPages; page += 1) {
+      const response = await this.getWithRetry(`${BASE_URL}/online-lessons?page=${page}`);
+      const pageRows = Array.isArray(response.data?.data) ? response.data.data : [];
+      rows.push(...pageRows);
+      if (pageRows.length < 15) break;
+      await delay(110);
+    }
+    return rows;
+  }
+
   // مشاهدات كورس كامل (كل الطلاب) — filter[bootcamp_id] مدعوم هنا، على عكس /online-lessons
   // اللي مابيقبلش غير search و material_id. ده المصدر الوحيد اللي بيربط الدرس بالكورس
   async getBootcampLessonViewsPage(bootcampId, page) {
