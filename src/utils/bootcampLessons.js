@@ -13,17 +13,49 @@ const STABLE_PAGES_BEFORE_STOP = 12;
 // سقف مطلق يحمي من كورس ضخم أو من درس نادر بيظهر كل شوية
 const MAX_PAGES_PER_BOOTCAMP = 120;
 
+// أقل طول للاسم المشترك اللي نقبل عنده المطابقة بالبادئة — أقصر من كده الاحتمال يبقى ضعيف
+const MIN_PREFIX_MATCH_LENGTH = 15;
+
+const normaliseLessonName = (name) => String(name || '').replace(/\s+/g, ' ').trim();
+
 // خريطة اسم الدرس → معرّفه على المنصة. بتتجاب مرة واحدة وتتمرّر لكل الكورسات، لأن النقطة
-// بترجّع كل دروس المادة مش دروس كورس
-async function fetchLessonIdMap(client) {
-  const lessons = await client.getAllOnlineLessons();
-  const map = new Map();
+// بترجّع كل دروس المادة مش دروس كورس.
+//
+// المطابقة على تلات مراحل، لأن المصدرين بيسمّوا نفس الدرس بشكل مختلف شوية: سجل المشاهدات
+// بيقول "شرح فكرة (3) التركيب العام للمجموعات السلاسل **الانتقالية**" وقايمة الدروس بتقول
+// "...للمجموعات السلاسل" (id=197). المطابقة الحرفية كانت بتفوّت الحالات دي فالدرس يقع في
+// آخر التقرير بدل مكانه في نص الكورس.
+// البادئة بتتقبل بشرط إنها **مرشّح واحد بس** — لو أكتر من درس ينطبق، بنسيبه من غير ترتيب
+// بدل ما نحط رقم غلط
+function buildLessonIdLookup(lessons) {
+  const byExact = new Map();
+  const byNormalised = new Map();
+  const entries = [];
   lessons.forEach((lesson) => {
-    const name = String(lesson.name || '').trim();
+    const raw = String(lesson.name || '').trim();
     const id = Number(lesson.id);
-    if (name && Number.isInteger(id) && !map.has(name)) map.set(name, id);
+    if (!raw || !Number.isInteger(id)) return;
+    const normalised = normaliseLessonName(raw);
+    if (!byExact.has(raw)) byExact.set(raw, id);
+    if (!byNormalised.has(normalised)) byNormalised.set(normalised, id);
+    entries.push({ normalised, id });
   });
-  return map;
+
+  return (name) => {
+    const raw = String(name || '').trim();
+    if (byExact.has(raw)) return byExact.get(raw);
+    const normalised = normaliseLessonName(raw);
+    if (byNormalised.has(normalised)) return byNormalised.get(normalised);
+    const candidates = entries.filter(({ normalised: candidate }) =>
+      (normalised.startsWith(candidate) || candidate.startsWith(normalised))
+      && Math.min(candidate.length, normalised.length) >= MIN_PREFIX_MATCH_LENGTH);
+    const ids = new Set(candidates.map((candidate) => candidate.id));
+    return ids.size === 1 ? [...ids][0] : null;
+  };
+}
+
+async function fetchLessonIdMap(client) {
+  return buildLessonIdLookup(await client.getAllOnlineLessons());
 }
 
 async function buildBootcampCatalogue(client, bootcampId, { onProgress, lessonIds } = {}) {
@@ -52,7 +84,7 @@ async function buildBootcampCatalogue(client, bootcampId, { onProgress, lessonId
         name,
         duration_seconds: duration,
         is_video: true,
-        platform_lesson_id: lessonIds ? (lessonIds.get(name) ?? null) : null,
+        platform_lesson_id: lessonIds ? (lessonIds(name) ?? null) : null,
       });
     });
     stablePages = lessons.size === before ? stablePages + 1 : 0;
@@ -149,6 +181,7 @@ async function getCatalogueLessons(bootcampIds) {
 }
 
 module.exports = {
-  buildBootcampCatalogue, saveBootcampCatalogue, getCatalogueTotals, getCatalogueLessons, fetchLessonIdMap,
+  buildBootcampCatalogue, saveBootcampCatalogue, getCatalogueTotals, getCatalogueLessons,
+  fetchLessonIdMap, buildLessonIdLookup,
   STABLE_PAGES_BEFORE_STOP, MAX_PAGES_PER_BOOTCAMP,
 };
