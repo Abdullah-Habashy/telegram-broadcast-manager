@@ -4,7 +4,7 @@ const { getCredentials: getTafraCredentials } = require('./tafra.controller');
 const { fetchStudentLessonViews, summariseLessonViews, isCompletedByProgress } = require('../utils/lessonViews');
 const { UNREACHED_NAMES_SQL, INVALID_NUMBER_SQL, REACHED_CONDITION_SQL } = require('../utils/callOutcomes');
 const botManager = require('../bot/botManager');
-const { getCatalogueTotals } = require('../utils/bootcampLessons');
+const { getCatalogueTotals, getCatalogueLessons } = require('../utils/bootcampLessons');
 
 // ===================== تقرير الطالب المشترَك =====================
 // صفحة عامة يفتحها ولي الأمر أو الطالب برابط فيه توكن، من غير تسجيل دخول.
@@ -373,20 +373,59 @@ async function loadVideosFor(req, student) {
       `SELECT e.tafra_bootcamp_id AS id FROM tafra_enrollments e
        WHERE e.tafra_student_id = $1 AND e.enrollment_type = 'enroll'`,
       [Number(student.tafra_student_id)])).rows.map((row) => Number(row.id));
-  const catalogue = await getCatalogueTotals(bootcampIds);
+  const [catalogue, catalogueLessons] = await Promise.all([
+    getCatalogueTotals(bootcampIds),
+    getCatalogueLessons(bootcampIds),
+  ]);
 
-  return applyCatalogue(data, catalogue);
+  return applyCatalogue(data, catalogue, catalogueLessons);
+}
+
+// بيدمج كتالوج الكورس مع مشاهدات الطالب: كل درس في الكورس بيبقى له سطر، واللي الطالب مافتحهوش
+// بيبان صفر. من غير ده الجدول كان بيعرض ٩ فيديوهات لطالب في كورس فيه ٣٧ — فولي الأمر مش شايف
+// المحتوى اللي ابنه لسه ماوصلهوش، وهو أهم حاجة عايز يعرفها
+function mergeCatalogueRows(views, catalogueLessons) {
+  const watchedByLesson = new Map(views.map((view) => [String(view.lesson_name || '').trim(), view]));
+  const rows = catalogueLessons.map((lesson) => {
+    const view = watchedByLesson.get(lesson.lesson_name);
+    if (view) {
+      watchedByLesson.delete(lesson.lesson_name);
+      return { ...view, lesson_duration_seconds: view.lesson_duration_seconds || lesson.duration_seconds };
+    }
+    return {
+      lesson_name: lesson.lesson_name,
+      bootcamp_name: lesson.bootcamp_name,
+      is_video: true,
+      is_completed: false,
+      progress_percentage: 0,
+      watch_progress_seconds: 0,
+      lesson_duration_seconds: lesson.duration_seconds,
+      viewed_at: null,
+      never_opened: true,
+    };
+  });
+  // أي درس الطالب فتحه ومش في الكتالوج (درس جديد لسه ما اتمسحش) بيتضاف في الآخر مش بيتجاهل
+  rows.push(...watchedByLesson.values());
+  // اللي اتفرّج عليه الأول بالأحدث، وبعديهم اللي لسه مافتحهمش — ده الترتيب اللي ولي الأمر
+  // بيقراه: إيه اللي عمله، وإيه اللي فاضل
+  return rows.sort((a, b) => {
+    const aOpened = Number(a.progress_percentage) > 0 ? 1 : 0;
+    const bOpened = Number(b.progress_percentage) > 0 ? 1 : 0;
+    if (aOpened !== bOpened) return bOpened - aOpened;
+    if (aOpened) return String(b.viewed_at || '').localeCompare(String(a.viewed_at || ''));
+    return String(a.lesson_name || '').localeCompare(String(b.lesson_name || ''), 'ar');
+  });
 }
 
 // بيستبدل المقام بأرقام الكتالوج ويعيد حساب نسبة الوقت. الوقت المتفرَّج بيفضل بتاع الطالب،
 // بس بيتقص على مدة الدرس عشان إعادة المشاهدة ماتطلّعش النسبة فوق ١٠٠%
-function applyCatalogue(data, catalogue) {
+function applyCatalogue(data, catalogue, catalogueLessons) {
   if (!catalogue.video_count || !catalogue.total_seconds) {
     return { ...data, summary: { ...data.summary, catalogue_missing: true } };
   }
   const watched = Math.min(data.summary.watched_seconds, catalogue.total_seconds);
   return {
-    ...data,
+    views: mergeCatalogueRows(data.views, catalogueLessons),
     summary: {
       ...data.summary,
       catalogue_missing: false,
@@ -407,7 +446,9 @@ function videosPayload(data) {
     },
     views: data.views.map((view) => ({
         lesson_name: view.lesson_name,
-        bootcamp_name: view.bootcamp_name,
+        // المنصة بترجّع اسم الكورس بمسافة زايدة في الآخر أحيانًا، والكتالوج بيخزّنه مقصوص —
+        // فمن غير trim نفس الكورس بيبان كأنه اتنين في الجدول
+        bootcamp_name: (view.bootcamp_name || '').trim() || null,
         is_video: view.is_video !== false,
         is_completed: isCompletedByProgress(view),
         progress_percentage: round1(view.progress_percentage),
@@ -415,7 +456,8 @@ function videosPayload(data) {
         lesson_duration_seconds: toIntOrNull(view.lesson_duration_seconds),
         watched_text: formatDuration(toIntOrNull(view.watch_progress_seconds)),
         duration_text: formatDuration(toIntOrNull(view.lesson_duration_seconds)),
-      viewed_text: formatDateTime(view.viewed_at),
+      never_opened: Boolean(view.never_opened) || !(Number(view.progress_percentage) > 0),
+      viewed_text: view.viewed_at ? formatDateTime(view.viewed_at) : 'لسه مافتحهوش',
     })),
   };
 }

@@ -101,7 +101,26 @@ async function getCatalogueTotals(bootcampIds) {
   };
 }
 
+// دروس الكورسات بأسماءها ومددها — أساس عرض **كل** محتوى الكورس في التقرير، مش اللي الطالب
+// فتحه بس. مفرّدة بالاسم لنفس سبب getCatalogueTotals (درس واحد في كورسين)
+async function getCatalogueLessons(bootcampIds) {
+  if (!bootcampIds.length) return [];
+  const result = await pool.query(
+    `SELECT DISTINCT ON (l.lesson_name) l.lesson_name, l.duration_seconds, tb.name AS bootcamp_name
+     FROM tafra_bootcamp_lessons l
+     JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = l.tafra_bootcamp_id
+     WHERE l.tafra_bootcamp_id = ANY($1::bigint[]) AND l.is_video AND l.duration_seconds > 0
+     ORDER BY l.lesson_name, l.duration_seconds DESC`,
+    [bootcampIds]
+  );
+  return result.rows.map((row) => ({
+    lesson_name: row.lesson_name,
+    duration_seconds: Number(row.duration_seconds) || 0,
+    bootcamp_name: (row.bootcamp_name || '').trim(),
+  }));
+}
+
 module.exports = {
-  buildBootcampCatalogue, saveBootcampCatalogue, getCatalogueTotals,
+  buildBootcampCatalogue, saveBootcampCatalogue, getCatalogueTotals, getCatalogueLessons,
   STABLE_PAGES_BEFORE_STOP, MAX_PAGES_PER_BOOTCAMP,
 };

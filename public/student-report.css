@@ -144,6 +144,11 @@
 .report-stat-grid > div { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
 .report-stat-grid span { font-size: 11.5px; }
 
+/* الدرس اللي لسه مافتحهوش — باهت شوية عشان العين تفرّق بينه وبين اللي اتفرّج عليه من غير ما
+   يختفي، لأن وجوده في القايمة هو المعلومة نفسها */
+.report-untouched td:first-child, .report-untouched .report-bar-label { color: var(--text-faint); }
+.report-untouched .report-bar-track { opacity: 0.5; }
+
 #videos-section:not(.show-all) .report-extra-row { display: none; }
 .report-more-btn {
   margin-top: 12px; width: 100%; padding: 10px; cursor: pointer;

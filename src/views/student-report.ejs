@@ -285,33 +285,41 @@
           fillOverall(donut(pct, tone(pct)),
             esc(summary.watched_text) + ' <span>من ' + esc(summary.total_text) + '</span>', line);
 
-          var note = '<p class="report-note">كل فيديو ونسبة اللي شافه منه، وقد إيه اتفرّج فعلًا من مدة الفيديو.'
+          var note = '<p class="report-note">كل فيديوهات الكورس ظاهرة تحت — اللي اتفرّج عليها الأول،'
+            + ' وبعديهم اللي لسه مافتحهمش.'
             + (summary.truncated ? ' <span class="report-muted">(معروض أحدث ' + summary.shown + ' من ' + summary.total + ')</span>' : '') + '</p>';
 
-          var bars = '<div class="report-bars">' + videos.filter(function (v) {
-            return v.progress_percentage !== null;
-          }).slice(0, 20).map(function (v) {
-            var p = Math.max(2, Math.min(100, v.progress_percentage));
-            var t = v.progress_percentage >= 75 ? 'high' : v.progress_percentage >= 30 ? 'mid' : 'low';
-            return '<div class="report-bar-row">'
+          // الأشرطة بتغطي كل دروس الكورس — اللي مافتحهوش شريطه فاضي، وده المعلومة المهمة
+          // لولي الأمر: فاضل إيه لسه
+          var bars = '<div class="report-bars">' + views.slice(0, 25).map(function (v) {
+            var pct = Number(v.progress_percentage) || 0;
+            var p = Math.max(0, Math.min(100, pct));
+            var t = pct >= 75 ? 'high' : pct >= 30 ? 'mid' : 'low';
+            return '<div class="report-bar-row' + (v.never_opened ? ' report-untouched' : '') + '">'
               + '<span class="report-bar-label" title="' + esc(v.lesson_name) + '">' + esc(v.lesson_name) + '</span>'
-              + '<span class="report-bar-track"><span class="report-bar-fill ' + t + '" style="width:' + p + '%"></span></span>'
-              + '<span class="report-bar-value">' + v.progress_percentage + '%</span></div>';
+              + '<span class="report-bar-track">'
+              + (p > 0 ? '<span class="report-bar-fill ' + t + '" style="width:' + p + '%"></span>' : '')
+              + '</span>'
+              + '<span class="report-bar-value">' + (v.never_opened ? '—' : pct + '%') + '</span></div>';
           }).join('') + '</div>';
 
           var VISIBLE = 15;
           var table = '<div class="report-table-wrap"><table><thead><tr>'
             + '<th>الفيديو</th><th>الكورس</th><th>نسبة المشاهدة</th><th>اتفرّج</th><th>التاريخ والوقت</th>'
             + '</tr></thead><tbody>' + views.map(function (v, index) {
-              return '<tr' + (index >= VISIBLE ? ' class="report-extra-row"' : '') + '><td>' + esc(v.lesson_name) + '</td>'
+              var cls = (index >= VISIBLE ? ' report-extra-row' : '') + (v.never_opened ? ' report-untouched' : '');
+              return '<tr' + (cls ? ' class="' + cls.trim() + '"' : '') + '><td>' + esc(v.lesson_name) + '</td>'
                 + '<td class="report-muted">' + esc(v.bootcamp_name || '—') + '</td>'
-                + '<td>' + (v.progress_percentage === null ? '—' : v.progress_percentage + '%')
-                + (v.is_completed ? ' <span class="report-tag ok">✅ خلّصه</span>' : '') + '</td>'
-                + '<td class="report-muted">' + esc(v.watched_text) + ' من ' + esc(v.duration_text) + '</td>'
+                + '<td>' + (v.never_opened
+                  ? '<span class="report-tag no">لسه مافتحهوش</span>'
+                  : v.progress_percentage + '%' + (v.is_completed ? ' <span class="report-tag ok">✅ خلّصه</span>' : '')) + '</td>'
+                + '<td class="report-muted">' + (v.never_opened
+                  ? '— من ' + esc(v.duration_text)
+                  : esc(v.watched_text) + ' من ' + esc(v.duration_text)) + '</td>'
                 + '<td class="report-muted">' + esc(v.viewed_text) + '</td></tr>';
             }).join('') + '</tbody></table></div>'
             + (views.length > VISIBLE
-              ? '<button type="button" class="report-more-btn" id="show-all-videos">عرض كل الـ' + views.length + ' سطر</button>'
+              ? '<button type="button" class="report-more-btn" id="show-all-videos">عرض كل فيديوهات الكورس (' + views.length + ')</button>'
               : '');
 
           section.innerHTML = note + bars + table;
