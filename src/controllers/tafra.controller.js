@@ -1,3 +1,4 @@
+const fs = require('fs');
 const pool = require('../config/db');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { TafraReadOnlyClient, BASE_URL } = require('../integrations/tafraClient');
@@ -588,22 +589,35 @@ async function listNewBotContactIds(req, res) {
 
 // إرسال رسالة جماعية عن طريق "بوت طفرة" نفسه لمشتركين فيه بالفعل (المخاطبين المحددين لازم يكونوا
 // موجودين في new_bot_contacts أصلًا — تليجرام مايسمحش نبعت لحد لسه ما بدأش نفس البوت ده)
+// حد تليجرام لنص الصورة (caption) — أقصر بكتير من حد الرسالة النصية العادية (٤٠٩٦)
+const TELEGRAM_CAPTION_LIMIT = 1024;
+
 async function sendNewBotBroadcast(req, res) {
   const newBotManager = require('../bot/newBotManager');
+  const removeUpload = () => { if (req.file?.path) fs.unlink(req.file.path, () => {}); };
   const bot = newBotManager.getBot();
-  if (!bot) return res.status(503).json({ error: 'بوت طفرة غير متصل حاليًا' });
+  if (!bot) { removeUpload(); return res.status(503).json({ error: 'بوت طفرة غير متصل حاليًا' }); }
 
-  const chatIds = Array.isArray(req.body.chat_ids)
-    ? [...new Set(req.body.chat_ids.map(Number).filter((id) => Number.isInteger(id)))]
+  // الطلب بقى multipart عشان الصورة، فالقيم بتوصل نصوص — chat_ids بتيجي JSON مكتوبة
+  const rawChatIds = Array.isArray(req.body.chat_ids)
+    ? req.body.chat_ids
+    : (() => { try { return JSON.parse(req.body.chat_ids || '[]'); } catch { return []; } })();
+  const chatIds = Array.isArray(rawChatIds)
+    ? [...new Set(rawChatIds.map(Number).filter((id) => Number.isInteger(id)))]
     : [];
   const message = String(req.body.message || '').trim();
   const buttonText = String(req.body.button_text || '').trim() || null;
   const buttonUrl = String(req.body.button_url || '').trim() || null;
+  const imagePath = req.file ? req.file.path : null;
 
-  if (!chatIds.length) return res.status(400).json({ error: 'اختر مشترك واحد على الأقل' });
-  if (!message) return res.status(400).json({ error: 'اكتب نص الرسالة' });
-  if (buttonText && !buttonUrl) return res.status(400).json({ error: 'حطيت نص للزرار من غير رابط' });
-  if (buttonUrl && !/^https?:\/\//i.test(buttonUrl)) return res.status(400).json({ error: 'رابط الزرار لازم يبدأ بـ http:// أو https://' });
+  const reject = (error) => { removeUpload(); return res.status(400).json({ error }); };
+  if (!chatIds.length) return reject('اختر مشترك واحد على الأقل');
+  if (!message) return reject('اكتب نص الرسالة');
+  if (buttonText && !buttonUrl) return reject('حطيت نص للزرار من غير رابط');
+  if (buttonUrl && !/^https?:\/\//i.test(buttonUrl)) return reject('رابط الزرار لازم يبدأ بـ http:// أو https://');
+  if (imagePath && message.length > TELEGRAM_CAPTION_LIMIT) {
+    return reject(`النص مع الصورة لازم يكون ${TELEGRAM_CAPTION_LIMIT} حرف على الأكثر — نصك ${message.length}`);
+  }
 
   const replyMarkup = buttonText && buttonUrl
     ? { inline_keyboard: [[{ text: buttonText, url: buttonUrl }]] }
@@ -617,10 +631,24 @@ async function sendNewBotBroadcast(req, res) {
   let sent = 0;
   let failed = 0;
   const sentChatIds = [];
+  // أول إرسال بيرفع الصورة لتليجرام فعليًا، وبيرجّع file_id بنعيد استخدامه في كل اللي بعده —
+  // من غير كده كنا هنرفع نفس الملف مئات المرات، وده بطء وضغط بلا داعي على السيرفر وعليهم
+  let telegramFileId = null;
   for (const contact of contactsResult.rows) {
     try {
       const personalized = message.replaceAll('الاسم', contact.first_name || 'صديقنا');
-      await bot.telegram.sendMessage(contact.chat_id, personalized, { reply_markup: replyMarkup });
+      if (imagePath) {
+        const photo = telegramFileId || { source: imagePath };
+        const result = await bot.telegram.sendPhoto(contact.chat_id, photo, {
+          caption: personalized, reply_markup: replyMarkup,
+        });
+        if (!telegramFileId) {
+          const sizes = result?.photo || [];
+          telegramFileId = sizes[sizes.length - 1]?.file_id || null;
+        }
+      } else {
+        await bot.telegram.sendMessage(contact.chat_id, personalized, { reply_markup: replyMarkup });
+      }
       sent += 1;
       sentChatIds.push(contact.chat_id);
     } catch (error) {
@@ -629,6 +657,7 @@ async function sendNewBotBroadcast(req, res) {
     }
     await new Promise((resolve) => setTimeout(resolve, 60));
   }
+  removeUpload();
   if (sentChatIds.length) {
     await pool.query(
       'UPDATE new_bot_contacts SET last_broadcast_at = NOW() WHERE chat_id = ANY($1::bigint[])',

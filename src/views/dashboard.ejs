@@ -690,6 +690,20 @@
             <textarea id="newbot-sub-message" placeholder="اكتب نص الرسالة هنا... تقدر تستخدم كلمة الاسم وهتتحول لاسم كل طالب"></textarea>
           </div>
           <div class="field">
+            <label>صورة (اختياري — JPG أو PNG، بحد أقصى 10MB)</label>
+            <div class="image-picker-row">
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+                اختيار صورة
+                <input type="file" id="newbot-sub-image" accept="image/jpeg,image/png" style="display:none">
+              </label>
+              <span id="newbot-sub-image-name" class="image-file-name">لم يتم اختيار صورة</span>
+              <button type="button" id="clear-newbot-sub-image" class="btn btn-danger-ghost btn-sm" style="display:none">إزالة</button>
+            </div>
+            <p class="ticket-muted" id="newbot-sub-image-note" style="margin-top:6px; display:none">
+              مع الصورة، تليجرام بيسمح بـ ١٠٢٤ حرف بس للنص — <span id="newbot-sub-char-count"></span>
+            </p>
+          </div>
+          <div class="field">
             <label>زرار تحت الرسالة (اختياري)</label>
             <div class="row" style="gap:10px">
               <input type="text" id="newbot-sub-button-text" class="compact-input" placeholder="نص الزرار" maxlength="64" style="flex:1">
@@ -5832,28 +5846,65 @@ ${mark}${percent}`;
         document.getElementById('newbot-sub-button-text').value = '';
         document.getElementById('newbot-sub-button-url').value = '';
       });
+      // اختيار الصورة — العدّاد بيظهر بس لما تبقى فيه صورة، لأن حد الـ١٠٢٤ حرف مالوش لازمة من غيرها
+      const newBotImageInput = document.getElementById('newbot-sub-image');
+      const newBotImageName = document.getElementById('newbot-sub-image-name');
+      const newBotImageClear = document.getElementById('clear-newbot-sub-image');
+      const newBotImageNote = document.getElementById('newbot-sub-image-note');
+      const newBotCharCount = document.getElementById('newbot-sub-char-count');
+      const newBotMessageBox = document.getElementById('newbot-sub-message');
+
+      function refreshNewBotImageState() {
+        const file = newBotImageInput.files[0];
+        newBotImageName.textContent = file ? file.name : 'لم يتم اختيار صورة';
+        newBotImageClear.style.display = file ? 'inline-flex' : 'none';
+        newBotImageNote.style.display = file ? 'block' : 'none';
+        if (file) {
+          const length = newBotMessageBox.value.trim().length;
+          newBotCharCount.textContent = `نصك دلوقتي ${length} حرف`;
+          newBotCharCount.style.color = length > 1024 ? 'var(--danger)' : 'var(--text-faint)';
+        }
+      }
+      function clearNewBotSubImage() {
+        newBotImageInput.value = '';
+        refreshNewBotImageState();
+      }
+      newBotImageInput.addEventListener('change', refreshNewBotImageState);
+      newBotImageClear.addEventListener('click', clearNewBotSubImage);
+      newBotMessageBox.addEventListener('input', refreshNewBotImageState);
+
       document.getElementById('send-newbot-sub-btn').addEventListener('click', async () => {
         const btn = document.getElementById('send-newbot-sub-btn');
         const message = document.getElementById('newbot-sub-message').value.trim();
         const buttonText = document.getElementById('newbot-sub-button-text').value.trim();
         const buttonUrl = document.getElementById('newbot-sub-button-url').value.trim();
+        const image = document.getElementById('newbot-sub-image').files[0];
         if (!selectedNewBotSubChatIds.size) return showToast('اختار مشترك واحد على الأقل');
         if (!message) return showToast('اكتب نص الرسالة الأول');
         if (buttonText && !buttonUrl) return showToast('حطيت نص للزرار من غير رابط');
         if (buttonUrl && !/^https?:\/\//i.test(buttonUrl)) return showToast('رابط الزرار لازم يبدأ بـ http:// أو https://');
-        if (!confirm(`إرسال الرسالة دي لـ ${selectedNewBotSubChatIds.size} مشترك عن طريق بوت طفرة؟`)) return;
+        // تليجرام بيقصّ نص الصورة عند ١٠٢٤ حرف، فبنمنع الإرسال بدل ما الرسالة توصل ناقصة
+        if (image && message.length > 1024) {
+          return showToast(`النص مع الصورة لازم يكون ١٠٢٤ حرف على الأكثر — نصك ${message.length}`);
+        }
+        const what = image ? 'الصورة والرسالة دول' : 'الرسالة دي';
+        if (!confirm(`إرسال ${what} لـ ${selectedNewBotSubChatIds.size} مشترك عن طريق بوت طفرة؟`)) return;
         btn.disabled = true;
         try {
-          const result = await api('/api/tafra/new-bot-broadcast', {
-            method: 'POST',
-            body: JSON.stringify({
-              chat_ids: [...selectedNewBotSubChatIds], message,
-              button_text: buttonText || undefined, button_url: buttonUrl || undefined,
-            }),
-          });
+          // multipart مش JSON عشان الصورة — chat_ids بتتبعت JSON مكتوبة والباك إند بيفكّها
+          const formData = new FormData();
+          formData.append('chat_ids', JSON.stringify([...selectedNewBotSubChatIds]));
+          formData.append('message', message);
+          if (buttonText) formData.append('button_text', buttonText);
+          if (buttonUrl) formData.append('button_url', buttonUrl);
+          if (image) formData.append('image', image);
+          const response = await fetch('/api/tafra/new-bot-broadcast', { method: 'POST', body: formData });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || 'فشل الإرسال');
           showToast(`تم الإرسال: ${result.sent} نجح${result.failed ? ` — ${result.failed} فشل` : ''}`);
           selectedNewBotSubChatIds.clear();
           updateSelectedNewBotSubUi();
+          clearNewBotSubImage();
           loadNewBotSubscribers();
         } catch (error) {
           showToast(error.message);
