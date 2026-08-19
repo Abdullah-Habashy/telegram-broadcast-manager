@@ -45,6 +45,42 @@
 .report-kpi-label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 .report-kpi-value { font-size: 24px; font-weight: 700; line-height: 1.15; }
 
+/* ---------- التقرير الإجمالي ---------- */
+.report-overall { border-color: var(--primary); }
+.report-overall-intro { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
+.report-overall-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 14px;
+}
+.report-overall-item {
+  display: flex; align-items: flex-start; gap: 14px;
+  background: var(--surface-sunken); border-radius: 12px; padding: 14px;
+}
+.report-overall-text { min-width: 0; flex: 1; }
+.report-overall-title { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.report-overall-big { font-size: 26px; font-weight: 700; line-height: 1.2; }
+.report-overall-big span { font-size: 14px; font-weight: 500; color: var(--text-muted); }
+.report-overall-line { font-size: 12.5px; color: var(--text-muted); line-height: 1.9; margin: 6px 0 0; }
+.report-overall-line b { color: var(--text); }
+.report-overall-courses { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.report-overall-courses .report-chips { margin-bottom: 0; margin-top: 8px; }
+
+/* دايرة النسبة — نصف القطر مختار بحيث محيط الدايرة = ١٠٠، فالـ dasharray بيتكتب نسبة مباشرة */
+.report-donut { width: 62px; height: 62px; flex-shrink: 0; }
+.report-donut-placeholder { width: 62px; height: 62px; flex-shrink: 0; border-radius: 50%; background: var(--border); opacity: 0.4; }
+.report-donut-bg { stroke: var(--border); }
+.report-donut-fg { stroke: var(--text-faint); transition: stroke-dasharray 0.4s ease; }
+.report-donut.good .report-donut-fg { stroke: var(--success); }
+.report-donut.mid .report-donut-fg { stroke: var(--warning); }
+.report-donut.low .report-donut-fg { stroke: var(--danger); }
+.report-donut.none .report-donut-fg { stroke: transparent; }
+.report-donut-text {
+  font-size: 10px; font-weight: 700; fill: var(--text);
+  text-anchor: middle; dominant-baseline: central; font-family: var(--font-main);
+}
+
+.report-mark { white-space: nowrap; }
+.report-mark b { font-size: 14px; }
+
 .report-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
   padding: 18px; margin-bottom: 16px;
@@ -111,6 +147,10 @@
   .report-kpis { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
   .report-kpi-value { font-size: 20px; }
   .report-bar-row { grid-template-columns: minmax(80px, 46%) 1fr auto; font-size: 12px; }
+  .report-overall-grid { grid-template-columns: 1fr; }
+  .report-overall-item { padding: 12px; gap: 12px; }
+  .report-donut, .report-donut-placeholder { width: 54px; height: 54px; }
+  .report-overall-big { font-size: 22px; }
 }
 
 @media print {

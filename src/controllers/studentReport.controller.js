@@ -54,6 +54,21 @@ function formatDuration(seconds) {
   return hours ? `${days} يوم و${hours} ساعة` : `${days} يوم`;
 }
 
+// دائرة نسبة صغيرة — نصف القطر ١٥.٩١٥٥ بيخلي محيط الدايرة = ١٠٠ بالظبط، فالـ dasharray
+// بيتكتب بالنسبة المئوية مباشرة من غير أي حساب. ولي الأمر بيقرا الشكل قبل ما يقرا الرقم
+function donutSvg(percent, tone) {
+  const value = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  return `<svg viewBox="0 0 42 42" class="report-donut ${tone || ''}" role="img" aria-label="${value}%">
+    <circle class="report-donut-bg" cx="21" cy="21" r="15.9155" fill="none" stroke-width="4"></circle>
+    <circle class="report-donut-fg" cx="21" cy="21" r="15.9155" fill="none" stroke-width="4"
+      stroke-dasharray="${value} ${100 - value}" stroke-dashoffset="25" stroke-linecap="round"></circle>
+    <text x="21" y="21" class="report-donut-text">${value}%</text>
+  </svg>`;
+}
+
+// اللون بيتبع المعنى: أخضر كويس، أصفر متوسط، أحمر محتاج انتباه
+const donutTone = (percent) => (percent >= 70 ? 'good' : percent >= 40 ? 'mid' : 'low');
+
 const toIntOrNull = (value) => (value === null || value === undefined ? null : Number(value));
 const round1 = (value) => (value === null || value === undefined ? null : Math.round(Number(value) * 10) / 10);
 
@@ -64,14 +79,40 @@ async function buildStudentReport(student) {
   const studentId = Number(student.tafra_student_id);
   const contactId = student.contact_id ? Number(student.contact_id) : null;
 
-  const [exams, bootcamps, calls, callSummary, engagement, platformActivity] = await Promise.all([
+  const [exams, examsAvailable, bootcamps, calls, callSummary, engagement, platformActivity] = await Promise.all([
+    // النهاية العظمى مش راجعة من المنصة، لكنها مستنتجة بدقة من أي درجة: الدرجة ÷ النسبة × ١٠٠.
+    // بتتحسب من **كل** درجات الاختبار مش من درجة الطالب لوحده، عشان اللي جاب صفر (نسبته صفر
+    // فمش ممكن نقسم عليها) يبان له كمان "٠ من ١٥". MODE بتاخد أشهر قيمة فالتقريب مايأثرش
     pool.query(`
+      WITH exam_totals AS (
+        SELECT exam_type, tafra_exam_id,
+          MODE() WITHIN GROUP (ORDER BY ROUND(mark / NULLIF(percentage, 0) * 100))::int AS max_mark
+        FROM tafra_exam_marks
+        WHERE percentage > 0 AND mark IS NOT NULL
+        GROUP BY exam_type, tafra_exam_id
+      )
       SELECT te.name AS exam_name, te.bootcamp_name, tem.mark, tem.percentage,
-        COALESCE(tem.taken_at, tem.updated_at) AS occurred_at
+        et.max_mark, COALESCE(tem.taken_at, tem.updated_at) AS occurred_at
       FROM tafra_exam_marks tem
       JOIN tafra_exams te ON te.exam_type = tem.exam_type AND te.tafra_exam_id = tem.tafra_exam_id
+      LEFT JOIN exam_totals et ON et.exam_type = tem.exam_type AND et.tafra_exam_id = tem.tafra_exam_id
       WHERE tem.tafra_student_id = $1
       ORDER BY occurred_at DESC NULLS LAST`, [studentId]),
+
+    // الاختبارات المتاحة للطالب = اختبارات الأبواب اللي مشترك فيها، زائد أي اختبار عنده فيه
+    // درجة فعلًا. الشق التاني مهم لأن المنصة مابترجعش اسم الكورس لكل اختبار، فاختبار دخله
+    // الطالب ومالوش اسم كورس كان هيختفي من المقام ويطلع "دخل ٢٥ من ١٢"
+    pool.query(`
+      SELECT COUNT(*)::int AS available
+      FROM tafra_exams te
+      WHERE (te.bootcamp_name IS NOT NULL AND EXISTS (
+               SELECT 1 FROM tafra_enrollments e
+               JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = e.tafra_bootcamp_id
+               WHERE e.tafra_student_id = $1 AND e.enrollment_type = 'enroll'
+                 AND TRIM(tb.name) = TRIM(te.bootcamp_name)))
+         OR EXISTS (SELECT 1 FROM tafra_exam_marks m
+               WHERE m.exam_type = te.exam_type AND m.tafra_exam_id = te.tafra_exam_id
+                 AND m.tafra_student_id = $1)`, [studentId]),
 
     pool.query(`
       SELECT tb.name, e.enrolled_at
@@ -146,6 +187,7 @@ async function buildStudentReport(student) {
     name: (row.exam_name || '').trim(),
     bootcamp: row.bootcamp_name ? row.bootcamp_name.trim() : null,
     mark: row.mark === null ? null : Number(row.mark),
+    max_mark: row.max_mark === null || row.max_mark === undefined ? null : Number(row.max_mark),
     percentage: round1(row.percentage),
     occurred_at: row.occurred_at,
     occurred_text: formatDateTime(row.occurred_at),
@@ -182,6 +224,8 @@ async function buildStudentReport(student) {
     exams: {
       rows: examRows,
       total: examRows.length,
+      // المتاح مايقلّش عن اللي دخله فعلًا مهما حصل — أي فرق كده معناه نقص في بيانات المنصة مش تقدّم
+      available: Math.max(examRows.length, Number((examsAvailable.rows[0] || {}).available) || 0),
       graded: gradedExams.length,
       average: examAverage,
       best: gradedExams.length ? Math.max(...gradedExams.map((row) => row.percentage)) : null,
@@ -230,7 +274,7 @@ async function renderPublicReport(req, res) {
     // نفس الرد للتوكن الغلط والتوكن الملغي — عشان محدش يقدر يفرّق بينهم بالتجربة
     if (!student) return res.status(404).render('report-not-found');
     const report = await buildStudentReport(student);
-    res.render('student-report', { report, token: req.params.token });
+    res.render('student-report', { report, token: req.params.token, donutSvg, donutTone });
   } catch (error) {
     console.error('❌ Failed to render student report:', error.message);
     res.status(500).send('تعذر تحميل التقرير، حاول تاني بعد شوية.');
