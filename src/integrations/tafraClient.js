@@ -190,6 +190,16 @@ class TafraReadOnlyClient {
     return this.getWithRetry(`${BASE_URL}/online-exams/${safeExamId}/students?page=${safePage}`);
   }
 
+  // مشاهدات كورس كامل (كل الطلاب) — filter[bootcamp_id] مدعوم هنا، على عكس /online-lessons
+  // اللي مابيقبلش غير search و material_id. ده المصدر الوحيد اللي بيربط الدرس بالكورس
+  async getBootcampLessonViewsPage(bootcampId, page) {
+    const safeBootcampId = Number(bootcampId);
+    const safePage = Math.max(1, Number(page) || 1);
+    if (!Number.isInteger(safeBootcampId) || safeBootcampId <= 0) throw new Error('رقم الكورس غير صالح');
+    return this.getWithRetry(
+      `${BASE_URL}/online-lessons/views/index?filter[bootcamp_id]=${safeBootcampId}&sort=-viewed_at&page=${safePage}`);
+  }
+
   // ملاحظة: filter[search] معطّل على هذا المسار من طرف المنصة نفسها (خطأ 500) — لا تضِفه أبدًا هنا
   async getOfflineExamMarksPage(examId, page) {
     const safeExamId = Number(examId);

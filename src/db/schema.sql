@@ -561,6 +561,28 @@ CREATE TABLE IF NOT EXISTS tafra_selective_sync_status (
 INSERT INTO tafra_selective_sync_status (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 -- أسماء الاختبارات (أونلاين وورقي) المسحوبة من منصة طفرة — مفهوم منفصل عن الأبواب/الكورسات
+-- كتالوج دروس كل كورس — إجابة سؤال "الكورس ده فيه كام فيديو وبكام دقيقة؟".
+--
+-- المنصة مافيهاش نقطة بترجّع محتوى الكورس: /online-lessons بترجّع كل دروس المادة (الكيمياء
+-- كلها) من غير أي ربط بالكورس، و bootcamps/:id.duration_in_seconds طلعت مدة إتاحة مش مجموع
+-- الفيديوهات (٢٤٣١ دقيقة لكورس دروسه الحقيقية ٩٨١). الربط الوحيد المتاح بين الدرس والكورس
+-- موجود في سجل المشاهدات، فبنبني الكتالوج منه: بنمسح مشاهدات الكورس (كل الطلاب مش طالب واحد)
+-- ونجمع أسماء الدروس ومددها. الاتحاد ده بيستقر بسرعة — كورس الباب الأول وصل ٤٠ درس بعد ١٥
+-- صفحة وفضل ثابت لحد ٦٠.
+--
+-- ليه محتاجينه: سجل مشاهدات الطالب الواحد بيرجّع الدروس اللي **هو** فتحها بس، فالطالب اللي
+-- فتح ٩ فيديو كان تقريره بيقول "٩ من ٩" يعني ١٠٠% وهو لسه في أول الكورس
+CREATE TABLE IF NOT EXISTS tafra_bootcamp_lessons (
+    tafra_bootcamp_id BIGINT NOT NULL REFERENCES tafra_bootcamps(tafra_bootcamp_id) ON DELETE CASCADE,
+    lesson_name TEXT NOT NULL,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
+    is_video BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tafra_bootcamp_id, lesson_name)
+);
+CREATE INDEX IF NOT EXISTS idx_tafra_bootcamp_lessons_video
+    ON tafra_bootcamp_lessons (tafra_bootcamp_id) WHERE is_video;
+
 CREATE TABLE IF NOT EXISTS tafra_exams (
     exam_type VARCHAR(10) NOT NULL CHECK (exam_type IN ('online', 'offline')),
     tafra_exam_id BIGINT NOT NULL,

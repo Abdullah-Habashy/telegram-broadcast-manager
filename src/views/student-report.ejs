@@ -261,8 +261,9 @@
           var summary = data.summary || {};
           // "المتاح" = كل الفيديوهات اللي المنصة راجعة له فيها سجل، حتى اللي نسبته صفر — دي
           // فيديوهات كورساته المفتوحة له. و"اتفرّج عليه" = اللي نسبته أكبر من صفر
-          var videos = views.filter(function (v) { return v.is_video; });
-          var totalVideos = videos.length;
+          // الصفوف اللي مدتها صفر اتشالت من الخادم خلاص، فاللي واصل هنا فيديوهات حقيقية بس
+          var videos = views;
+          var totalVideos = summary.video_count || videos.length;
           var watched = videos.filter(function (v) { return Number(v.progress_percentage) > 0; }).length;
           // النسبة بالوقت مش بالعدد: الدقايق اللي اتفرّجها فعلًا ÷ دقايق كل الفيديوهات المتاحة.
           // ده اللي بيقيس المحتوى اللي دخل فعلًا، مش كام فيديو فتحه ولو ثانية
@@ -276,9 +277,11 @@
           }
 
           var line = 'اتفرّج <b>' + esc(summary.watched_text) + '</b> من أصل <b>' + esc(summary.total_text) + '</b>'
-            + ' من الفيديوهات المتاحة له، يعني <b>' + pct + '%</b> من المحتوى.'
+            + ' من فيديوهات الكورس، يعني <b>' + pct + '%</b> من المحتوى.'
             + ' فتح <b>' + watched + '</b> فيديو من <b>' + totalVideos + '</b>'
-            + (summary.completed_count ? '، وخلّص منهم <b>' + summary.completed_count + '</b> (شافهم ٩٠% فأكتر)' : '') + '.';
+            + (summary.completed_count ? '، وخلّص منهم <b>' + summary.completed_count + '</b> (شافهم ٩٠% فأكتر)' : '') + '.'
+            + (summary.catalogue_missing
+              ? ' <span class="report-muted">(محتوى الكورس لسه بيتحدّث، فالرقم ده تقديري)</span>' : '');
           fillOverall(donut(pct, tone(pct)),
             esc(summary.watched_text) + ' <span>من ' + esc(summary.total_text) + '</span>', line);
 

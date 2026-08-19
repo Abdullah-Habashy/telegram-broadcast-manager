@@ -21,11 +21,26 @@ const isCompletedByProgress = (row) => Number(row.progress_percentage) >= COMPLE
 
 // بيحسب الملخص من أي قايمة مشاهدات — مفصولة عن الجلب عشان تقرير الكورس الواحد يقدر يفلتر
 // القايمة الأول وبعدين يلخّصها من جديد، فالنِسَب تطلع للكورس ده لوحده مش للكل
-function summariseLessonViews(rows, meta = {}) {
+// درس بمدة صفر مش فيديو: دي مذكرات وملفات PDF ومحتوى مالوش مدة، والمنصة بتعلّم بعضها
+// is_video=true بالغلط. بتتشال من التقرير كله — من الجدول ومن العدد ومن حساب النسبة — لأن
+// وجودها في المقام بينزّل النسبة من غير سبب حقيقي
+const isRealVideo = (row) => row.is_video !== false && Number(row.lesson_duration_seconds) > 0;
+
+function summariseLessonViews(allRows, meta = {}) {
+  // نفس الدرس ممكن يرجع مرتين لو موجود في أكتر من كورس الطالب مشترك فيهم (٥٥ درس عندنا كده)،
+  // فبنسيب أعلى نسخة مشاهدة بس — وإلا وقته المتفرَّج بيتضاعف والنسبة تعدّي ١٠٠%
+  const bestByLesson = new Map();
+  allRows.filter(isRealVideo).forEach((row) => {
+    const key = String(row.lesson_name || '').trim() || `#${row.id}`;
+    const current = bestByLesson.get(key);
+    const watched = Number(row.watch_progress_seconds) || 0;
+    if (!current || watched > (Number(current.watch_progress_seconds) || 0)) bestByLesson.set(key, row);
+  });
+  const rows = [...bestByLesson.values()];
   const total = meta.total === undefined ? rows.length : meta.total;
   const truncated = Boolean(meta.truncated);
 
-  const videos = rows.filter((row) => row.is_video !== false);
+  const videos = rows;
   const completed = videos.filter(isCompletedByProgress).length;
   const percentages = videos
     .map((row) => Number(row.progress_percentage))
@@ -72,4 +87,7 @@ async function fetchStudentLessonViews(credentials, studentId) {
   return summariseLessonViews(rows, { total, truncated });
 }
 
-module.exports = { fetchStudentLessonViews, summariseLessonViews, isCompletedByProgress, COMPLETED_PROGRESS_THRESHOLD };
+module.exports = {
+  fetchStudentLessonViews, summariseLessonViews, isCompletedByProgress, isRealVideo,
+  COMPLETED_PROGRESS_THRESHOLD,
+};

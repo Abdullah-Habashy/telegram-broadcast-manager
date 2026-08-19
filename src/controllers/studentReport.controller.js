@@ -4,6 +4,7 @@ const { getCredentials: getTafraCredentials } = require('./tafra.controller');
 const { fetchStudentLessonViews, summariseLessonViews, isCompletedByProgress } = require('../utils/lessonViews');
 const { UNREACHED_NAMES_SQL, INVALID_NUMBER_SQL, REACHED_CONDITION_SQL } = require('../utils/callOutcomes');
 const botManager = require('../bot/botManager');
+const { getCatalogueTotals } = require('../utils/bootcampLessons');
 
 // ===================== تقرير الطالب المشترَك =====================
 // صفحة عامة يفتحها ولي الأمر أو الطالب برابط فيه توكن، من غير تسجيل دخول.
@@ -357,9 +358,44 @@ async function loadVideosFor(req, student) {
   }
   const bootcamp = await resolveBootcamp(Number(student.tafra_student_id), req.query.bootcamp);
   const all = await fetchStudentLessonViews(credentials, Number(student.tafra_student_id));
-  if (!bootcamp) return all;
-  const filtered = all.views.filter((view) => (view.bootcamp_name || '').trim() === bootcamp.name);
-  return summariseLessonViews(filtered, { total: filtered.length, truncated: false });
+  const data = bootcamp
+    ? summariseLessonViews(all.views.filter((view) => (view.bootcamp_name || '').trim() === bootcamp.name),
+      { total: 0, truncated: false })
+    : all;
+
+  // **مهم:** سجل مشاهدات الطالب بيرجّع الدروس اللي هو فتحها بس — مش محتوى الكورس. فالمقام
+  // بيتاخد من كتالوج الكورس (كل الطلاب)، وإلا الطالب اللي فتح ٩ فيديو كان تقريره بيقول
+  // "٩ من ٩" يعني ١٠٠% وهو لسه في أوله. لو الكتالوج لسه ما اتبناش للكورس ده، بنرجع لأرقام
+  // الطالب نفسه ونعلّم catalogue_missing عشان الصفحة تقول إن الرقم تقديري
+  const bootcampIds = bootcamp
+    ? [bootcamp.id]
+    : (await pool.query(
+      `SELECT e.tafra_bootcamp_id AS id FROM tafra_enrollments e
+       WHERE e.tafra_student_id = $1 AND e.enrollment_type = 'enroll'`,
+      [Number(student.tafra_student_id)])).rows.map((row) => Number(row.id));
+  const catalogue = await getCatalogueTotals(bootcampIds);
+
+  return applyCatalogue(data, catalogue);
+}
+
+// بيستبدل المقام بأرقام الكتالوج ويعيد حساب نسبة الوقت. الوقت المتفرَّج بيفضل بتاع الطالب،
+// بس بيتقص على مدة الدرس عشان إعادة المشاهدة ماتطلّعش النسبة فوق ١٠٠%
+function applyCatalogue(data, catalogue) {
+  if (!catalogue.video_count || !catalogue.total_seconds) {
+    return { ...data, summary: { ...data.summary, catalogue_missing: true } };
+  }
+  const watched = Math.min(data.summary.watched_seconds, catalogue.total_seconds);
+  return {
+    ...data,
+    summary: {
+      ...data.summary,
+      catalogue_missing: false,
+      video_count: catalogue.video_count,
+      total_seconds: catalogue.total_seconds,
+      watched_seconds: watched,
+      time_percentage: Math.round((watched / catalogue.total_seconds) * 1000) / 10,
+    },
+  };
 }
 
 function videosPayload(data) {
