@@ -19,15 +19,33 @@ const COMPLETED_PROGRESS_THRESHOLD = 90;
 
 const isCompletedByProgress = (row) => Number(row.progress_percentage) >= COMPLETED_PROGRESS_THRESHOLD;
 
-async function fetchStudentLessonViews(credentials, studentId) {
-  const client = new TafraReadOnlyClient(credentials.identifier, credentials.password);
-  const { rows, total, truncated } = await client.getStudentLessonViews(studentId);
+// بيحسب الملخص من أي قايمة مشاهدات — مفصولة عن الجلب عشان تقرير الكورس الواحد يقدر يفلتر
+// القايمة الأول وبعدين يلخّصها من جديد، فالنِسَب تطلع للكورس ده لوحده مش للكل
+function summariseLessonViews(rows, meta = {}) {
+  const total = meta.total === undefined ? rows.length : meta.total;
+  const truncated = Boolean(meta.truncated);
 
   const videos = rows.filter((row) => row.is_video !== false);
   const completed = videos.filter(isCompletedByProgress).length;
   const percentages = videos
     .map((row) => Number(row.progress_percentage))
     .filter((value) => Number.isFinite(value));
+
+  // نسبة المشاهدة الحقيقية = الدقايق اللي اتفرّجها فعلًا ÷ دقايق كل الفيديوهات المتاحة له.
+  // مختلفة عن متوسط النسب: طالب فتح فيديو قصير وخلّصه وساب محاضرة ساعتين متوسطه بيطلع ٥٠%،
+  // لكنه فعليًا شاف جزء صغير من المحتوى. الوقت بيقيس اللي اتشاف فعلًا مش عدد المرات
+  const sumSeconds = (key) => videos.reduce((total, row) => {
+    const value = Number(row[key]);
+    return total + (Number.isFinite(value) && value > 0 ? value : 0);
+  }, 0);
+  // المشاهدة ممكن تتعدّى مدة الفيديو (إعادة مشاهدة)، فبنقصّها على المدة عشان النسبة ما تعديش ١٠٠%
+  const watchedSeconds = videos.reduce((total, row) => {
+    const watched = Number(row.watch_progress_seconds);
+    const duration = Number(row.lesson_duration_seconds);
+    if (!Number.isFinite(watched) || watched <= 0) return total;
+    return total + (Number.isFinite(duration) && duration > 0 ? Math.min(watched, duration) : watched);
+  }, 0);
+  const totalSeconds = sumSeconds('lesson_duration_seconds');
 
   return {
     views: rows,
@@ -37,11 +55,21 @@ async function fetchStudentLessonViews(credentials, studentId) {
       truncated,
       video_count: videos.length,
       completed_count: completed,
+      opened_count: videos.filter((row) => Number(row.progress_percentage) > 0).length,
       average_progress: percentages.length
         ? Math.round((percentages.reduce((sum, value) => sum + value, 0) / percentages.length) * 10) / 10
         : null,
+      watched_seconds: watchedSeconds,
+      total_seconds: totalSeconds,
+      time_percentage: totalSeconds ? Math.round((watchedSeconds / totalSeconds) * 1000) / 10 : null,
     },
   };
 }
 
-module.exports = { fetchStudentLessonViews, isCompletedByProgress, COMPLETED_PROGRESS_THRESHOLD };
+async function fetchStudentLessonViews(credentials, studentId) {
+  const client = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+  const { rows, total, truncated } = await client.getStudentLessonViews(studentId);
+  return summariseLessonViews(rows, { total, truncated });
+}
+
+module.exports = { fetchStudentLessonViews, summariseLessonViews, isCompletedByProgress, COMPLETED_PROGRESS_THRESHOLD };

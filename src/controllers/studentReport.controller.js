@@ -1,8 +1,9 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
 const { getCredentials: getTafraCredentials } = require('./tafra.controller');
-const { fetchStudentLessonViews, isCompletedByProgress } = require('../utils/lessonViews');
+const { fetchStudentLessonViews, summariseLessonViews, isCompletedByProgress } = require('../utils/lessonViews');
 const { UNREACHED_NAMES_SQL, INVALID_NUMBER_SQL, REACHED_CONDITION_SQL } = require('../utils/callOutcomes');
+const botManager = require('../bot/botManager');
 
 // ===================== تقرير الطالب المشترَك =====================
 // صفحة عامة يفتحها ولي الأمر أو الطالب برابط فيه توكن، من غير تسجيل دخول.
@@ -36,6 +37,17 @@ function formatDateTime(value) {
 function formatDate(value) {
   if (!value) return '—';
   return dateFormatter.format(new Date(value));
+}
+
+// مدة محتوى بالساعات — "27 ساعة" أوضح لولي الأمر من "يوم و3 ساعات" لما نتكلم عن مدة فيديوهات،
+// لأنه بيقارنها بوقت مذاكرة مش بمدة زمنية متصلة
+function formatContentDuration(seconds) {
+  const value = Math.max(0, Math.round(Number(seconds) || 0));
+  if (!value) return 'صفر';
+  if (value < 3600) return `${Math.max(1, Math.round(value / 60))} دقيقة`;
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.round((value % 3600) / 60);
+  return minutes ? `${hours} ساعة و${minutes} دقيقة` : `${hours} ساعة`;
 }
 
 // مدة بالثواني → أوضح وحدة تعبّر عنها بالعربي
@@ -75,9 +87,26 @@ const round1 = (value) => (value === null || value === undefined ? null : Math.r
 // ---------- بناء بيانات التقرير ----------
 // كل ده من قاعدتنا (سريع). مشاهدات الفيديوهات لوحدها نداء لحظي لمنصة طفرة، فبتتجاب على حدة
 // من الصفحة بعد ما تفتح — عشان بطء أو وقوع المنصة مايمنعش باقي التقرير من الظهور
-async function buildStudentReport(student) {
+// الكورس المختار (لو فيه) — بنتأكد إن الطالب مشترك فيه فعلًا قبل ما نفلتر بيه، عشان تغيير الرقم
+// في الرابط مايوريش بيانات كورس مش بتاعه. المطابقة باسم الكورس مش برقمه، لأن tafra_exams
+// بتخزّن الاسم نصًا (المنصة مابترجّعش رقم الكورس على الاختبار)
+async function resolveBootcamp(studentId, bootcampId) {
+  const id = Number(bootcampId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const result = await pool.query(`
+    SELECT tb.tafra_bootcamp_id AS id, tb.name
+    FROM tafra_enrollments e
+    JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = e.tafra_bootcamp_id
+    WHERE e.tafra_student_id = $1 AND e.enrollment_type = 'enroll' AND tb.tafra_bootcamp_id = $2
+    LIMIT 1`, [studentId, id]);
+  const row = result.rows[0];
+  return row ? { id: Number(row.id), name: (row.name || '').trim() } : null;
+}
+
+async function buildStudentReport(student, bootcamp) {
   const studentId = Number(student.tafra_student_id);
   const contactId = student.contact_id ? Number(student.contact_id) : null;
+  const bootcampName = bootcamp ? bootcamp.name : null;
 
   const [exams, examsAvailable, bootcamps, calls, callSummary, engagement, platformActivity] = await Promise.all([
     // النهاية العظمى مش راجعة من المنصة، لكنها مستنتجة بدقة من أي درجة: الدرجة ÷ النسبة × ١٠٠.
@@ -97,7 +126,8 @@ async function buildStudentReport(student) {
       JOIN tafra_exams te ON te.exam_type = tem.exam_type AND te.tafra_exam_id = tem.tafra_exam_id
       LEFT JOIN exam_totals et ON et.exam_type = tem.exam_type AND et.tafra_exam_id = tem.tafra_exam_id
       WHERE tem.tafra_student_id = $1
-      ORDER BY occurred_at DESC NULLS LAST`, [studentId]),
+        AND ($2::text IS NULL OR TRIM(te.bootcamp_name) = TRIM($2::text))
+      ORDER BY occurred_at DESC NULLS LAST`, [studentId, bootcampName]),
 
     // الاختبارات المتاحة للطالب = اختبارات الأبواب اللي مشترك فيها، زائد أي اختبار عنده فيه
     // درجة فعلًا. الشق التاني مهم لأن المنصة مابترجعش اسم الكورس لكل اختبار، فاختبار دخله
@@ -105,17 +135,20 @@ async function buildStudentReport(student) {
     pool.query(`
       SELECT COUNT(*)::int AS available
       FROM tafra_exams te
-      WHERE (te.bootcamp_name IS NOT NULL AND EXISTS (
+      WHERE ((te.bootcamp_name IS NOT NULL AND EXISTS (
                SELECT 1 FROM tafra_enrollments e
                JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = e.tafra_bootcamp_id
                WHERE e.tafra_student_id = $1 AND e.enrollment_type = 'enroll'
                  AND TRIM(tb.name) = TRIM(te.bootcamp_name)))
-         OR EXISTS (SELECT 1 FROM tafra_exam_marks m
+         -- اختبار دخله الطالب وماعرفناش كورسه بيتحسب في الإجمالي العام بس. لما نفلتر على كورس
+         -- معيّن مابيتحسبش، لأننا مش عارفين هو تابع له ولا لأ
+         OR ($2::text IS NULL AND EXISTS (SELECT 1 FROM tafra_exam_marks m
                WHERE m.exam_type = te.exam_type AND m.tafra_exam_id = te.tafra_exam_id
-                 AND m.tafra_student_id = $1)`, [studentId]),
+                 AND m.tafra_student_id = $1)))
+        AND ($2::text IS NULL OR TRIM(te.bootcamp_name) = TRIM($2::text))`, [studentId, bootcampName]),
 
     pool.query(`
-      SELECT tb.name, e.enrolled_at
+      SELECT tb.tafra_bootcamp_id AS id, tb.name, e.enrolled_at
       FROM tafra_enrollments e
       JOIN tafra_bootcamps tb ON tb.tafra_bootcamp_id = e.tafra_bootcamp_id
       WHERE e.tafra_student_id = $1 AND e.enrollment_type = 'enroll'
@@ -217,7 +250,9 @@ async function buildStudentReport(student) {
       status: student.status || null,
     },
     generated_at_text: formatDateTime(new Date().toISOString()),
+    bootcamp: bootcamp || null,
     bootcamps: bootcamps.rows.map((row) => ({
+      id: Number(row.id),
       name: (row.name || '').trim(),
       enrolled_text: row.enrolled_at ? formatDate(row.enrolled_at) : null,
     })),
@@ -268,30 +303,73 @@ async function findStudentByToken(token) {
 
 // ---------- الصفحة العامة ----------
 
+async function renderReport(req, res, student, staffPreview) {
+  const bootcamp = await resolveBootcamp(Number(student.tafra_student_id), req.query.bootcamp);
+  const report = await buildStudentReport(student, bootcamp);
+  res.render('student-report', { report, donutSvg, donutTone, staffPreview: Boolean(staffPreview) });
+}
+
 async function renderPublicReport(req, res) {
   try {
     const student = await findStudentByToken(req.params.token);
     // نفس الرد للتوكن الغلط والتوكن الملغي — عشان محدش يقدر يفرّق بينهم بالتجربة
     if (!student) return res.status(404).render('report-not-found');
-    const report = await buildStudentReport(student);
-    res.render('student-report', { report, token: req.params.token, donutSvg, donutTone });
+    await renderReport(req, res, student, false);
   } catch (error) {
     console.error('❌ Failed to render student report:', error.message);
     res.status(500).send('تعذر تحميل التقرير، حاول تاني بعد شوية.');
   }
 }
 
-// مشاهدات الفيديوهات — نداء لحظي لمنصة طفرة، منفصل عن الصفحة عشان بطئه أو فشله مايأثرش عليها
-async function getPublicReportVideos(req, res) {
+// نفس التقرير بالظبط لكن للموظف المسجّل دخول، بمعرّف الطالب بدل التوكن — عشان يفتحه وهو
+// بيتكلم مع الطالب أو قبل ما يتصل بيه، من غير ما يضطر يعمل رابط عام لكل واحد بيسأل عنه
+async function loadStudentById(studentId) {
+  const result = await pool.query(`
+    SELECT s.tafra_student_id, s.name, s.student_code, s.status, s.grade_level, c.id AS contact_id
+    FROM tafra_students s
+    LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
+    WHERE s.tafra_student_id = $1`, [studentId]);
+  return result.rows[0] || null;
+}
+
+async function renderStaffReport(req, res) {
+  const studentId = Number(req.params.id);
+  if (!Number.isInteger(studentId)) return res.status(400).send('الطالب غير صالح');
   try {
-    const student = await findStudentByToken(req.params.token);
-    if (!student) return res.status(404).json({ error: 'الرابط ده مش صالح' });
-    const credentials = await getTafraCredentials();
-    if (!credentials) return res.status(503).json({ error: 'بيانات المنصة مش متاحة حاليًا' });
-    const data = await fetchStudentLessonViews(credentials, Number(student.tafra_student_id));
-    res.json({
-      summary: data.summary,
-      views: data.views.map((view) => ({
+    const student = await loadStudentById(studentId);
+    if (!student) return res.status(404).render('report-not-found');
+    await renderReport(req, res, student, true);
+  } catch (error) {
+    console.error('❌ Failed to render staff student report:', error.message);
+    res.status(500).send('تعذر تحميل التقرير، حاول تاني بعد شوية.');
+  }
+}
+
+// مشاهدات الفيديوهات — نداء لحظي لمنصة طفرة، منفصل عن الصفحة عشان بطئه أو فشله مايأثرش عليها
+// المشاهدات لطالب، مفلترة على كورس واحد لو مطلوب. المنصة مابتقبلش فلتر كورس على نقطة
+// المشاهدات — بترجّع الكل وإحنا بنقص وبنلخّص من جديد
+async function loadVideosFor(req, student) {
+  const credentials = await getTafraCredentials();
+  if (!credentials) {
+    const error = new Error('بيانات المنصة مش متاحة حاليًا');
+    error.httpStatus = 503;
+    throw error;
+  }
+  const bootcamp = await resolveBootcamp(Number(student.tafra_student_id), req.query.bootcamp);
+  const all = await fetchStudentLessonViews(credentials, Number(student.tafra_student_id));
+  if (!bootcamp) return all;
+  const filtered = all.views.filter((view) => (view.bootcamp_name || '').trim() === bootcamp.name);
+  return summariseLessonViews(filtered, { total: filtered.length, truncated: false });
+}
+
+function videosPayload(data) {
+  return {
+    summary: {
+      ...data.summary,
+      watched_text: formatContentDuration(data.summary.watched_seconds),
+      total_text: formatContentDuration(data.summary.total_seconds),
+    },
+    views: data.views.map((view) => ({
         lesson_name: view.lesson_name,
         bootcamp_name: view.bootcamp_name,
         is_video: view.is_video !== false,
@@ -301,12 +379,32 @@ async function getPublicReportVideos(req, res) {
         lesson_duration_seconds: toIntOrNull(view.lesson_duration_seconds),
         watched_text: formatDuration(toIntOrNull(view.watch_progress_seconds)),
         duration_text: formatDuration(toIntOrNull(view.lesson_duration_seconds)),
-        viewed_text: formatDateTime(view.viewed_at),
-      })),
-    });
+      viewed_text: formatDateTime(view.viewed_at),
+    })),
+  };
+}
+
+async function getPublicReportVideos(req, res) {
+  try {
+    const student = await findStudentByToken(req.params.token);
+    if (!student) return res.status(404).json({ error: 'الرابط ده مش صالح' });
+    res.json(videosPayload(await loadVideosFor(req, student)));
   } catch (error) {
     console.error('❌ Failed to load public report videos:', error.message);
-    res.status(502).json({ error: 'تعذر جلب المشاهدات من المنصة دلوقتي' });
+    res.status(error.httpStatus || 502).json({ error: error.httpStatus ? error.message : 'تعذر جلب المشاهدات من المنصة دلوقتي' });
+  }
+}
+
+async function getStaffReportVideos(req, res) {
+  const studentId = Number(req.params.id);
+  if (!Number.isInteger(studentId)) return res.status(400).json({ error: 'الطالب غير صالح' });
+  try {
+    const student = await loadStudentById(studentId);
+    if (!student) return res.status(404).json({ error: 'الطالب غير موجود' });
+    res.json(videosPayload(await loadVideosFor(req, student)));
+  } catch (error) {
+    console.error('❌ Failed to load staff report videos:', error.message);
+    res.status(error.httpStatus || 502).json({ error: error.httpStatus ? error.message : 'تعذر جلب المشاهدات من المنصة دلوقتي' });
   }
 }
 
@@ -380,6 +478,64 @@ async function revokeReportLink(req, res) {
   }
 }
 
+// بيبعت رابط التقرير للطالب نفسه على تيليجرام من جوه المحادثة، وبيسجّل الرسالة في المحادثة
+// زي أي رد عادي — فالموظف بيشوف إنها اتبعتت فعلًا وامتى، والطالب بيلاقيها في نفس الشات.
+// التوكن بيتعمل لو مش موجود، ومابيتجددش لو موجود عشان الرابط اللي اتشارك قبل كده مايموتش
+async function sendReportToStudent(req, res) {
+  const ticketId = Number(req.params.id);
+  if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'التذكرة غير صالحة' });
+
+  try {
+    const result = await pool.query(`
+      SELECT t.assigned_to, c.chat_id, c.last_contacted_at, s.tafra_student_id, s.name, s.report_token
+      FROM tickets t
+      JOIN contacts c ON c.id = t.contact_id
+      LEFT JOIN LATERAL (
+        SELECT tafra_student_id, name, report_token FROM tafra_students
+        WHERE telegram_chat_id = c.chat_id LIMIT 1
+      ) s ON true
+      WHERE t.id = $1`, [ticketId]);
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+    if (req.session.userRole !== 'admin'
+      && row.assigned_to !== null && row.assigned_to !== undefined
+      && Number(row.assigned_to) !== Number(req.session.userId)) {
+      return res.status(403).json({ error: 'التذكرة دي مسندة لموظف تاني' });
+    }
+    if (!row.tafra_student_id) return res.status(400).json({ error: 'الطالب ده مش مربوط بحساب على منصة طفرة' });
+    // تيليجرام مايسمحش نبدأ محادثة مع حد ما كلّمش البوت — نفس قيد الإرسال في باقي اللوحة
+    if (!row.last_contacted_at) return res.status(400).json({ error: 'الطالب ده لسه ما بدأش محادثة مع البوت' });
+
+    let token = row.report_token;
+    if (!token) {
+      token = crypto.randomBytes(32).toString('hex');
+      await pool.query(
+        'UPDATE tafra_students SET report_token = $1, report_token_created_at = NOW() WHERE tafra_student_id = $2',
+        [token, row.tafra_student_id]
+      );
+    }
+
+    const url = reportUrl(req, token);
+    const firstName = (row.name || '').trim().split(/\s+/)[0] || '';
+    const message = `${firstName ? firstName + '، ' : ''}ده تقرير متابعتك على المنصة 👇\n\n`
+      + `فيه اختباراتك ودرجاتك، والفيديوهات اللي اتفرجت عليها، ومتابعتنا معاك.\n`
+      + `الرابط بيتحدّث لوحده في أي وقت تفتحه:\n${url}`;
+
+    const bot = botManager.getBot();
+    if (!bot) return res.status(503).json({ error: 'البوت مش متاح حاليًا' });
+    const sent = await bot.telegram.sendMessage(row.chat_id, message);
+    await pool.query(
+      'INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id) VALUES ($1, $2, $3, $4)',
+      [ticketId, req.session.userId, message, sent.message_id]
+    );
+    await pool.query('UPDATE tickets SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1', [ticketId]);
+    res.json({ ok: true, url });
+  } catch (error) {
+    console.error('❌ Failed to send student report:', error.message);
+    res.status(502).json({ error: 'تعذر إرسال التقرير للطالب: ' + error.message });
+  }
+}
+
 // الوصول من التذكرة: الموظف بيفتح التقرير من المحادثة، فبيحتاج يحوّل التذكرة لطالب الأول
 async function resolveStudentIdFromTicket(req, res) {
   const ticketId = Number(req.params.id);
@@ -408,6 +564,6 @@ async function resolveStudentIdFromTicket(req, res) {
 }
 
 module.exports = {
-  renderPublicReport, getPublicReportVideos,
-  getReportLink, createReportLink, revokeReportLink, resolveStudentIdFromTicket,
+  renderPublicReport, getPublicReportVideos, renderStaffReport, getStaffReportVideos,
+  getReportLink, createReportLink, revokeReportLink, resolveStudentIdFromTicket, sendReportToStudent,
 };

@@ -515,6 +515,21 @@ function buildNewBotContactFilters(query) {
         AND e.tafra_bootcamp_id = ANY($${params.length}::bigint[])
     )`);
   }
+  // استبعاد المشتركين في أبواب معيّنة — عكس فلتر الباب اللي فوقه بالظبط، والاتنين ينفع يشتغلوا
+  // مع بعض. الاستخدام الأساسي: تستهدف اللي **لسه ماشتركش** في الباب الأول أو المنهج كاملا
+  // عشان تبعتلهم عرض، من غير ما توصل لحد مشترك فيه أصلًا.
+  // المشترك اللي مالوش صف في tafra_students (مش طالب منصة) مابيتستبعدش — هو أصلًا مش مشترك
+  // في أي باب، والـ NOT EXISTS بيرجّع TRUE لما tafra_student_id تبقى NULL
+  const excludeBootcampIds = parseFilterList(query.exclude_bootcamp)
+    .map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  if (excludeBootcampIds.length) {
+    params.push(excludeBootcampIds);
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM tafra_enrollments e
+      WHERE e.tafra_student_id = s.tafra_student_id AND e.enrollment_type = 'enroll'
+        AND e.tafra_bootcamp_id = ANY($${params.length}::bigint[])
+    )`);
+  }
   // استبعاد من اتبعتله رسالة عن طريق بوت طفرة نفسه اليوم بالفعل — لتفادي تكرار الإرسال لنفس المشترك مرتين
   if (query.exclude_sent_today === 'true') {
     conditions.push('(nbc.last_broadcast_at IS NULL OR nbc.last_broadcast_at < CURRENT_DATE)');
@@ -1400,15 +1415,27 @@ async function performExamSync(credentials) {
         // لأسباب على مستوى المنصة نفسها، فمحتاجين أكتر من محاولة قبل ما نستسلم
         const sampleStudentIds = new Set();
         const MAX_BOOTCAMP_SAMPLES = 3;
+        // كل صفحة ليها try خاص بيها: صفحة واحدة بتفشل كانت بتوقّف الاختبار كله وتسيبه ناقص
+        // مئات الدرجات من غير ما حد يعرف (اختبار #68 كان ناقص 422 درجة كده). دلوقتي بنعدّي
+        // على اللي بعدها وبنعدّ الصفحات اللي وقعت عشان تبان في اللوج
+        let failedPages = 0;
         for (let page = 1; page <= totalPages; page += 1) {
-          const response = page === 1 ? first : await getPage(page);
-          const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-          if (sampleStudentIds.size < MAX_BOOTCAMP_SAMPLES) {
-            rows.forEach((row) => { if (row.user_id) sampleStudentIds.add(row.user_id); });
+          try {
+            const response = page === 1 ? first : await getPage(page);
+            const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+            if (sampleStudentIds.size < MAX_BOOTCAMP_SAMPLES) {
+              rows.forEach((row) => { if (row.user_id) sampleStudentIds.add(row.user_id); });
+            }
+            await saveExamMarksPage(exam.exam_type, exam.id, rows);
+            syncedMarks += rows.length;
+          } catch (pageError) {
+            failedPages += 1;
+            console.error(`⚠️ Page ${page}/${totalPages} of exam ${exam.exam_type}#${exam.id} failed:`, pageError.message);
           }
-          await saveExamMarksPage(exam.exam_type, exam.id, rows);
-          syncedMarks += rows.length;
           if (page < totalPages) await tafra.waitForRateLimit();
+        }
+        if (failedPages) {
+          console.error(`⚠️ Exam ${exam.exam_type}#${exam.id} (${exam.name}) synced with ${failedPages} failed page(s) — marks may be incomplete until the next run`);
         }
 
         // اسم الكورس التابع له الاختبار متاح بس للأونلاين — بنجرّب كذا طالب لحد ما نلاقي واحد راجع بيانات

@@ -110,6 +110,10 @@ app.post(newBotManager.WEBHOOK_PATH, (req, res) => {
 app.get('/r/:token', studentReportController.renderPublicReport);
 app.get('/r/:token/videos', studentReportController.getPublicReportVideos);
 
+// نفس التقرير للموظف المسجّل دخول بمعرّف الطالب — من غير ما يحتاج يعمل رابط عام
+app.get('/student-report/:id', requireAuth, studentReportController.renderStaffReport);
+app.get('/student-report/:id/videos', requireAuth, studentReportController.getStaffReportVideos);
+
 // ===== صفحات المصادقة =====
 app.use('/', authRoutes);
 

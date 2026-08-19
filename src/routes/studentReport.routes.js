@@ -8,6 +8,7 @@ const { requireAuthApi } = require('../middleware/requireAuth');
 // الصفحة العامة نفسها متسجّلة في server.js على /r/:token برّه المسارات المحمية
 router.use(requireAuthApi);
 router.get('/ticket/:id/student', controller.resolveStudentIdFromTicket);
+router.post('/ticket/:id/send', controller.sendReportToStudent);
 router.get('/:id', controller.getReportLink);
 router.post('/:id', controller.createReportLink);
 router.delete('/:id', controller.revokeReportLink);

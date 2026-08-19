@@ -703,6 +703,7 @@
         <div class="card tafra-student-filters">
           <input type="search" id="newbot-sub-search" class="compact-input" placeholder="بحث بالاسم أو اليوزر">
           <input type="hidden" id="newbot-sub-bootcamp-filter" value="">
+          <input type="hidden" id="newbot-sub-exclude-bootcamp-filter" value="">
           <select id="newbot-sub-gender-filter" class="compact-select" title="نوع الطالب متخمّن من اسمه، مش بيانات مؤكدة من المنصة">
             <option value="">كل الأنواع (ولد/بنت)</option>
             <option value="male">ولد</option>
@@ -3202,6 +3203,9 @@
       // بس محتاج فلتر الباب بنفس الافتراضي)
       createMultiSelectFilter('newbot-sub-bootcamp-filter', 'الباب/الكورس')
         .setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
+      // فلتر الاستبعاد بياخد نفس قايمة الأبواب — بيشيل المشتركين فيها بدل ما يقصر عليهم
+      createMultiSelectFilter('newbot-sub-exclude-bootcamp-filter', 'استبعاد المشتركين في...')
+        ?.setOptions(filters.bootcamps.map((item) => ({ value: item.id, label: item.name })));
 
       // افتراضيًا نفعّل فلتر البابين الأكتر استخدامًا (الباب الأول الانتقالية + المنهج كاملا) مع بعض
       // عشان محتاجش تختارهم يدويًا كل مرة — بيتطبّق بس أول ما الصفحة تتحمّل (لو الفلتر لسه فاضي)،
@@ -3320,9 +3324,11 @@
           <div class="tafra-student-name">${escapeHtml(student.name || 'بدون اسم')}</div>
           <div class="tafra-student-sub">رقم الطالب: ${escapeHtml(student.tafra_student_id)} — الكود: ${escapeHtml(student.student_code || '—')}</div>
           ${openChatButtonHtml(student)}
-          ${showReport ? `<button type="button" class="btn btn-ghost btn-sm student-report-btn"
+          ${showReport ? `<a class="btn btn-ghost btn-sm student-report-btn" target="_blank" rel="noopener"
+            href="/student-report/${student.tafra_student_id}" title="افتح تقرير الطالب">📄 تقرير</a>
+          <button type="button" class="btn btn-ghost btn-sm student-report-btn"
             data-report-student="${student.tafra_student_id}"
-            data-report-name="${escapeHtml(student.name || 'الطالب')}">📄 تقرير</button>` : ''}
+            data-report-name="${escapeHtml(student.name || 'الطالب')}" title="رابط للمشاركة">🔗</button>` : ''}
         </td>
         <td>${bootcampMarksHtml(student, 'sm') || '<span class="badge badge-muted">—</span>'}</td>
         <td>${escapeHtml(student.phone || '—')}</td>
@@ -3748,9 +3754,12 @@ ${mark}${percent}`;
             ${data.sms ? `<a class="btn btn-ghost btn-sm" style="width:auto" id="profile-sms-btn" href="sms:${data.sms.phone}?body=${encodeURIComponent(data.sms.body)}" title="بيفتح تطبيق الرسائل على تليفونك والنص جاهز — تدوس إرسال وخلاص">✉️ رسالة SMS</a>` : ''}
             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-urgent-btn">${student.is_urgent ? '🚨 إلغاء عاجل' : '🚨 وسم عاجل'}</button>
             <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="toggle-student-exams-btn">📝 الاختبارات والفيديوهات</button>
+            <a class="btn btn-primary btn-sm" style="width:auto" target="_blank" rel="noopener"
+              href="/student-report/${student.tafra_student_id}"
+              title="بيفتح تقرير الطالب كامل في تاب جديد — درجاته ومشاهداته ومكالماته">📄 افتح التقرير</a>
             <button type="button" class="btn btn-ghost btn-sm student-report-btn" style="width:auto"
               data-report-student="${student.tafra_student_id}"
-              data-report-name="${escapeHtml(student.name || 'الطالب')}">📄 تقرير للمشاركة</button>
+              data-report-name="${escapeHtml(student.name || 'الطالب')}">🔗 رابط للمشاركة</button>
             ${student.ticket_id ? `<button type="button" class="btn btn-ghost btn-sm" id="open-call-student-ticket">صندوق الدعم</button>` : ''}
           </div>
         </div>
@@ -4754,8 +4763,12 @@ ${mark}${percent}`;
               style="${ticket.is_urgent ? 'background:var(--danger-tint,#fdeaea)' : ''}">🚨</button>
             <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-lessons-toggle"
               title="مشاهدات فيديوهات الطالب" aria-label="مشاهدات الفيديوهات" aria-expanded="false">🎬</button>
+            <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-report-open-btn"
+              title="افتح تقرير الطالب كامل" aria-label="افتح تقرير الطالب">📄</button>
+            <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-report-send-btn"
+              title="ابعت التقرير للطالب في الشات بضغطة" aria-label="ابعت التقرير للطالب">📨</button>
             <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-report-btn"
-              title="تقرير الطالب — رابط يتشارك مع ولي الأمر" aria-label="تقرير الطالب">📄</button>
+              title="رابط التقرير — للمشاركة مع ولي الأمر" aria-label="رابط التقرير">🔗</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-status-toggle" title="الحالة وبيانات التذكرة" aria-label="إظهار الحالة وبيانات التذكرة" aria-expanded="false">◉</button>
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-details-toggle icon-only-mobile" id="mobile-ticket-follow-up-toggle" title="موعد المتابعة" aria-label="إظهار موعد المتابعة" aria-expanded="false">📅</button>
           </div>
@@ -4919,13 +4932,41 @@ ${mark}${percent}`;
 
         // مشاهدات الفيديوهات: نداء لحظي لمنصة طفرة، فبيتحمّل أول ما الموظف يفتح الكارت مش مع
         // كل تذكرة بيفتحها. dataset.loaded بيمنع إعادة التحميل مع كل فتح وقفل
-        // زرار التقرير بيحتاج يحوّل التذكرة لطالب منصة الأول — مش كل من بيكلم البوت طالب مسجّل
+        // أزرار التقرير بتحتاج تحوّل التذكرة لطالب منصة الأول — مش كل من بيكلم البوت طالب مسجّل
+        async function ticketStudentId() {
+          const result = await api('/api/student-report/ticket/' + ticketId + '/student');
+          if (!result.tafra_student_id) {
+            showToast('الطالب ده مش مربوط بحساب على منصة طفرة، فمفيش تقرير');
+            return null;
+          }
+          return result.tafra_student_id;
+        }
+        document.getElementById('ticket-report-open-btn').addEventListener('click', async (event) => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          try {
+            const studentId = await ticketStudentId();
+            if (studentId) window.open('/student-report/' + studentId, '_blank', 'noopener');
+          } catch (error) { showToast(error.message); }
+          finally { button.disabled = false; }
+        });
         document.getElementById('ticket-report-btn').addEventListener('click', async () => {
           try {
-            const result = await api('/api/student-report/ticket/' + ticketId + '/student');
-            if (!result.tafra_student_id) return showToast('الطالب ده مش مربوط بحساب على منصة طفرة، فمفيش تقرير');
-            openStudentReportDialog(result.tafra_student_id, studentDisplayName(ticket));
+            const studentId = await ticketStudentId();
+            if (studentId) openStudentReportDialog(studentId, studentDisplayName(ticket));
           } catch (error) { showToast(error.message); }
+        });
+        // الإرسال بيروح للطالب نفسه على تيليجرام وبيتسجّل في المحادثة زي أي رد — فبيتأكد الأول
+        document.getElementById('ticket-report-send-btn').addEventListener('click', async (event) => {
+          if (!confirm('هيتبعت لينك التقرير للطالب في الشات على تيليجرام. تأكيد؟')) return;
+          const button = event.currentTarget;
+          button.disabled = true;
+          try {
+            await api('/api/student-report/ticket/' + ticketId + '/send', { method: 'POST' });
+            showToast('اتبعت التقرير للطالب');
+            loadTicket(ticketId);
+          } catch (error) { showToast(error.message); }
+          finally { button.disabled = false; }
         });
 
         const lessonsToggle = document.getElementById('ticket-lessons-toggle');
@@ -5559,10 +5600,12 @@ ${mark}${percent}`;
       const params = new URLSearchParams({ page: newBotSubPage, limit: 50 });
       const search = document.getElementById('newbot-sub-search').value.trim();
       const bootcamp = document.getElementById('newbot-sub-bootcamp-filter').value;
+      const excludeBootcamp = document.getElementById('newbot-sub-exclude-bootcamp-filter').value;
       const gender = document.getElementById('newbot-sub-gender-filter').value;
       const telegram = document.getElementById('newbot-sub-telegram-filter').value;
       if (search) params.set('search', search);
       if (bootcamp) params.set('bootcamp', bootcamp);
+      if (excludeBootcamp) params.set('exclude_bootcamp', excludeBootcamp);
       if (gender) params.set('gender', gender);
       if (telegram) params.set('telegram', telegram);
       if (document.getElementById('newbot-sub-exclude-sent-today').checked) params.set('exclude_sent_today', 'true');
@@ -5644,7 +5687,7 @@ ${mark}${percent}`;
       await loadTafraStudentFilters(); // بيجهّز خيارات وافتراضي فلتر الباب (الباب الأول + المنهج كاملا)
       loadNewBotReachabilitySyncStatus();
       loadNewBotWebhookStatus();
-      registerFilterGroup('newbot', ['newbot-sub-search','newbot-sub-bootcamp-filter','newbot-sub-gender-filter','newbot-sub-telegram-filter','newbot-sub-exclude-sent-today']);
+      registerFilterGroup('newbot', ['newbot-sub-search','newbot-sub-bootcamp-filter','newbot-sub-exclude-bootcamp-filter','newbot-sub-gender-filter','newbot-sub-telegram-filter','newbot-sub-exclude-sent-today']);
       loadNewBotSubscribers();
       // نجهّز آخر رسالة وزرار اتبعتوا فعليًا كقيم افتراضية (لو لسه فاضيين) — وإلا رابط بوت المتابعة
       // كافتراضي احتياطي للزرار لو معندناش إرسال سابق أصلًا
@@ -5718,6 +5761,10 @@ ${mark}${percent}`;
         clearTimeout(newBotSubSearchTimer);
         newBotSubSearchTimer = setTimeout(() => { newBotSubPage = 1; loadNewBotSubscribers(); }, 350);
       });
+      document.getElementById('newbot-sub-exclude-bootcamp-filter').addEventListener('change', () => {
+        newBotSubPage = 1;
+        loadNewBotSubscribers();
+      });
       document.getElementById('newbot-sub-bootcamp-filter').addEventListener('change', () => {
         newBotSubPage = 1; loadNewBotSubscribers();
       });
@@ -5736,8 +5783,10 @@ ${mark}${percent}`;
         document.getElementById('newbot-sub-gender-filter').value = '';
         document.getElementById('newbot-sub-telegram-filter').value = '';
         document.getElementById('newbot-sub-bootcamp-filter').value = '';
+        document.getElementById('newbot-sub-exclude-bootcamp-filter').value = '';
         document.getElementById('newbot-sub-exclude-sent-today').checked = false;
         multiSelectControllers['newbot-sub-bootcamp-filter']?.refresh();
+        multiSelectControllers['newbot-sub-exclude-bootcamp-filter']?.refresh();
         newBotSubPage = 1;
         loadNewBotSubscribers();
       });

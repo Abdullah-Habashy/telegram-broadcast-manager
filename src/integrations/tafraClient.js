@@ -49,6 +49,12 @@ class TafraReadOnlyClient {
       if (!response.ok || payload?.success === false) {
         const error = new Error(payload?.message || `Tafra request failed (${response.status})`);
         error.status = response.status;
+        // المنصة بترجّع أحيانًا **200** ومعاها success:false ونص خطأ PHP داخلي (شوفنا
+        // "Attempt to read property \"name\" on null" على صفحات درجات في نص المزامنة).
+        // ده خلل لحظي عندهم بيعدّي لو أعدنا المحاولة، لكن الحالة دي كانت بتفلت من إعادة
+        // المحاولة تمامًا لأن شرطها status >= 500 و 200 مش أكبر من 500 — فالمزامنة كانت
+        // بتسيب الاختبار ناقص من غير ما تحاول تاني
+        error.platformFailure = response.ok && payload?.success === false;
         throw error;
       }
       return payload;
@@ -89,7 +95,8 @@ class TafraReadOnlyClient {
         if (error.status === 401) {
           this.accessToken = null;
           await this.ensureLogin();
-        } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429 || error.status >= 500)) {
+        } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429
+          || error.status >= 500 || error.platformFailure)) {
           await delay(attempt * 1500);
         } else {
           throw error;
@@ -129,7 +136,8 @@ class TafraReadOnlyClient {
         if (error.status === 401) {
           this.accessToken = null;
           await this.ensureLogin();
-        } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429 || error.status >= 500)) {
+        } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429
+          || error.status >= 500 || error.platformFailure)) {
           await delay(attempt * 1500);
         } else {
           throw error;
@@ -154,7 +162,8 @@ class TafraReadOnlyClient {
         if (isSessionExpiredError(error)) {
           this.accessToken = null;
           await this.ensureLogin();
-        } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429 || error.status >= 500)) {
+        } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429
+          || error.status >= 500 || error.platformFailure)) {
           await delay(attempt * 1500);
         } else {
           throw error;

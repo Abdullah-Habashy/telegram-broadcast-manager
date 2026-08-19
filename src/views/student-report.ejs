@@ -12,9 +12,10 @@
       <div>
         <h1><%= report.student.name %></h1>
         <p class="report-subtitle">
-          تقرير المتابعة
+          <%= report.bootcamp ? 'تقرير كورس: ' + report.bootcamp.name : 'تقرير المتابعة' %>
           <% if (report.student.grade_level) { %> · <%= report.student.grade_level %><% } %>
           <% if (report.student.student_code) { %> · كود <%= report.student.student_code %><% } %>
+          <% if (staffPreview) { %> · <span class="report-staff-badge">معاينة داخلية</span><% } %>
         </p>
       </div>
       <div class="report-header-side">
@@ -29,6 +30,19 @@
     <section class="report-card report-overall">
       <h2>📊 التقرير الإجمالي</h2>
       <p class="report-overall-intro">ملخّص سريع لكل حاجة — الدايرة بتوضّح النسبة، والجملة جنبها بتقول المعنى.</p>
+
+      <% if (report.bootcamps.length > 1) { %>
+        <%# مبدّل الكورس: بيقصر الاختبارات والفيديوهات على كورس واحد. المكالمات والرسايل
+            مالهاش كورس بطبيعتها فبتفضل زي ما هي، وفيه سطر بيوضّح ده %>
+        <div class="report-course-switch">
+          <span class="report-course-switch-label">اعرض:</span>
+          <a class="report-course-tab <%= report.bootcamp ? '' : 'active' %>" href="?">كل الكورسات</a>
+          <% report.bootcamps.forEach((bootcamp) => { %>
+            <a class="report-course-tab <%= report.bootcamp && report.bootcamp.id === bootcamp.id ? 'active' : '' %>"
+               href="?bootcamp=<%= bootcamp.id %>"><%= bootcamp.name %></a>
+          <% }) %>
+        </div>
+      <% } %>
 
       <div class="report-overall-grid">
         <!-- الاختبارات -->
@@ -67,6 +81,7 @@
             <div class="report-overall-title">📞 المكالمات</div>
             <div class="report-overall-big"><%= report.calls.answered %> <span>من <%= report.calls.total %></span></div>
             <p class="report-overall-line">
+              <% if (report.bootcamp) { %><span class="report-scope-hint">المكالمات مش مرتبطة بكورس معيّن</span><br><% } %>
               <% if (!report.calls.total) { %>
                 لسه ما اتصلناش بيه ولا مرة.
               <% } else { %>
@@ -86,6 +101,7 @@
             <div class="report-overall-title">💬 الرسايل</div>
             <div class="report-overall-big"><%= report.engagement.replied_to %> <span>من <%= report.engagement.messages_sent %></span></div>
             <p class="report-overall-line">
+              <% if (report.bootcamp) { %><span class="report-scope-hint">الرسايل مش مرتبطة بكورس معيّن</span><br><% } %>
               <% if (!report.engagement.messages_sent) { %>
                 لسه ما بعتناش له رسايل متابعة على تيليجرام.
               <% } else { %>
@@ -98,7 +114,7 @@
         </div>
       </div>
 
-      <% if (report.bootcamps.length) { %>
+      <% if (report.bootcamps.length && !report.bootcamp) { %>
         <div class="report-overall-courses">
           <div class="report-overall-title">📚 الكورسات المشترك فيها</div>
           <div class="report-chips">
@@ -238,7 +254,7 @@
           + '<p class="report-overall-line">' + line + '</p></div>';
       }
 
-      fetch(location.pathname.replace(/\/$/, '') + '/videos')
+      fetch(location.pathname.replace(/\/$/, '') + '/videos' + location.search)
         .then(function (response) { return response.ok ? response.json() : Promise.reject(new Error('failed')); })
         .then(function (data) {
           var views = data.views || [];
@@ -248,7 +264,10 @@
           var videos = views.filter(function (v) { return v.is_video; });
           var totalVideos = videos.length;
           var watched = videos.filter(function (v) { return Number(v.progress_percentage) > 0; }).length;
-          var pct = totalVideos ? (watched / totalVideos) * 100 : 0;
+          // النسبة بالوقت مش بالعدد: الدقايق اللي اتفرّجها فعلًا ÷ دقايق كل الفيديوهات المتاحة.
+          // ده اللي بيقيس المحتوى اللي دخل فعلًا، مش كام فيديو فتحه ولو ثانية
+          var pct = summary.time_percentage === null || summary.time_percentage === undefined
+            ? 0 : summary.time_percentage;
 
           if (!totalVideos) {
             fillOverall(donut(0, 'none'), '0 <span>من 0</span>', 'مفيش فيديوهات متاحة له على المنصة لسه.');
@@ -256,11 +275,12 @@
             return;
           }
 
-          var line = 'اتفرّج على <b>' + watched + '</b> فيديو من <b>' + totalVideos + '</b> متاحين له'
-            + (summary.completed_count ? '، وخلّص منهم <b>' + summary.completed_count + '</b> (شافهم ٩٠% فأكتر)' : '')
-            + (summary.average_progress !== null && summary.average_progress !== undefined
-              ? '، وبمتوسط مشاهدة <b>' + summary.average_progress + '%</b>' : '') + '.';
-          fillOverall(donut(pct, tone(pct)), watched + ' <span>من ' + totalVideos + '</span>', line);
+          var line = 'اتفرّج <b>' + esc(summary.watched_text) + '</b> من أصل <b>' + esc(summary.total_text) + '</b>'
+            + ' من الفيديوهات المتاحة له، يعني <b>' + pct + '%</b> من المحتوى.'
+            + ' فتح <b>' + watched + '</b> فيديو من <b>' + totalVideos + '</b>'
+            + (summary.completed_count ? '، وخلّص منهم <b>' + summary.completed_count + '</b> (شافهم ٩٠% فأكتر)' : '') + '.';
+          fillOverall(donut(pct, tone(pct)),
+            esc(summary.watched_text) + ' <span>من ' + esc(summary.total_text) + '</span>', line);
 
           var note = '<p class="report-note">كل فيديو ونسبة اللي شافه منه، وقد إيه اتفرّج فعلًا من مدة الفيديو.'
             + (summary.truncated ? ' <span class="report-muted">(معروض أحدث ' + summary.shown + ' من ' + summary.total + ')</span>' : '') + '</p>';
