@@ -531,9 +531,16 @@ function buildNewBotContactFilters(query) {
         AND e.tafra_bootcamp_id = ANY($${params.length}::bigint[])
     )`);
   }
-  // استبعاد من اتبعتله رسالة عن طريق بوت طفرة نفسه اليوم بالفعل — لتفادي تكرار الإرسال لنفس المشترك مرتين
-  if (query.exclude_sent_today === 'true') {
+  // استبعاد من اتبعتله رسالة عن طريق بوت طفرة من فترة قريبة — لتفادي إزعاج نفس المشترك بأكتر
+  // من رسالة في وقت قصير. 'today' معناها من أول النهار، والأرقام معناها آخر كذا يوم من دلوقتي.
+  // exclude_sent_today القديمة لسه مدعومة عشان أي رابط أو فلتر محفوظ من قبل التغيير مايبوظش.
+  const excludeSentWithin = String(query.exclude_sent_within || '').trim();
+  if (excludeSentWithin === 'today' || query.exclude_sent_today === 'true') {
     conditions.push('(nbc.last_broadcast_at IS NULL OR nbc.last_broadcast_at < CURRENT_DATE)');
+  } else if (/^d{1,3}$/.test(excludeSentWithin) && Number(excludeSentWithin) > 0) {
+    params.push(Number(excludeSentWithin));
+    conditions.push(`(nbc.last_broadcast_at IS NULL
+      OR nbc.last_broadcast_at < now() - make_interval(days => $${params.length}::int))`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const joins = `

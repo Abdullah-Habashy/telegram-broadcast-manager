@@ -729,10 +729,12 @@
             <option value="started">بدأ بوت المتابعة (يمكن مراسلته منه)</option>
             <option value="linked_not_started">لم يبدأ بوت المتابعة</option>
           </select>
-          <label class="row" style="gap:8px; cursor:pointer; white-space:nowrap; flex-wrap:nowrap" title="استبعاد من اتبعتله رسالة عن طريق بوت طفرة اليوم بالفعل، لتفادي تكرار الإرسال لنفس المشترك مرتين في نفس اليوم">
-            <input type="checkbox" id="newbot-sub-exclude-sent-today" style="width:auto">
-            <span>استبعاد من أُرسل له اليوم</span>
-          </label>
+          <select id="newbot-sub-exclude-sent-within" class="compact-select" title="استبعاد من اتبعتله رسالة عن طريق بوت طفرة من فترة قريبة، عشان ماتزعجش نفس المشترك بأكتر من رسالة في وقت قصير">
+            <option value="">من غير استبعاد بالإرسال السابق</option>
+            <option value="today">استبعاد من أُرسل له اليوم</option>
+            <option value="3">استبعاد من أُرسل له خلال ٣ أيام</option>
+            <option value="7">استبعاد من أُرسل له خلال ٧ أيام</option>
+          </select>
           <button type="button" class="btn btn-ghost" id="clear-newbot-sub-filters">مسح الفلاتر</button>
           <button type="button" class="btn btn-ghost" id="refresh-newbot-subs-btn">تحديث</button>
         </div>
@@ -5622,7 +5624,8 @@ ${mark}${percent}`;
       if (excludeBootcamp) params.set('exclude_bootcamp', excludeBootcamp);
       if (gender) params.set('gender', gender);
       if (telegram) params.set('telegram', telegram);
-      if (document.getElementById('newbot-sub-exclude-sent-today').checked) params.set('exclude_sent_today', 'true');
+      const excludeSentWithin = document.getElementById('newbot-sub-exclude-sent-within').value;
+      if (excludeSentWithin) params.set('exclude_sent_within', excludeSentWithin);
       return params.toString();
     }
 
@@ -5701,7 +5704,7 @@ ${mark}${percent}`;
       await loadTafraStudentFilters(); // بيجهّز خيارات وافتراضي فلتر الباب (الباب الأول + المنهج كاملا)
       loadNewBotReachabilitySyncStatus();
       loadNewBotWebhookStatus();
-      registerFilterGroup('newbot', ['newbot-sub-search','newbot-sub-bootcamp-filter','newbot-sub-exclude-bootcamp-filter','newbot-sub-gender-filter','newbot-sub-telegram-filter','newbot-sub-exclude-sent-today']);
+      registerFilterGroup('newbot', ['newbot-sub-search','newbot-sub-bootcamp-filter','newbot-sub-exclude-bootcamp-filter','newbot-sub-gender-filter','newbot-sub-telegram-filter','newbot-sub-exclude-sent-within']);
       loadNewBotSubscribers();
       // نجهّز آخر رسالة وزرار اتبعتوا فعليًا كقيم افتراضية (لو لسه فاضيين) — وإلا رابط بوت المتابعة
       // كافتراضي احتياطي للزرار لو معندناش إرسال سابق أصلًا
@@ -5788,7 +5791,7 @@ ${mark}${percent}`;
       document.getElementById('newbot-sub-telegram-filter').addEventListener('change', () => {
         newBotSubPage = 1; loadNewBotSubscribers();
       });
-      document.getElementById('newbot-sub-exclude-sent-today').addEventListener('change', () => {
+      document.getElementById('newbot-sub-exclude-sent-within').addEventListener('change', () => {
         newBotSubPage = 1; loadNewBotSubscribers();
       });
       document.getElementById('clear-newbot-sub-filters').addEventListener('click', () => {
@@ -5798,7 +5801,7 @@ ${mark}${percent}`;
         document.getElementById('newbot-sub-telegram-filter').value = '';
         document.getElementById('newbot-sub-bootcamp-filter').value = '';
         document.getElementById('newbot-sub-exclude-bootcamp-filter').value = '';
-        document.getElementById('newbot-sub-exclude-sent-today').checked = false;
+        document.getElementById('newbot-sub-exclude-sent-within').value = '';
         multiSelectControllers['newbot-sub-bootcamp-filter']?.refresh();
         multiSelectControllers['newbot-sub-exclude-bootcamp-filter']?.refresh();
         newBotSubPage = 1;
