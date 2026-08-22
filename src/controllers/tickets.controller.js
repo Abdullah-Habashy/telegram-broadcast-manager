@@ -141,16 +141,37 @@ function buildTicketFilters(query, { restrictToUserId } = {}) {
       conditions.push(`t.current_idea_number = ${add(Number(query.idea_number))}`);
     }
   }
+  // البحث بيغطي هوية الطالب ونص المحادثة مع بعض، عشان الموظف يلاقي التذكرة سواء فاكر مين
+  // صاحبها أو فاكر كلمة اتقالت فيها. المطابقات على الجداول التانية اتكتبت EXISTS مترابطة
+  // مش JOIN، لأن نفس الشرط بيتحط في تلات استعلامات (العدّ والقائمة وقائمة المعرّفات) وواحد
+  // منهم مابيعملش JOIN على tafra_students أصلًا — الـ EXISTS شايل نفسه في التلاتة
   if (query.q?.trim()) {
-    const search = `%${query.q.trim()}%`;
+    const raw = query.q.trim();
+    const search = `%${raw}%`;
     const placeholder = add(search);
-    conditions.push(`(
-      COALESCE(c.first_name, '') ILIKE ${placeholder}
-      OR COALESCE(c.last_name, '') ILIKE ${placeholder}
-      OR COALESCE(c.telegram_username, '') ILIKE ${placeholder}
-      OR c.chat_id::text ILIKE ${placeholder}
-      OR COALESCE(c.phone, '') ILIKE ${placeholder}
-    )`);
+    const matches = [
+      `COALESCE(c.first_name, '') ILIKE ${placeholder}`,
+      `COALESCE(c.last_name, '') ILIKE ${placeholder}`,
+      `COALESCE(c.telegram_username, '') ILIKE ${placeholder}`,
+      `c.chat_id::text ILIKE ${placeholder}`,
+      `COALESCE(c.phone, '') ILIKE ${placeholder}`,
+      // اسم الطالب على منصة طفرة: هو اللي بيتعرض على الكارت لما يكون موجود، فالبحث من غيره
+      // بيرجع فاضي على اسم الموظف شايفه قدامه
+      `EXISTS (SELECT 1 FROM tafra_students stu
+               WHERE stu.telegram_chat_id = c.chat_id AND COALESCE(stu.name, '') ILIKE ${placeholder})`,
+      // نص المحادثة: الوارد من الطالب والصادر من الموظفين — المحذوف مستبعد زي أي عرض تاني
+      `EXISTS (SELECT 1 FROM incoming_messages im
+               WHERE im.contact_id = c.id AND COALESCE(im.content, '') ILIKE ${placeholder})`,
+      `EXISTS (SELECT 1 FROM support_messages sm
+               WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL AND COALESCE(sm.content, '') ILIKE ${placeholder})`,
+    ];
+    // رقم التذكرة زي ما بيتعرض عليها (#466) أو مجرد الرقم — مطابقة مضبوطة مش جزئية، عشان
+    // كتابة الرقم تفتح التذكرة دي بالذات من غير ما تزاحمها كل تذكرة رقمها فيه نفس الأرقام
+    const ticketNumber = raw.replace(/^#/, '');
+    if (/^\d{1,9}$/.test(ticketNumber)) {
+      matches.push(`t.id = ${add(Number(ticketNumber))}`);
+    }
+    conditions.push(`(${matches.join(' OR ')})`);
   }
 
   return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params };
@@ -382,6 +403,17 @@ async function updateTicket(req, res) {
       params
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'التذكرة غير موجودة' });
+
+    // الاتجاه التاني من ربط "عاجل": اختيار الأولوية "عاجلة" من القائمة بيحط علامة 🚨 على المحادثة
+    // وعلى الطالب في شاشة المتابعة، وأي أولوية تانية بتشيلها. الاتجاه الأول (الوسم ← الأولوية)
+    // جوه setUrgentFlag نفسها. مفيش دورة لا نهائية: setUrgentFlag بتكتب الأولوية بشرط أنها مختلفة،
+    // والصف هنا اتحدّث خلاص فالجملة بتاعتها مابتلاقيش صف تعدّله
+    if (req.body.priority !== undefined) {
+      await setUrgentFlag({
+        contactId: result.rows[0].contact_id,
+        isUrgent: result.rows[0].priority === 'urgent',
+      });
+    }
     res.json(result.rows[0]);
 
     const newAssignee = result.rows[0].assigned_to;

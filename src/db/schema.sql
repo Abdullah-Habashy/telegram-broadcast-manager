@@ -241,6 +241,23 @@ CREATE INDEX IF NOT EXISTS idx_tickets_follow_up
     ON tickets (next_follow_up_at)
     WHERE next_follow_up_at IS NOT NULL;
 
+-- توحيد علامة "عاجل" مع أولوية التذكرة. الاتنين كانوا حقلين منفصلين بنفس المعنى عند المستخدم،
+-- فمحادثة موسومة 🚨 مكانتش بتطلع في فلتر "الأولويات: عاجلة" خالص. من هنا ورايح الكتابة على
+-- الاتنين مربوطة في الكود (src/utils/urgentFlag.js و updateTicket)، والجُمل دي بتلحّق الصفوف
+-- القديمة اللي اتوسمت قبل الربط. الشرط في كل جملة بيخليها تنفّذ مرة واحدة فعليًا: بعد أول
+-- تطبيق مافيش صفوف مطابقة، فإعادة تشغيل migrate مابتعملش حاجة
+UPDATE tickets t SET priority = 'urgent'
+FROM contacts c
+WHERE c.id = t.contact_id AND c.is_urgent AND t.priority <> 'urgent';
+
+UPDATE contacts c SET is_urgent = TRUE
+FROM tickets t
+WHERE t.contact_id = c.id AND t.priority = 'urgent' AND NOT c.is_urgent;
+
+UPDATE tafra_students s SET is_urgent = TRUE
+FROM contacts c
+WHERE c.chat_id = s.telegram_chat_id AND c.is_urgent AND NOT s.is_urgent;
+
 -- الردود التي يرسلها موظفو الدعم من لوحة التحكم
 CREATE TABLE IF NOT EXISTS support_messages (
     id SERIAL PRIMARY KEY,

@@ -4,6 +4,20 @@ const pool = require('../config/db');
 // بتتخزن على contacts و tafra_students مع بعض: ولا واحدة لوحدها بتغطي كل الحالات (طلاب متابعة
 // من غير تليجرام، وتذاكر لأشخاص مش طلاب منصة). التبديل بيكتب على الجهتين لو الربط موجود،
 // فالعلامة تفضل واحدة سواء فتحت الطالب من المتابعة أو من صندوق الدعم
+
+// العلامة مربوطة كمان بأولوية التذكرة (tickets.priority) في الاتجاهين: الوسم بيرفع الأولوية
+// لـ 'urgent' وإلغاؤه بيرجّعها 'normal'، والعكس في updateTicket. من غير الربط ده كان فلتر
+// "الأولويات: عاجلة" بيرجع فاضي رغم إن فيه محادثات موسومة 🚨 — حقلين مختلفين بنفس المعنى
+// للمستخدم. التذكرة واحدة لكل جهة اتصال (contacts.id UNIQUE في tickets) فالربط واحد-لواحد
+
+// خفض الأولوية مشروط بإنها 'urgent' حاليًا: تذكرة أولويتها "منخفضة" واتوسمت عاجل ثم اتلغى
+// الوسم لازم ترجع 'normal' — لكن لو الأولوية اتغيّرت يدويًا في النص، مالناش دعوة بيها
+function prioritySync(flag) {
+  return flag
+    ? { next: 'urgent', guard: "priority <> 'urgent'" }
+    : { next: 'normal', guard: "priority = 'urgent'" };
+}
+
 async function setUrgentFlag({ tafraStudentId = null, contactId = null, isUrgent }) {
   const flag = Boolean(isUrgent);
   // بنحل الهويتين من أي طرف متاح، عشان الكتابة تلمس الصفين لو الطالب موجود في الاتنين
@@ -25,6 +39,11 @@ async function setUrgentFlag({ tafraStudentId = null, contactId = null, isUrgent
   }
   if (linkedContactId) {
     await pool.query('UPDATE contacts SET is_urgent = $2 WHERE id = $1', [linkedContactId, flag]);
+    const { next, guard } = prioritySync(flag);
+    await pool.query(
+      `UPDATE tickets SET priority = $2, updated_at = NOW() WHERE contact_id = $1 AND ${guard}`,
+      [linkedContactId, next]
+    );
   }
   if (!studentId && !linkedContactId) return null;
   return flag;
@@ -47,6 +66,17 @@ async function setUrgentFlagBulk(tafraStudentIds, isUrgent) {
      WHERE chat_id IN (SELECT telegram_chat_id FROM tafra_students
                        WHERE tafra_student_id = ANY($1::bigint[]) AND telegram_chat_id IS NOT NULL)`,
     [ids, flag]
+  );
+  // نفس ربط الأولوية بتاع setUrgentFlag — الوسم الجماعي من شاشة المتابعة لازم يظهر في فلتر
+  // الأولويات بتاع صندوق الدعم بالظبط زي الوسم الفردي
+  const { next, guard } = prioritySync(flag);
+  await pool.query(
+    `UPDATE tickets SET priority = $2, updated_at = NOW()
+     WHERE ${guard} AND contact_id IN (
+       SELECT c.id FROM contacts c
+       JOIN tafra_students s ON s.telegram_chat_id = c.chat_id
+       WHERE s.tafra_student_id = ANY($1::bigint[]))`,
+    [ids, next]
   );
   return updated.rowCount;
 }

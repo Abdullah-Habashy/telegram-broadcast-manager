@@ -153,7 +153,7 @@
 
         <div class="subtab-section" data-subtab="conversations">
         <div class="ticket-toolbar card">
-          <input type="search" id="ticket-search" class="compact-input" placeholder="بحث بالاسم، اليوزر، الهاتف أو Chat ID">
+          <input type="search" id="ticket-search" class="compact-input" placeholder="بحث بالاسم، الهاتف، كلمة من المحادثة أو رقم التذكرة">
           <button type="button" class="btn btn-ghost btn-sm agent-filter-toggle" id="agent-filter-toggle" title="إظهار الفلاتر" aria-label="إظهار الفلاتر">⚲</button>
           <div class="ticket-advanced-filters" id="ticket-advanced-filters">
           <select id="ticket-status-filter" class="compact-select">
@@ -4937,7 +4937,10 @@ ${mark}${percent}`;
               }
               await api('/api/tickets/' + ticketId, { method: 'PATCH', body: JSON.stringify({ [field]: value }) });
               showToast('تم تحديث التذكرة');
-              if (field === 'subtitle_id' || field === 'assigned_to') loadTicket(ticketId);
+              // الأولوية مربوطة بعلامة 🚨: اختيار "عاجلة" بيحطها وأي أولوية تانية بتشيلها، فلازم
+              // الكارت المفتوح والقائمة يتحدّثوا مع بعض وإلا الشارة تفضل على حالتها القديمة
+              if (field === 'priority') { loadTicket(ticketId); loadTickets(); }
+              else if (field === 'subtitle_id' || field === 'assigned_to') loadTicket(ticketId);
               else loadTickets();
             } catch (error) { showToast(error.message); }
           });
