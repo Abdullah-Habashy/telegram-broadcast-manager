@@ -24,6 +24,22 @@ const BOOTCAMP_MARKS_JOIN_SQL = `
   ) bootcamp_marks ON true
 `;
 
+// الجوينات اللي بتغذّي فلاتر الطلاب المشتركة (buildTafraStudentFilters بتولّد شروط على s و sca
+// و last_call). لازم تتحط في **كل** استعلام بيستعمل buildTicketFilters وإلا الشرط بيشاور على
+// alias مش موجود والاستعلام بيرمي "missing FROM-clause entry". اتعملت ثابت لأن نسختين متطابقتين
+// مكتوبتين بالإيد خلّت listTicketIds تفوتهم من غير ما حد ياخد باله
+const STUDENT_FILTER_JOIN_SQL = `
+  LEFT JOIN LATERAL (
+    SELECT * FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+  ) s ON true
+  LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
+  LEFT JOIN LATERAL (
+    SELECT cl.outcome_id, cl.called_at, cl.next_follow_up_at
+    FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id
+    ORDER BY cl.called_at DESC LIMIT 1
+  ) last_call ON true
+`;
+
 function removeUploadedImage(file) {
   if (file?.path) fs.unlink(file.path, () => {});
 }
@@ -189,15 +205,7 @@ async function listTickets(req, res) {
     const countResult = await pool.query(
       `SELECT COUNT(*)::int AS count
        FROM tickets t JOIN contacts c ON c.id = t.contact_id
-       LEFT JOIN LATERAL (
-         SELECT * FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
-       ) s ON true
-       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
-       LEFT JOIN LATERAL (
-         SELECT cl.outcome_id, cl.called_at, cl.next_follow_up_at
-         FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id
-         ORDER BY cl.called_at DESC LIMIT 1
-       ) last_call ON true
+       ${STUDENT_FILTER_JOIN_SQL}
        ${where}`,
       params
     );
@@ -219,15 +227,7 @@ async function listTickets(req, res) {
        LEFT JOIN LATERAL (
          SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
        ) tafra_match ON true
-       LEFT JOIN LATERAL (
-         SELECT * FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
-       ) s ON true
-       LEFT JOIN student_call_assignments sca ON sca.tafra_student_id = s.tafra_student_id
-       LEFT JOIN LATERAL (
-         SELECT cl.outcome_id, cl.called_at, cl.next_follow_up_at
-         FROM call_logs cl WHERE cl.tafra_student_id = s.tafra_student_id
-         ORDER BY cl.called_at DESC LIMIT 1
-       ) last_call ON true
+       ${STUDENT_FILTER_JOIN_SQL}
 
        LEFT JOIN users u ON u.id = t.assigned_to
        LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
@@ -270,6 +270,7 @@ async function listTicketIds(req, res) {
       `SELECT t.id
        FROM tickets t
        JOIN contacts c ON c.id = t.contact_id
+       ${STUDENT_FILTER_JOIN_SQL}
        ${where}
        ORDER BY (t.unread_count > 0) DESC, t.last_message_at DESC`,
       params

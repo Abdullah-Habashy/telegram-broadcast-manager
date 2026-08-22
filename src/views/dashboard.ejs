@@ -4563,7 +4563,9 @@ ${mark}${percent}`;
       if (document.getElementById('ticket-awaiting-reply-filter').checked) query.set('awaiting_reply', 'true');
       if (document.getElementById('ticket-unassigned-filter').checked) query.set('unassigned', 'true');
       if (document.getElementById('ticket-never-replied-filter').checked) query.set('never_replied', 'true');
-      return query.toString();
+      // فلاتر الطلاب المشتركة — الشريط بيرسمها في صندوق الدعم و buildTicketFilters بيفهمها،
+      // بس السطر ده كان ناقص فكانت بتتغيّر وتعيد التحميل وماتأثرش في النتيجة بأي حاجة
+      return studentFilterParams('tickets', query).toString();
     }
 
     async function loadTickets(silent = false) {
