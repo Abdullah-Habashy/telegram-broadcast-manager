@@ -491,7 +491,12 @@ async function getNewBotInfo(req, res) {
 function buildNewBotContactFilters(query) {
   const search = String(query.search || '').trim();
   const params = [];
-  const conditions = [];
+  // استبعاد صارم مش خيار: بوت طفرة وظيفته يدعو الناس يدخلوا بوت المتابعة، فاللي دخله خلاص
+  // مالوش لازمة يتبعتله من طفرة تاني. الشرط ده أول عنصر في القايمة وبيتطبّق دايمًا مهما كانت
+  // الفلاتر التانية — عشان مايبقاش فيه أي تركيبة فلاتر توصل لواحد منهم بالغلط.
+  // نفس الشرط متكرر في sendNewBotBroadcast كمان، لأن الإرسال بياخد chat_ids من المتصفح
+  // وميقدرش يثق إنها اتفلترت (تحديد قديم في الصفحة، أو طالب دخل البوت بعد ما اتحدد)
+  const conditions = ['c.last_contacted_at IS NULL'];
   if (search) {
     params.push(`%${search}%`);
     conditions.push(`(nbc.first_name ILIKE $${params.length} OR nbc.last_name ILIKE $${params.length} OR nbc.telegram_username ILIKE $${params.length} OR s.name ILIKE $${params.length})`);
@@ -501,11 +506,6 @@ function buildNewBotContactFilters(query) {
     conditions.push(`s.gender = $${params.length}`);
   } else if (query.gender === 'unknown') {
     conditions.push('s.gender IS NULL');
-  }
-  if (query.telegram === 'started') {
-    conditions.push('c.last_contacted_at IS NOT NULL');
-  } else if (query.telegram === 'linked_not_started') {
-    conditions.push('c.last_contacted_at IS NULL');
   }
   const bootcampIds = parseFilterList(query.bootcamp).map(Number).filter((id) => Number.isInteger(id) && id > 0);
   if (bootcampIds.length) {
@@ -630,10 +630,23 @@ async function sendNewBotBroadcast(req, res) {
     ? { inline_keyboard: [[{ text: buttonText, url: buttonUrl }]] }
     : undefined;
 
+  // نفس استبعاد بوت المتابعة بتاع القايمة، متطبّق تاني هنا على المخاطبين الفعليين. الواجهة
+  // بتبعت chat_ids متحددة، وممكن تكون اتحددت قبل ما الطالب يدخل بوت المتابعة — والفلترة هنا
+  // هي الوحيدة اللي بتتحقق وقت الإرسال نفسه
   const contactsResult = await pool.query(
-    'SELECT chat_id, first_name FROM new_bot_contacts WHERE chat_id = ANY($1::bigint[])',
+    `SELECT nbc.chat_id, nbc.first_name FROM new_bot_contacts nbc
+     LEFT JOIN contacts c ON c.chat_id = nbc.chat_id
+     WHERE nbc.chat_id = ANY($1::bigint[]) AND c.last_contacted_at IS NULL`,
     [chatIds]
   );
+  const skipped = chatIds.length - contactsResult.rows.length;
+  if (skipped > 0) {
+    console.log(`ℹ️ New-bot broadcast skipped ${skipped} subscriber(s) who already started the follow-up bot.`);
+  }
+  if (!contactsResult.rows.length) {
+    removeUpload();
+    return res.status(400).json({ error: 'كل المشتركين المحددين دخلوا بوت المتابعة بالفعل، فمفيش حد يتبعتله' });
+  }
 
   let sent = 0;
   let failed = 0;

@@ -724,11 +724,6 @@
             <option value="female">بنت</option>
             <option value="unknown">غير محدد</option>
           </select>
-          <select id="newbot-sub-telegram-filter" class="compact-select">
-            <option value="">حالة بوت المتابعة: الكل</option>
-            <option value="started">بدأ بوت المتابعة (يمكن مراسلته منه)</option>
-            <option value="linked_not_started">لم يبدأ بوت المتابعة</option>
-          </select>
           <select id="newbot-sub-exclude-sent-within" class="compact-select" title="استبعاد من اتبعتله رسالة عن طريق بوت طفرة من فترة قريبة، عشان ماتزعجش نفس المشترك بأكتر من رسالة في وقت قصير">
             <option value="">من غير استبعاد بالإرسال السابق</option>
             <option value="today">استبعاد من أُرسل له اليوم</option>
@@ -5669,12 +5664,10 @@ ${mark}${percent}`;
       const bootcamp = document.getElementById('newbot-sub-bootcamp-filter').value;
       const excludeBootcamp = document.getElementById('newbot-sub-exclude-bootcamp-filter').value;
       const gender = document.getElementById('newbot-sub-gender-filter').value;
-      const telegram = document.getElementById('newbot-sub-telegram-filter').value;
       if (search) params.set('search', search);
       if (bootcamp) params.set('bootcamp', bootcamp);
       if (excludeBootcamp) params.set('exclude_bootcamp', excludeBootcamp);
       if (gender) params.set('gender', gender);
-      if (telegram) params.set('telegram', telegram);
       const excludeSentWithin = document.getElementById('newbot-sub-exclude-sent-within').value;
       if (excludeSentWithin) params.set('exclude_sent_within', excludeSentWithin);
       return params.toString();
@@ -5697,17 +5690,15 @@ ${mark}${percent}`;
           wrap.innerHTML = '<div class="empty-state">لسه محدش بدأ بوت طفرة</div>';
           return;
         }
-        wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
+        wrap.innerHTML = `<p class="card-desc" style="margin:0 0 10px">اللي دخل بوت المتابعة مش بيظهر هنا — بوت طفرة بيدعو للدخول، واللي دخل خلاص بيتراسل من بوت المتابعة نفسه.</p>
+        <div class="tafra-students-table-wrap"><table><thead><tr>
           <th class="select-cell"><input type="checkbox" id="select-all-newbot-sub" aria-label="تحديد الكل"></th>
-          <th>الطالب</th><th>الهاتف</th><th>بدأ بوت المتابعة</th><th>انضم لبوت طفرة</th>
+          <th>الطالب</th><th>الهاتف</th><th>انضم لبوت طفرة</th>
         </tr></thead><tbody>${result.contacts.map((c) => `
           <tr>
             <td class="select-cell"><input type="checkbox" class="newbot-sub-selector" value="${c.chat_id}" ${selectedNewBotSubChatIds.has(Number(c.chat_id)) ? 'checked' : ''} aria-label="تحديد المشترك"></td>
             <td><div class="tafra-student-name">${escapeHtml(studentDisplayName(c))}</div><div class="tafra-student-sub">${c.telegram_username ? '@' + escapeHtml(c.telegram_username) : (c.student_code ? 'الكود: ' + escapeHtml(c.student_code) : '')}</div></td>
             <td>📱 ${escapeHtml(c.phone || '—')}</td>
-            <td>${c.followup_started
-              ? '<span class="badge badge-success">✅ بدأ بوت المتابعة</span>'
-              : '<span class="badge badge-muted">لسه ما بدأش</span>'}</td>
             <td>${c.source === 'platform_link'
               ? '<span class="badge badge-muted" title="اتأكد إنه قابل للمراسلة عن طريق الفحص، مش من ضغطه Start على الهاندلر بتاعنا">🔗 من المنصة</span>'
               : fmtDate(c.started_at)}</td>
@@ -5755,7 +5746,7 @@ ${mark}${percent}`;
       await loadTafraStudentFilters(); // بيجهّز خيارات وافتراضي فلتر الباب (الباب الأول + المنهج كاملا)
       loadNewBotReachabilitySyncStatus();
       loadNewBotWebhookStatus();
-      registerFilterGroup('newbot', ['newbot-sub-search','newbot-sub-bootcamp-filter','newbot-sub-exclude-bootcamp-filter','newbot-sub-gender-filter','newbot-sub-telegram-filter','newbot-sub-exclude-sent-within']);
+      registerFilterGroup('newbot', ['newbot-sub-search','newbot-sub-bootcamp-filter','newbot-sub-exclude-bootcamp-filter','newbot-sub-gender-filter','newbot-sub-exclude-sent-within']);
       loadNewBotSubscribers();
       // نجهّز آخر رسالة وزرار اتبعتوا فعليًا كقيم افتراضية (لو لسه فاضيين) — وإلا رابط بوت المتابعة
       // كافتراضي احتياطي للزرار لو معندناش إرسال سابق أصلًا
@@ -5839,9 +5830,6 @@ ${mark}${percent}`;
       document.getElementById('newbot-sub-gender-filter').addEventListener('change', () => {
         newBotSubPage = 1; loadNewBotSubscribers();
       });
-      document.getElementById('newbot-sub-telegram-filter').addEventListener('change', () => {
-        newBotSubPage = 1; loadNewBotSubscribers();
-      });
       document.getElementById('newbot-sub-exclude-sent-within').addEventListener('change', () => {
         newBotSubPage = 1; loadNewBotSubscribers();
       });
@@ -5849,7 +5837,6 @@ ${mark}${percent}`;
         filterGroups.newbot?.reset();
         document.getElementById('newbot-sub-search').value = '';
         document.getElementById('newbot-sub-gender-filter').value = '';
-        document.getElementById('newbot-sub-telegram-filter').value = '';
         document.getElementById('newbot-sub-bootcamp-filter').value = '';
         document.getElementById('newbot-sub-exclude-bootcamp-filter').value = '';
         document.getElementById('newbot-sub-exclude-sent-within').value = '';
