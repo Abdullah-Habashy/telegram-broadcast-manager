@@ -50,6 +50,16 @@ const NEVER_REPLIED_SQL = `(
   )
 )`;
 
+// ترتيب القايمة — نفس الترتيب اللي الفريق شغّال عليه: الأحدث الأول، والغير مقروء فوقه.
+//
+// اتجرّب هنا إن "ما اتردش عليها" تبقى مفتاح ترتيب تاني، وده كسر القايمة: المفتاح اتطبّق
+// على كل التذاكر مش على المجموعات، فتذكرة قديمة ما اتردش عليها طلعت فوق محادثة جارية
+// بالنهاردة، والموظف فتح الصندوق ملقاش أحدث رسالة في الأول. اللون بيميّز المهملة من غير
+// ما يلمس الترتيب، والفلتر بيجمّعها لوحدها لما الموظف يطلبها
+const TICKET_ORDER_SQL = `
+  ORDER BY (t.unread_count > 0) DESC, t.last_message_at DESC
+`;
+
 const STUDENT_FILTER_JOIN_SQL = `
   LEFT JOIN LATERAL (
     SELECT * FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
@@ -266,7 +276,7 @@ async function listTickets(req, res) {
        ) latest ON true
        ${BOOTCAMP_MARKS_JOIN_SQL}
        ${where}
-       ORDER BY (t.unread_count > 0) DESC, ${NEVER_REPLIED_SQL} DESC, t.last_message_at DESC
+       ${TICKET_ORDER_SQL}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       listParams
     );
@@ -291,7 +301,7 @@ async function listTicketIds(req, res) {
        JOIN contacts c ON c.id = t.contact_id
        ${STUDENT_FILTER_JOIN_SQL}
        ${where}
-       ORDER BY (t.unread_count > 0) DESC, ${NEVER_REPLIED_SQL} DESC, t.last_message_at DESC`,
+       ${TICKET_ORDER_SQL}`,
       params
     );
     res.json({ ids: result.rows.map((row) => row.id) });
