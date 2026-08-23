@@ -28,14 +28,26 @@ const BOOTCAMP_MARKS_JOIN_SQL = `
 // و last_call). لازم تتحط في **كل** استعلام بيستعمل buildTicketFilters وإلا الشرط بيشاور على
 // alias مش موجود والاستعلام بيرمي "missing FROM-clause entry". اتعملت ثابت لأن نسختين متطابقتين
 // مكتوبتين بالإيد خلّت listTicketIds تفوتهم من غير ما حد ياخد باله
-// "ما اتردش عليها ولا مرة" — نفس تعريف فلتر never_replied بالظبط. اتعمل ثابت لأنه بقى بيستخدم
-// في تلات أماكن (الفلتر، ولون الكارت الأحمر، وترتيب القايمة)، ولو اتنسخ بالإيد في كل واحدة
-// كان أول تعديل في التعريف هيخلّي الفلتر يقول حاجة واللون يقول حاجة تانية.
-// الإرسال الجماعي (broadcast_recipient_id) والمتابعة التلقائية (sent_by IS NULL) مش "رد"
-const NEVER_REPLIED_SQL = `NOT EXISTS (
-  SELECT 1 FROM support_messages sm
-  WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL
-    AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL
+// "مهملة" = الطالب بعت وفضل مستني. تلات شروط، وكل واحد فيهم اتحط بعد ما البيانات وقعت في فخه:
+//
+// ١. لازم يكون بعت رسالة أصلًا. ٣٢٥ تذكرة من أصل ٣٤٧ كانت متعلّمة "ما اتردش عليها" وهي أصلًا
+//    مالهاش ولا رسالة واردة — طلاب دوسوا Start بس أو اتعملوا من مزامنة طفرة. مفيش حاجة يترد عليها.
+// ٢. لازم يكون عدّى يوم على أول رسالة. الطالب اللي بعت من ساعتين لسه في الطابور العادي مش مهمَل،
+//    وتعليمه بالأحمر بيخلّي اللون يفقد معناه.
+// ٣. مفيش رد من موظف حقيقي — الإرسال الجماعي (broadcast_recipient_id) والمتابعة التلقائية
+//    (sent_by IS NULL) مش رد على كلام الطالب.
+//
+// المهلة نفسها المستخدمة في تنبيه الرسايل المهملة (src/jobs/unansweredAlert.js) عن قصد: مفهوم
+// واحد بمقياس واحد، فاللي بيتعلّم أحمر في القايمة هو نفسه اللي بيتبعت عنه تنبيه
+const NEGLECT_AFTER_HOURS = 24;
+const NEVER_REPLIED_SQL = `(
+  (SELECT MIN(im.received_at) FROM incoming_messages im WHERE im.contact_id = c.id)
+    < NOW() - INTERVAL '${NEGLECT_AFTER_HOURS} hours'
+  AND NOT EXISTS (
+    SELECT 1 FROM support_messages sm
+    WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL
+      AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL
+  )
 )`;
 
 const STUDENT_FILTER_JOIN_SQL = `

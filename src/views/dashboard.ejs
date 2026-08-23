@@ -210,7 +210,7 @@
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-unread-filter"> غير المقروء فقط</label>
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-awaiting-reply-filter"> مفتوحة ولم يُرد عليها</label>
           <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-unassigned-filter"> غير مسندة لأي موظف</label>
-          <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-never-replied-filter"> لم يُرد على أي رسائل سابقة</label>
+          <label class="row ticket-unread-filter"><input type="checkbox" id="ticket-never-replied-filter"> بعت ومحدش رد عليه من أكتر من يوم</label>
           <div id="tickets-filter-bar"></div>
           <button type="button" class="btn btn-ghost btn-sm" id="clear-ticket-filters">مسح الفلاتر</button>
           </div>
@@ -4608,7 +4608,7 @@ ${mark}${percent}`;
                   ${telegramReachBadge(ticket.can_message)}
                   <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
                   ${urgentBadge(ticket.is_urgent)}
-                  ${ticket.never_replied ? '<span class="never-replied-badge" title="محدش من الفريق رد على الطالب ده ولا مرة">لسه ما اتردش</span>' : ''}
+                  ${ticket.never_replied ? '<span class="never-replied-badge" title="الطالب بعت من أكتر من يوم ومحدش من الفريق رد عليه ولا مرة">لسه ما اتردش</span>' : ''}
                   ${ideaBadge}
                   ${bootcampMarksHtml(ticket, 'sm')}
                   ${ticket.assigned_name ? `<span class="ticket-employee-badge ${employeeBadgeClass(ticket.assigned_to)}" title="الموظف المسؤول: ${escapeHtml(ticket.assigned_name)}">${escapeHtml(firstEmployeeName(ticket.assigned_name))}</span>` : ''}
