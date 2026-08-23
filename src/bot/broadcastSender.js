@@ -95,15 +95,18 @@ async function sendBroadcast(broadcastId) {
       const replyMarkup = broadcast.button_text && broadcast.button_url
         ? { inline_keyboard: [[{ text: broadcast.button_text, url: broadcast.button_url }]] }
         : undefined;
+      // رقم الرسالة على تليجرام بيتخزّن عشان لما الطالب يعمل Reply على رسالة حملة نعرف يرد على
+      // إيه. الحملات أكتر حاجة الطلاب بيردوا عليها، فمن غير الرقم ده أغلب الردود بتفضل مبهمة
+      let sentMessage;
       if (broadcast.image_path) {
         const imagePath = path.join(__dirname, '..', '..', 'public', broadcast.image_path);
-        await bot.telegram.sendPhoto(
+        sentMessage = await bot.telegram.sendPhoto(
           contact.chat_id,
           { source: imagePath },
           { caption: personalizedContent, reply_markup: replyMarkup }
         );
       } else {
-        await bot.telegram.sendMessage(contact.chat_id, personalizedContent, { reply_markup: replyMarkup });
+        sentMessage = await bot.telegram.sendMessage(contact.chat_id, personalizedContent, { reply_markup: replyMarkup });
       }
       await pool.query(
         "UPDATE broadcast_recipients SET status = 'sent', sent_at = NOW() WHERE id = $1",
@@ -146,10 +149,11 @@ async function sendBroadcast(broadcastId) {
       }
       await pool.query(
         `INSERT INTO support_messages
-          (ticket_id, sent_by, content, image_path, broadcast_recipient_id, sent_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
+          (ticket_id, sent_by, content, image_path, broadcast_recipient_id, telegram_message_id, sent_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
          ON CONFLICT DO NOTHING`,
-        [ticketId, broadcast.created_by, personalizedContent, broadcast.image_path, recipientId]
+        [ticketId, broadcast.created_by, personalizedContent, broadcast.image_path, recipientId,
+          sentMessage?.message_id ?? null]
       );
       await pool.query('UPDATE contacts SET last_contacted_at = NOW() WHERE id = $1', [contact.id]);
     } catch (err) {

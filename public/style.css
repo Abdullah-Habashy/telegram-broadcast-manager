@@ -491,11 +491,20 @@ tr:last-child td { border-bottom: none; }
 }
 .reaction-option:hover { background: var(--surface-sunken); }
 .reaction-option.active { background: var(--primary-tint); }
-/* اقتباس صغير فوق رد الموظف بيوضّح إنه كان reply على رسالة معينة من الطالب */
+/* اقتباس صغير فوق الرسالة بيوضّح إنها Reply على رسالة معيّنة — للاتجاهين: رد الموظف على
+   رسالة الطالب، ورد الطالب من تليجرام على رسالة بعتناها */
 .ticket-message-reply-quote {
   font-size: 11.5px; color: var(--text-muted); padding: 4px 8px; margin-bottom: 6px;
   border-inline-start: 2px solid var(--primary); background: rgba(0,0,0,0.04); border-radius: 4px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+}
+.reply-quote-who { font-weight: 600; font-size: 10.5px; opacity: .85; }
+.reply-quote-text {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+/* الطالب عمل Reply على رسالة مش متسجّلة عندنا — رمادي بدل الأزرق عشان يبان إنه ناقص مش معلومة */
+.ticket-message-reply-quote.is-missing {
+  border-inline-start-color: var(--text-muted); font-style: italic;
 }
 .msg-edit-box { display: flex; flex-direction: column; gap: 6px; }
 .msg-edit-input {

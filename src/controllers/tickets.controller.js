@@ -345,9 +345,31 @@ async function getTicket(req, res) {
           im.content, im.received_at AS occurred_at, NULL::text AS sender_name, im.image_path,
           NULL::int AS message_id, NULL::int AS sent_by, NULL::timestamptz AS edited_at,
           im.id AS incoming_message_id, im.flag, im.agent_reaction,
-          NULL::int AS reply_to_incoming_message_id, NULL::text AS reply_to_preview
+          NULL::int AS reply_to_incoming_message_id,
+          -- الطالب عمل Reply: بندوّر على الرسالة الأصلية في الجدولين بالترتيب — رسايلنا الأول
+          -- لأنها الحالة الغالبة، وبعدين رسايله هو لو كان بيرد على نفسه. المطابقة مقيّدة
+          -- بالتذكرة/جهة الاتصال لأن رقم تليجرام فريد داخل الشات مش عالميًا
+          COALESCE(replied_out.preview, replied_in.preview) AS reply_to_preview,
+          CASE WHEN replied_out.preview IS NOT NULL THEN 'outgoing'
+               WHEN replied_in.preview IS NOT NULL THEN 'incoming' END AS reply_to_direction,
+          -- الطالب رد على حاجة إحنا مش مسجّلينها (رسالة قديمة قبل ما نبدأ نخزّن الأرقام).
+          -- بنقول للموظف "رد على رسالة أقدم" بدل ما نبلع الإشارة ونخليه يقرا الرد من غير سياق
+          (im.reply_to_telegram_message_id IS NOT NULL) AS is_reply
         FROM incoming_messages im
         JOIN tickets t ON t.contact_id = im.contact_id
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(NULLIF(sm.content, ''), CASE WHEN sm.image_path IS NOT NULL THEN '📷 صورة' END) AS preview
+          FROM support_messages sm
+          WHERE sm.ticket_id = t.id AND sm.telegram_message_id = im.reply_to_telegram_message_id
+            AND sm.deleted_at IS NULL
+          LIMIT 1
+        ) replied_out ON im.reply_to_telegram_message_id IS NOT NULL
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(NULLIF(prev.content, ''), CASE WHEN prev.image_path IS NOT NULL THEN '📷 صورة' END) AS preview
+          FROM incoming_messages prev
+          WHERE prev.contact_id = im.contact_id AND prev.telegram_message_id = im.reply_to_telegram_message_id
+          LIMIT 1
+        ) replied_in ON im.reply_to_telegram_message_id IS NOT NULL
         WHERE t.id = $1
         UNION ALL
         SELECT 'outgoing-' || sm.id AS message_key, 'outgoing' AS direction,
@@ -355,7 +377,9 @@ async function getTicket(req, res) {
           sm.id AS message_id, sm.sent_by, sm.edited_at,
           NULL::int AS incoming_message_id, NULL::text AS flag, NULL::text AS agent_reaction,
           sm.reply_to_incoming_message_id,
-          COALESCE(NULLIF(replied.content, ''), CASE WHEN replied.image_path IS NOT NULL THEN '📷 صورة' END) AS reply_to_preview
+          COALESCE(NULLIF(replied.content, ''), CASE WHEN replied.image_path IS NOT NULL THEN '📷 صورة' END) AS reply_to_preview,
+          'incoming'::text AS reply_to_direction,
+          (sm.reply_to_incoming_message_id IS NOT NULL) AS is_reply
         FROM support_messages sm
         LEFT JOIN users u ON u.id = sm.sent_by
         LEFT JOIN incoming_messages replied ON replied.id = sm.reply_to_incoming_message_id

@@ -196,6 +196,22 @@ ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS telegram_message_id BIGIN
 -- الإيموجي اللي الموظف حطّه كـ reaction على رسالة الطالب دي (لو موجود) — بيتزامن مع reaction حقيقي
 -- على تيليجرام نفسه عن طريق setMessageReaction
 ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS agent_reaction VARCHAR(10);
+
+-- الرسالة اللي الطالب عمل عليها Reply في تليجرام. بنخزّن رقم تليجرام الخام مش مفتاح داخلي، لأن
+-- الطالب ممكن يرد على أي حاجة في الشات: رسالة بعتها موظف، أو رسالة حملة جماعية، أو رسالة هو
+-- نفسه بعتها قبل كده — ولو ربطناها بجدول واحد بمفتاح أجنبي كنا هنضطر نرمي الحالات التانية.
+-- الربط بيتم وقت العرض بمطابقة telegram_message_id في الجدولين، والرقم الخام بيفضل محفوظ حتى
+-- لو الرسالة الأصلية مش عندنا (رسايل قديمة اتبعتت قبل ما نسجّل أرقامها)
+ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS reply_to_telegram_message_id BIGINT;
+
+-- أرقام تليجرام فريدة داخل الشات الواحد مش عالميًا، فالمطابقة لازم تبقى مقيّدة بالتذكرة/جهة
+-- الاتصال. الفهرسين دول بيخلّوا البحث عن الرسالة الأصلية وقت العرض lookup مش scan
+CREATE INDEX IF NOT EXISTS idx_support_messages_telegram
+    ON support_messages (ticket_id, telegram_message_id)
+    WHERE telegram_message_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_incoming_messages_telegram
+    ON incoming_messages (contact_id, telegram_message_id)
+    WHERE telegram_message_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_incoming_messages_contact_received
     ON incoming_messages (contact_id, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_incoming_messages_flag ON incoming_messages (flag) WHERE flag IS NOT NULL;

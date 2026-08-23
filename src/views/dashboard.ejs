@@ -2138,8 +2138,27 @@
             data-incoming-id="${message.incoming_message_id}" title="تفاعل بإيموجي" aria-label="تفاعل بإيموجي">${message.agent_reaction || '🙂'}</button>
         </div>
         ${reactionPickerHtml(message.incoming_message_id, message.agent_reaction)}` : '';
-      const replyQuoteHtml = message.direction === 'outgoing' && message.reply_to_preview ? `
-        <div class="ticket-message-reply-quote">↩ ${escapeHtml(message.reply_to_preview.slice(0, 100))}</div>` : '';
+      // الاقتباس بيتعرض للاتجاهين: الموظف بيرد على رسالة الطالب، والطالب بيعمل Reply من تليجرام.
+      // السطر اللي فوق الاقتباس بيقول بيرد على مين، عشان الاقتباس لوحده ملبّس — نص مقتبس جوه
+      // فقاعة واردة ممكن يتقرا على إنه كلام الطالب مش كلامنا
+      const replyQuoteHtml = (() => {
+        if (message.reply_to_preview) {
+          const who = message.direction === 'incoming'
+            ? (message.reply_to_direction === 'outgoing' ? 'رد على رسالتكم' : 'رد على رسالته')
+            : 'رد على';
+          return `<div class="ticket-message-reply-quote">
+            <span class="reply-quote-who">↩ ${who}</span>
+            <span class="reply-quote-text">${escapeHtml(message.reply_to_preview.slice(0, 100))}</span>
+          </div>`;
+        }
+        // اتعمل عليها Reply بس الرسالة الأصلية مش عندنا — نقولها بدل ما نسيب الموظف يخمّن
+        if (message.is_reply) {
+          return `<div class="ticket-message-reply-quote is-missing">
+            <span class="reply-quote-who">↩ رد على رسالة أقدم مش متسجّلة عندنا</span>
+          </div>`;
+        }
+        return '';
+      })();
       return `
         <div class="ticket-message ${message.direction}" data-message-key="${escapeHtml(messageKeyOf(message))}"
           data-message-id="${message.message_id || ''}" data-edited-at="${message.edited_at || ''}">

@@ -47,7 +47,7 @@ async function downloadTelegramPhoto(ctx, fileId) {
   return { imagePath: `uploads/incoming/${filename}`, absolutePath };
 }
 
-async function processIncomingMessage(bot, ctx, { content, imagePath = null, absolutePath = null, fileId = null, telegramMessageId = null }) {
+async function processIncomingMessage(bot, ctx, { content, imagePath = null, absolutePath = null, fileId = null, telegramMessageId = null, replyToTelegramMessageId = null }) {
   const chatId = ctx.chat.id;
   const { username, first_name, last_name } = ctx.from;
 
@@ -67,9 +67,10 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
     const contactId = contactResult.rows[0].id;
 
     await pool.query(
-      `INSERT INTO incoming_messages (contact_id, content, image_path, telegram_file_id, telegram_message_id)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [contactId, content || '', imagePath, fileId, telegramMessageId]
+      `INSERT INTO incoming_messages
+         (contact_id, content, image_path, telegram_file_id, telegram_message_id, reply_to_telegram_message_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [contactId, content || '', imagePath, fileId, telegramMessageId, replyToTelegramMessageId]
     );
     imageStored = Boolean(imagePath);
 
@@ -231,7 +232,13 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
 function registerMessageHandler(bot) {
   bot.on('text', async (ctx) => {
     if (ctx.message.text.startsWith('/')) return;
-    await processIncomingMessage(bot, ctx, { content: ctx.message.text, telegramMessageId: ctx.message.message_id });
+    await processIncomingMessage(bot, ctx, {
+      content: ctx.message.text,
+      telegramMessageId: ctx.message.message_id,
+      // الطالب لما يعمل Reply، تليجرام بيبعت الرسالة الأصلية جوه التحديث — من غير ما نخزّنها
+      // الموظف بيشوف "تمام" و"لأ" و"ده كام؟" من غير ما يعرف بترد على إيه
+      replyToTelegramMessageId: ctx.message.reply_to_message?.message_id ?? null,
+    });
   });
 
   bot.on('photo', async (ctx) => {
@@ -246,6 +253,7 @@ function registerMessageHandler(bot) {
         absolutePath: downloaded.absolutePath,
         fileId: largestPhoto.file_id,
         telegramMessageId: ctx.message.message_id,
+        replyToTelegramMessageId: ctx.message.reply_to_message?.message_id ?? null,
       });
     } catch (error) {
       if (downloaded?.absolutePath) fs.unlink(downloaded.absolutePath, () => {});
