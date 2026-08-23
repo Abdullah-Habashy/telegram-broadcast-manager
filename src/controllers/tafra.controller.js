@@ -537,7 +537,7 @@ function buildNewBotContactFilters(query) {
   const excludeSentWithin = String(query.exclude_sent_within || '').trim();
   if (excludeSentWithin === 'today' || query.exclude_sent_today === 'true') {
     conditions.push('(nbc.last_broadcast_at IS NULL OR nbc.last_broadcast_at < CURRENT_DATE)');
-  } else if (/^d{1,3}$/.test(excludeSentWithin) && Number(excludeSentWithin) > 0) {
+  } else if (/^\d{1,3}$/.test(excludeSentWithin) && Number(excludeSentWithin) > 0) {
     params.push(Number(excludeSentWithin));
     conditions.push(`(nbc.last_broadcast_at IS NULL
       OR nbc.last_broadcast_at < now() - make_interval(days => $${params.length}::int))`);
