@@ -28,25 +28,32 @@ const BOOTCAMP_MARKS_JOIN_SQL = `
 // و last_call). لازم تتحط في **كل** استعلام بيستعمل buildTicketFilters وإلا الشرط بيشاور على
 // alias مش موجود والاستعلام بيرمي "missing FROM-clause entry". اتعملت ثابت لأن نسختين متطابقتين
 // مكتوبتين بالإيد خلّت listTicketIds تفوتهم من غير ما حد ياخد باله
-// "مهملة" = الطالب بعت وفضل مستني. تلات شروط، وكل واحد فيهم اتحط بعد ما البيانات وقعت في فخه:
+// الأزرق والأحمر بيقسّموا الرسايل الجديدة لحالتين مختلفتين، ومايتقاطعوش:
+//   أزرق  = رسالة جديدة لسه ما اتفتحتش  → unread_count > 0 (بيتصفّر أول ما الموظف يفتح)
+//   أحمر  = رسالة اتفتحت وعدّى عليها ١٠ دقايق من غير أي رد
 //
-// ١. لازم يكون بعت رسالة أصلًا. ٣٢٥ تذكرة من أصل ٣٤٧ كانت متعلّمة "ما اتردش عليها" وهي أصلًا
-//    مالهاش ولا رسالة واردة — طلاب دوسوا Start بس أو اتعملوا من مزامنة طفرة. مفيش حاجة يترد عليها.
-// ٢. لازم يكون عدّى يوم على أول رسالة. الطالب اللي بعت من ساعتين لسه في الطابور العادي مش مهمَل،
-//    وتعليمه بالأحمر بيخلّي اللون يفقد معناه.
-// ٣. مفيش رد من موظف حقيقي — الإرسال الجماعي (broadcast_recipient_id) والمتابعة التلقائية
-//    (sent_by IS NULL) مش رد على كلام الطالب.
+// "الرد" هنا أوسع من رسالة: أي تفاعل مع رسالة الطالب بيعتبر رد، حتى التفاعل بإيموجي. الموظف
+// اللي شاف الرسالة وحطّ عليها 👍 عمل حاجة فعلًا، فتعليمه بالأحمر بيخلّي اللون كذب.
 //
-// المهلة نفسها المستخدمة في تنبيه الرسايل المهملة (src/jobs/unansweredAlert.js) عن قصد: مفهوم
-// واحد بمقياس واحد، فاللي بيتعلّم أحمر في القايمة هو نفسه اللي بيتبعت عنه تنبيه
-const NEGLECT_AFTER_HOURS = 24;
+// المهلة قصيرة عن قصد (١٠ دقايق مش ٢٤ ساعة): العلامة دي للشغل الجاري في نفس الجلسة —
+// "فتحتها ونسيتها" — مش للإهمال الطويل، وده اللي تنبيه الرسايل المهملة بيغطيه
+const NEEDS_REPLY_AFTER_MINUTES = 10;
 const NEVER_REPLIED_SQL = `(
-  (SELECT MIN(im.received_at) FROM incoming_messages im WHERE im.contact_id = c.id)
-    < NOW() - INTERVAL '${NEGLECT_AFTER_HOURS} hours'
-  AND NOT EXISTS (
-    SELECT 1 FROM support_messages sm
-    WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL
-      AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL
+  t.unread_count = 0
+  AND EXISTS (
+    SELECT 1 FROM incoming_messages im
+    WHERE im.id = (
+        SELECT last_im.id FROM incoming_messages last_im
+        WHERE last_im.contact_id = c.id
+        ORDER BY last_im.received_at DESC, last_im.id DESC LIMIT 1
+      )
+      AND im.received_at < NOW() - INTERVAL '${NEEDS_REPLY_AFTER_MINUTES} minutes'
+      AND im.agent_reaction IS NULL
+      AND im.received_at > COALESCE((
+        SELECT MAX(sm.sent_at) FROM support_messages sm
+        WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL
+          AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL
+      ), '-infinity'::timestamptz)
   )
 )`;
 
