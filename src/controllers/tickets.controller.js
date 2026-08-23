@@ -28,6 +28,16 @@ const BOOTCAMP_MARKS_JOIN_SQL = `
 // و last_call). لازم تتحط في **كل** استعلام بيستعمل buildTicketFilters وإلا الشرط بيشاور على
 // alias مش موجود والاستعلام بيرمي "missing FROM-clause entry". اتعملت ثابت لأن نسختين متطابقتين
 // مكتوبتين بالإيد خلّت listTicketIds تفوتهم من غير ما حد ياخد باله
+// "ما اتردش عليها ولا مرة" — نفس تعريف فلتر never_replied بالظبط. اتعمل ثابت لأنه بقى بيستخدم
+// في تلات أماكن (الفلتر، ولون الكارت الأحمر، وترتيب القايمة)، ولو اتنسخ بالإيد في كل واحدة
+// كان أول تعديل في التعريف هيخلّي الفلتر يقول حاجة واللون يقول حاجة تانية.
+// الإرسال الجماعي (broadcast_recipient_id) والمتابعة التلقائية (sent_by IS NULL) مش "رد"
+const NEVER_REPLIED_SQL = `NOT EXISTS (
+  SELECT 1 FROM support_messages sm
+  WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL
+    AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL
+)`;
+
 const STUDENT_FILTER_JOIN_SQL = `
   LEFT JOIN LATERAL (
     SELECT * FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
@@ -115,11 +125,7 @@ function buildTicketFilters(query, { restrictToUserId } = {}) {
   // ورسائل المتابعة التلقائية sent_by IS NULL، عشان دول مش "رد" فعلي من حد على كلام الطالب) —
   // أوسع من فلتر "مفتوحة ولم يُرد عليها" اللي بيشمل كمان اللي اترّد عليها قبل كده وبعدين الطالب بعت تاني
   if (query.never_replied === 'true') {
-    conditions.push(`NOT EXISTS (
-      SELECT 1 FROM support_messages sm
-      WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL
-        AND sm.sent_by IS NOT NULL AND sm.broadcast_recipient_id IS NULL
-    )`);
+    conditions.push(NEVER_REPLIED_SQL);
   }
   if (query.follow_up === 'due') {
     conditions.push("t.next_follow_up_at <= NOW() AND t.status NOT IN ('resolved', 'closed')");
@@ -221,7 +227,8 @@ async function listTickets(req, res) {
         latest.direction AS last_message_direction,
         bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
         (c.last_contacted_at IS NOT NULL) AS can_message,
-        c.is_urgent, tafra_match.name AS tafra_name
+        c.is_urgent, tafra_match.name AS tafra_name,
+        ${NEVER_REPLIED_SQL} AS never_replied
        FROM tickets t
        JOIN contacts c ON c.id = t.contact_id
        LEFT JOIN LATERAL (
@@ -247,7 +254,7 @@ async function listTickets(req, res) {
        ) latest ON true
        ${BOOTCAMP_MARKS_JOIN_SQL}
        ${where}
-       ORDER BY (t.unread_count > 0) DESC, t.last_message_at DESC
+       ORDER BY (t.unread_count > 0) DESC, ${NEVER_REPLIED_SQL} DESC, t.last_message_at DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       listParams
     );
@@ -272,7 +279,7 @@ async function listTicketIds(req, res) {
        JOIN contacts c ON c.id = t.contact_id
        ${STUDENT_FILTER_JOIN_SQL}
        ${where}
-       ORDER BY (t.unread_count > 0) DESC, t.last_message_at DESC`,
+       ORDER BY (t.unread_count > 0) DESC, ${NEVER_REPLIED_SQL} DESC, t.last_message_at DESC`,
       params
     );
     res.json({ ids: result.rows.map((row) => row.id) });

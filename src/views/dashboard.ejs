@@ -4601,13 +4601,14 @@ ${mark}${percent}`;
           return `
             <div class="ticket-list-row">
             ${checkboxHtml}
-            <button type="button" class="ticket-list-item ${Number(ticket.id) === Number(currentTicketId) ? 'active' : ''} ${hasUnread ? 'has-unread' : ''}" data-ticket-id="${ticket.id}">
+            <button type="button" class="ticket-list-item ${Number(ticket.id) === Number(currentTicketId) ? 'active' : ''} ${hasUnread ? 'has-unread' : ''} ${ticket.never_replied ? 'never-replied' : ''}" data-ticket-id="${ticket.id}">
               <div class="ticket-list-title">
                 <span class="ticket-name-with-subtitle">
                   <span>${escapeHtml(name)}</span>
                   ${telegramReachBadge(ticket.can_message)}
                   <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
                   ${urgentBadge(ticket.is_urgent)}
+                  ${ticket.never_replied ? '<span class="never-replied-badge" title="محدش من الفريق رد على الطالب ده ولا مرة">لسه ما اتردش</span>' : ''}
                   ${ideaBadge}
                   ${bootcampMarksHtml(ticket, 'sm')}
                   ${ticket.assigned_name ? `<span class="ticket-employee-badge ${employeeBadgeClass(ticket.assigned_to)}" title="الموظف المسؤول: ${escapeHtml(ticket.assigned_name)}">${escapeHtml(firstEmployeeName(ticket.assigned_name))}</span>` : ''}

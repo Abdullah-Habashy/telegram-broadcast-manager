@@ -375,6 +375,20 @@ tr:last-child td { border-bottom: none; }
   color: #1e293b;
   font-weight: 600;
 }
+/* تذكرة ما ردّ عليها موظف حقيقي ولا مرة من يوم ما اتفتحت. بتترتب بعد اللي فيها رسايل جديدة
+   مباشرةً، فاللون بيفرّق بين الحالتين وهما جنب بعض: أزرق = رسالة جديدة مستنية، أحمر = محدش
+   كلّم الطالب ده خالص. الشريط الجانبي مش لون الخلفية لوحده عشان يبان مع has-unread كمان */
+.ticket-list-item.never-replied {
+  background: var(--danger-tint);
+  border-inline-start: 3.5px solid var(--danger);
+}
+.ticket-list-item.never-replied .ticket-list-title { color: var(--danger); }
+/* لو التذكرة فيها رسالة جديدة **و** محدش رد عليها قبل كده، الأحمر هو الأهم — بس الخلفية
+   بتفضل زرقا عشان علامة "غير مقروء" ما تضيعش */
+.ticket-list-item.has-unread.never-replied {
+  background: #f0f4ff;
+  border-inline-start: 3.5px solid var(--danger);
+}
 .ticket-list-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
 .ticket-name-with-subtitle { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .ticket-subtitle-badge {
@@ -992,3 +1006,8 @@ th.perf-sorted { color: var(--primary); }
   padding: 0 7px; font-weight: 800; font-size: 11px; margin-inline-end: 4px;
 }
 
+/* اللون لوحده مايكفيش: مش كل الناس بتفرّق بين الأحمر والأزرق، والشارة كمان بتقول السبب */
+.never-replied-badge {
+  display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px;
+  background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap;
+}
