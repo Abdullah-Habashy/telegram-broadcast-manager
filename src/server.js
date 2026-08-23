@@ -12,6 +12,7 @@ const { startTafraSyncScheduler } = require('./jobs/tafraSyncScheduler');
 const { startStaffActivityDigest } = require('./jobs/staffActivityDigest');
 const { startWelcomeMessageSender } = require('./jobs/welcomeMessageSender');
 const { startCallAutoAssign } = require('./jobs/callAutoAssign');
+const { startUnansweredAlert } = require('./jobs/unansweredAlert');
 const { requireAuth } = require('./middleware/requireAuth');
 
 const authRoutes = require('./routes/auth.routes');
@@ -220,6 +221,7 @@ async function start() {
     startStaffActivityDigest();
     startWelcomeMessageSender();
     startCallAutoAssign();
+    startUnansweredAlert();
   });
 }
 
