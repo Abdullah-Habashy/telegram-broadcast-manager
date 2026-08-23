@@ -473,8 +473,11 @@ tr:last-child td { border-bottom: none; }
 .msg-tools:has(.active-reaction) { opacity: 1; pointer-events: auto; }
 .msg-tool-btn.active-reaction { background: var(--primary-tint); border-color: var(--primary); }
 /* لوحة اختيار إيموجي التفاعل — بتظهر تحت أزرار الأدوات لما تضغط زرار التفاعل */
+/* fixed مش absolute: القائمة كانت جوّه .ticket-messages اللي عليه overflow-y:auto، فكانت
+   بتتقص عند حدوده وتختفي ورا كارت قايمة التذاكر. fixed بيطلّعها بره أي قص، والمكان بيتحسب
+   بالجافاسكريبت من مكان الزرار وقت الفتح (positionReactionPicker) */
 .reaction-picker {
-  position: absolute; top: 16px; inset-inline-end: 8px; z-index: 3;
+  position: fixed; z-index: 250;
   display: flex; gap: 2px; padding: 4px; background: var(--surface); border: 1.5px solid var(--border);
   border-radius: 10px; box-shadow: var(--shadow-card);
 }

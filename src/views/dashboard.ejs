@@ -2198,19 +2198,45 @@
     }
 
     // مربّع فتح/قفل picker التفاعل بتاع رسالة معيّنة — واحد بس مفتوح في نفس الوقت
+    function closeReactionPickers() {
+      document.querySelectorAll('.reaction-picker').forEach((p) => { p.style.display = 'none'; });
+    }
+
+    // القائمة position:fixed، فمكانها بيتحسب من مكان الزرار وقت الفتح. بتتقفل مع أي تمرير أو
+    // تغيير حجم بدل ما نلاحق الزرار — fixed مابتتحركش مع الحاوية اللي بتتمرّر، فلو سيبناها
+    // مفتوحة كانت هتفضل واقفة في الهوا بعيد عن رسالتها
+    function positionReactionPicker(picker, anchor) {
+      const box = anchor.getBoundingClientRect();
+      const width = picker.offsetWidth;
+      const height = picker.offsetHeight;
+      const margin = 8;
+      // نهاية القائمة تحاذي نهاية الزرار، مع منعها تخرج من أي جنب من الشاشة
+      const left = Math.min(Math.max(box.right - width, margin), window.innerWidth - width - margin);
+      // تحت الزرار، وفوقه لو مفيش مكان تحت (آخر رسالة في المحادثة)
+      const below = box.bottom + 6;
+      const top = below + height > window.innerHeight - margin ? box.top - height - 6 : below;
+      picker.style.left = Math.max(left, margin) + 'px';
+      picker.style.top = Math.max(top, margin) + 'px';
+    }
+
     function toggleReactionPicker(toggleButton) {
       const bubble = toggleButton.closest('.ticket-message');
       const picker = bubble?.querySelector('.reaction-picker');
       if (!picker) return;
       const isOpen = picker.style.display !== 'none';
-      document.querySelectorAll('.reaction-picker').forEach((p) => { p.style.display = 'none'; });
-      picker.style.display = isOpen ? 'none' : 'flex';
+      closeReactionPickers();
+      if (isOpen) return;
+      // العرض قبل القياس: عنصر display:none مقاساته أصفار
+      picker.style.display = 'flex';
+      positionReactionPicker(picker, toggleButton);
     }
     document.addEventListener('click', (event) => {
       if (!event.target.closest('.msg-tools') && !event.target.closest('.reaction-picker')) {
-        document.querySelectorAll('.reaction-picker').forEach((p) => { p.style.display = 'none'; });
+        closeReactionPickers();
       }
     });
+    window.addEventListener('resize', closeReactionPickers);
+    document.addEventListener('scroll', closeReactionPickers, true);
 
     // اختيار نفس الإيموجي التفاعل الحالي بيلغيه، واختيار إيموجي تاني بيستبدله — حقيقي على تيليجرام
     async function setMessageReaction(optionButton) {
