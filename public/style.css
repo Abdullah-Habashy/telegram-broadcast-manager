@@ -22,6 +22,10 @@
   --danger-tint: #fbebea;
   --warning: #c17f14;
   --warning-tint: #fbf1e0;
+  /* بنفسجي "مردش من أسبوع". الدرجة بعيدة عن الأزرق الأساسي في العجلة (٢٧٦° مقابل ٢٣٢°) عن قصد —
+     لو كانت قريبة كان هيتلخبط مع خلفية غير المقروء وخلفية التذكرة المفتوحة، والاتنين أزرق فاتح */
+  --violet: #8b2fc9;
+  --violet-tint: #f5e9fb;
 
   /* الطباعة */
   --font-main: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
@@ -382,6 +386,14 @@ tr:last-child td { border-bottom: none; }
   border-inline-start: 3.5px solid var(--danger);
 }
 .ticket-list-item.never-replied .ticket-list-title { color: var(--danger); }
+/* الطالب ساكت من أسبوع رغم إن آخر رسالة في المحادثة مننا. اللون التالت في القايمة، ومعناه في
+   الاتجاه المعاكس للاتنين اللي فوق: الأزرق والأحمر عن رسالة مستنية رد مننا، والبنفسجي عن رسالة
+   مستنية رد منه. الأحمر متنافي معاه بحكم التعريف، والأزرق بيغلب عليه في الجافاسكريبت */
+.ticket-list-item.silent-week {
+  background: var(--violet-tint);
+  border-inline-start: 3.5px solid var(--violet);
+}
+.ticket-list-item.silent-week .ticket-list-title { color: var(--violet); }
 .ticket-list-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
 .ticket-name-with-subtitle { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .ticket-subtitle-badge {
@@ -1015,4 +1027,8 @@ th.perf-sorted { color: var(--primary); }
 .never-replied-badge {
   display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px;
   background: var(--danger); color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap;
+}
+.silent-week-badge {
+  display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px;
+  background: var(--violet); color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap;
 }

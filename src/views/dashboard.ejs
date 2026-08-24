@@ -1427,6 +1427,9 @@
         title: 'حالة رسالة الترحيب — كل الحالات مشروطة بأن الطالب دخل البوت فعلاً',
         options: [['', 'حالة رسالة الترحيب'], ['no_welcome', 'دخل البوت ومجاش له ترحيب'],
           ['welcome_no_reply', 'وصله ترحيب ومردّش'], ['welcome_replied', 'وصله ترحيب ورد']] },
+      { key: 'silent_week', type: 'checkbox', ids: { tafra: 'tafra-silent-week', calls: 'calls-silent-week', tickets: 'ticket-silent-week-filter' },
+        label: 'مردش من أسبوع',
+        title: 'فيه رسالة مننا اتبعتت له بعد آخر كلام منه وعدّى عليها أسبوع من غير أي رد — الحملات الجماعية مش محسوبة' },
       { key: 'follow_up', type: 'select', ids: { tafra: 'tafra-follow-up-filter', calls: 'calls-follow-up-filter' },
         options: [['', 'كل المواعيد'], ['due', 'حان موعد المتابعة'], ['none', 'لسه متعملهاش مكالمة'], ['called', 'تم الاتصال بهم']] },
       { key: 'call_outcome', type: 'select', ids: { tafra: 'tafra-outcome-filter', calls: 'calls-outcome-filter' },
@@ -3295,7 +3298,7 @@
 
       renderTafraEnrollmentSync(filters.enrollment_sync);
       // بيتنادى بعد ما القوايم والافتراضيات تتظبط، فالمحفوظ بتاع المستخدم بيغلب الافتراضي
-      registerFilterGroup('tafra', ['tafra-student-search','tafra-level-filter','tafra-education-type-filter','tafra-gender-filter','tafra-telegram-filter','tafra-conversation-filter','tafra-assignee-filter','tafra-status-filter','tafra-bootcamp-filter','tafra-exam-filter','tafra-exam-attendance-filter','tafra-exam-mark-range-filter','tafra-idea-filter','tafra-enrolled-from','tafra-enrolled-to','tafra-welcome-status-filter','tafra-last-sent-from','tafra-last-sent-to','tafra-last-received-from','tafra-last-received-to','tafra-exclude-sent-today']);
+      registerFilterGroup('tafra', ['tafra-student-search','tafra-level-filter','tafra-education-type-filter','tafra-gender-filter','tafra-telegram-filter','tafra-conversation-filter','tafra-assignee-filter','tafra-status-filter','tafra-bootcamp-filter','tafra-exam-filter','tafra-exam-attendance-filter','tafra-exam-mark-range-filter','tafra-idea-filter','tafra-enrolled-from','tafra-enrolled-to','tafra-welcome-status-filter','tafra-last-sent-from','tafra-last-sent-to','tafra-last-received-from','tafra-last-received-to','tafra-silent-week','tafra-exclude-sent-today']);
       registerFilterGroup('report', ['report-student-search','report-level-filter','report-education-type-filter','report-gender-filter','report-telegram-filter','report-conversation-filter','report-status-filter','report-bootcamp-filter','report-exam-filter','report-exam-attendance-filter','report-exam-mark-range-filter','report-idea-filter']);
       tafraFiltersLoaded = true;
     }
@@ -3515,12 +3518,13 @@
         const id = Number(student.tafra_student_id);
         const followUpDue = student.next_follow_up_at && new Date(student.next_follow_up_at) <= new Date();
         return `
-          <div class="ticket-list-item ${id === Number(currentCallStudentId) ? 'active' : ''}" data-student-id="${id}">
+          <div class="ticket-list-item ${id === Number(currentCallStudentId) ? 'active' : ''} ${student.silent_week ? 'silent-week' : ''}" data-student-id="${id}">
             <div class="ticket-list-title">
               <span class="ticket-name-with-subtitle">
                 ${showCheckbox ? `<input type="checkbox" class="call-student-selector" value="${id}" ${selectedCallStudentIds.has(id) ? 'checked' : ''} aria-label="تحديد الطالب">` : ''}
                 <span>${escapeHtml(student.name || 'بدون اسم')}</span>
                 ${urgentBadge(student.is_urgent)}
+                ${student.silent_week ? '<span class="silent-week-badge" title="بعتنا له بعد آخر كلام منه وعدّى أسبوع من غير أي رد — الحملات الجماعية مش محسوبة">مردش من أسبوع</span>' : ''}
                 ${telegramReachBadge(student.can_message)}
                 ${student.current_idea_number ? `<span class="idea-badge" title="رقم الفكرة الحالية">💡${student.current_idea_number}</span>` : ''}
                 ${bootcampMarksHtml(student, 'sm')}
@@ -4057,7 +4061,7 @@ ${mark}${percent}`;
         populateCallOutcomeFilter();
         // بنجيب قائمة الموظفين من جديد في كل مرة (مش بس أول مرة) عشان أي موظف اتضاف حديثًا يظهر فورًا
         if (currentUserRole === 'admin' || canAssignCalls) await loadCallAssignees();
-        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter','calls-unreached-filter']);
+        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter','calls-unreached-filter','calls-silent-week']);
         bindStudentFilterEvents('calls', () => { callsPage = 1; loadCalls(); });
         callsPage = 1;
         await loadCalls();
@@ -4635,13 +4639,17 @@ ${mark}${percent}`;
             ? `<span class="idea-badge" title="رقم الفكرة الحالية">💡${ticket.current_idea_number}</span>`
             : '';
           const hasUnread = Boolean(ticket.unread_count && ticket.unread_count > 0);
+          // البنفسجي والأحمر متنافيين بحكم التعريف (الأحمر آخر رسالة فيه واردة، والبنفسجي آخر رسالة
+          // مننا)، لكن الأزرق ممكن يتقاطع معاه: رسالة قديمة لسه ما اتفتحتش وبعتنا بعدها متابعة
+          // تلقائية. الأزرق بيغلب لأنه أكثر إلحاحًا — فيه كلام من الطالب محدش فتحه أصلًا
+          const silentWeek = Boolean(ticket.silent_week) && !hasUnread;
           const checkboxHtml = currentUserRole === 'admin'
             ? `<label class="ticket-select-checkbox"><input type="checkbox" class="ticket-selector" value="${ticket.id}" ${selectedTicketIds.has(Number(ticket.id)) ? 'checked' : ''} aria-label="تحديد التذكرة"></label>`
             : '';
           return `
             <div class="ticket-list-row">
             ${checkboxHtml}
-            <button type="button" class="ticket-list-item ${Number(ticket.id) === Number(currentTicketId) ? 'active' : ''} ${hasUnread ? 'has-unread' : ''} ${ticket.never_replied ? 'never-replied' : ''}" data-ticket-id="${ticket.id}">
+            <button type="button" class="ticket-list-item ${Number(ticket.id) === Number(currentTicketId) ? 'active' : ''} ${hasUnread ? 'has-unread' : ''} ${ticket.never_replied ? 'never-replied' : ''} ${silentWeek ? 'silent-week' : ''}" data-ticket-id="${ticket.id}">
               <div class="ticket-list-title">
                 <span class="ticket-name-with-subtitle">
                   <span>${escapeHtml(name)}</span>
@@ -4649,6 +4657,7 @@ ${mark}${percent}`;
                   <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
                   ${urgentBadge(ticket.is_urgent)}
                   ${ticket.never_replied ? '<span class="never-replied-badge" title="الرسالة اتفتحت وعدّى عليها أكتر من ١٠ دقايق من غير رد ولا حتى تفاعل بإيموجي">محتاجة رد</span>' : ''}
+                  ${silentWeek ? '<span class="silent-week-badge" title="بعتنا له بعد آخر كلام منه وعدّى أسبوع من غير أي رد — الحملات الجماعية مش محسوبة">مردش من أسبوع</span>' : ''}
                   ${ideaBadge}
                   ${bootcampMarksHtml(ticket, 'sm')}
                   ${ticket.assigned_name ? `<span class="ticket-employee-badge ${employeeBadgeClass(ticket.assigned_to)}" title="الموظف المسؤول: ${escapeHtml(ticket.assigned_name)}">${escapeHtml(firstEmployeeName(ticket.assigned_name))}</span>` : ''}

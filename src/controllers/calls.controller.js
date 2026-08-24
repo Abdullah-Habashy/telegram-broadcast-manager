@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
 const { buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL } = require('./tafra.controller');
+const { SILENT_WEEK_SQL } = require('../utils/silentStudent');
 const { toEgyptianMobileE164 } = require('../utils/phone');
 const { getFirstName } = require('../utils/messagePersonalization');
 const { setUrgentFlag, setUrgentFlagBulk } = require('../utils/urgentFlag');
@@ -325,7 +326,9 @@ function buildStudentSelectSql(examSelectSql) {
     last_call.outcome_name AS last_outcome_name, last_call.called_at AS last_called_at,
     last_call.next_follow_up_at AS next_follow_up_at,
     -- تيليجرام مايسمحش نبعت لطالب لسه ما تفاعلش مع البوت ولو مرة (زي دوس Start)، حتى لو ربط حسابه على منصة طفرة
-    (c.last_contacted_at IS NOT NULL) AS can_message`;
+    (c.last_contacted_at IS NOT NULL) AS can_message,
+    -- بيلوّن السطر بنفسجي في القايمة — نفس الشرط المستخدم في صندوق الدعم بالظبط
+    ${SILENT_WEEK_SQL} AS silent_week`;
 }
 
 async function listStudentsForAssignment(req, res) {

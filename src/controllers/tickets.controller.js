@@ -14,6 +14,8 @@ const VALID_CATEGORIES = ['general', 'registration', 'fees', 'results', 'platfor
 // علامة الباب المشترك فيه الطالب (بجوار اسمه في قائمة التذاكر وجوه المحادثة) — القاعدة نفسها مشتركة
 // في src/utils/bootcampMarks.js عشان تفضل نفسها في كل الشاشات. c.chat_id لازم يبقى متاح في الاستعلام.
 const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
+// شرط اللون البنفسجي — مشترك مع شاشة المتابعة ومع فلتر "مردش من أسبوع"
+const { SILENT_WEEK_SQL } = require('../utils/silentStudent');
 const BOOTCAMP_MARKS_JOIN_SQL = `
   LEFT JOIN LATERAL (
     SELECT ${BOOTCAMP_MARKS_SELECT_SQL}
@@ -262,7 +264,8 @@ async function listTickets(req, res) {
         bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
         (c.last_contacted_at IS NOT NULL) AS can_message,
         c.is_urgent, tafra_match.name AS tafra_name,
-        ${NEVER_REPLIED_SQL} AS never_replied
+        ${NEVER_REPLIED_SQL} AS never_replied,
+        ${SILENT_WEEK_SQL} AS silent_week
        FROM tickets t
        JOIN contacts c ON c.id = t.contact_id
        LEFT JOIN LATERAL (
