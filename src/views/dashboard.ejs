@@ -1436,6 +1436,10 @@
       { key: 'silent_week', type: 'checkbox', ids: { tafra: 'tafra-silent-week', calls: 'calls-silent-week', tickets: 'ticket-silent-week-filter' },
         label: 'مردش من أسبوع',
         title: 'فيه رسالة مننا اتبعتت له بعد آخر كلام منه وعدّى عليها أسبوع من غير أي رد — الحملات الجماعية مش محسوبة' },
+      { key: 'silent_calls_week', type: 'checkbox',
+        ids: { tafra: 'tafra-silent-calls-week', calls: 'calls-silent-calls-week', tickets: 'ticket-silent-calls-week-filter' },
+        label: 'مردش ع التليفون من أسبوع',
+        title: 'اتصلنا بيه خلال آخر أسبوع ومفيش ولا مكالمة وصلنا فيها له — "رقم غير صحيح" محسوب هنا لأن التواصل فعلًا محصلش' },
       { key: 'follow_up', type: 'select', ids: { tafra: 'tafra-follow-up-filter', calls: 'calls-follow-up-filter' },
         options: [['', 'كل المواعيد'], ['due', 'حان موعد المتابعة'], ['none', 'لسه متعملهاش مكالمة'], ['called', 'تم الاتصال بهم']] },
       { key: 'call_outcome', type: 'select', ids: { tafra: 'tafra-outcome-filter', calls: 'calls-outcome-filter' },
@@ -3304,7 +3308,7 @@
 
       renderTafraEnrollmentSync(filters.enrollment_sync);
       // بيتنادى بعد ما القوايم والافتراضيات تتظبط، فالمحفوظ بتاع المستخدم بيغلب الافتراضي
-      registerFilterGroup('tafra', ['tafra-student-search','tafra-level-filter','tafra-education-type-filter','tafra-gender-filter','tafra-telegram-filter','tafra-conversation-filter','tafra-assignee-filter','tafra-status-filter','tafra-bootcamp-filter','tafra-exam-filter','tafra-exam-attendance-filter','tafra-exam-mark-range-filter','tafra-idea-filter','tafra-enrolled-from','tafra-enrolled-to','tafra-welcome-status-filter','tafra-last-sent-from','tafra-last-sent-to','tafra-last-received-from','tafra-last-received-to','tafra-silent-week','tafra-exclude-sent-today']);
+      registerFilterGroup('tafra', ['tafra-student-search','tafra-level-filter','tafra-education-type-filter','tafra-gender-filter','tafra-telegram-filter','tafra-conversation-filter','tafra-assignee-filter','tafra-status-filter','tafra-bootcamp-filter','tafra-exam-filter','tafra-exam-attendance-filter','tafra-exam-mark-range-filter','tafra-idea-filter','tafra-enrolled-from','tafra-enrolled-to','tafra-welcome-status-filter','tafra-last-sent-from','tafra-last-sent-to','tafra-last-received-from','tafra-last-received-to','tafra-silent-week','tafra-silent-calls-week','tafra-exclude-sent-today']);
       registerFilterGroup('report', ['report-student-search','report-level-filter','report-education-type-filter','report-gender-filter','report-telegram-filter','report-conversation-filter','report-status-filter','report-bootcamp-filter','report-exam-filter','report-exam-attendance-filter','report-exam-mark-range-filter','report-idea-filter']);
       tafraFiltersLoaded = true;
     }
@@ -4067,7 +4071,7 @@ ${mark}${percent}`;
         populateCallOutcomeFilter();
         // بنجيب قائمة الموظفين من جديد في كل مرة (مش بس أول مرة) عشان أي موظف اتضاف حديثًا يظهر فورًا
         if (currentUserRole === 'admin' || canAssignCalls) await loadCallAssignees();
-        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter','calls-unreached-filter','calls-silent-week']);
+        registerFilterGroup('calls', ['calls-search','calls-scope-filter','calls-called-by-filter','calls-level-filter','calls-status-filter','calls-bootcamp-filter','calls-exam-filter','calls-exam-attendance-filter','calls-exam-mark-range-filter','calls-idea-filter','calls-gender-filter','calls-telegram-filter','calls-conversation-filter','calls-education-type-filter','calls-follow-up-filter','calls-outcome-filter','calls-unreached-filter','calls-silent-week','calls-silent-calls-week']);
         bindStudentFilterEvents('calls', () => { callsPage = 1; loadCalls(); });
         callsPage = 1;
         await loadCalls();

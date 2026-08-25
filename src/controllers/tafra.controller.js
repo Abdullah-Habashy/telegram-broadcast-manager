@@ -6,7 +6,7 @@ const reportExport = require('../utils/reportExport');
 const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
 const { inferGenderFromName } = require('../utils/genderInference');
 const { UNREACHED_NAMES_SQL } = require('../utils/callOutcomes');
-const { SILENT_WEEK_SQL } = require('../utils/silentStudent');
+const { SILENT_WEEK_SQL, SILENT_CALLS_WEEK_SQL } = require('../utils/silentStudent');
 
 // نفس علامة الباب المستخدمة في صندوق الدعم — بس هنا بنجيبها مباشرة عن طريق s.tafra_student_id
 // من غير ما نحتاج نلف على جدول contacts، لأن استعلامات الطلاب أصلاً بتبدأ من tafra_students
@@ -198,6 +198,11 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   // مايفترقوش لو المدة أو معنى "رسالة مننا" اتغيّر
   if (query.silent_week === 'true') {
     conditions.push(SILENT_WEEK_SQL);
+  }
+  // نفس الفكرة على التليفون: اتصلنا بيه الأسبوع ده ومحدش وصله. التعريف في utils/silentStudent.js
+  // مع أخوه، ومعنى "وصلنا له" جاي من utils/callOutcomes.js — مفيش نسخة مكتوبة هنا
+  if (query.silent_calls_week === 'true') {
+    conditions.push(SILENT_CALLS_WEEK_SQL);
   }
   // ===== فلاتر المتابعة التليفونية — مشتركة بين شاشة طلاب المنصة وشاشة المتابعة =====
   // بتتفعّل بس لو الباراميتر مبعوت، فالشاشة اللي مش مستخدماها متأثرش. الأعمدة sca و last_call

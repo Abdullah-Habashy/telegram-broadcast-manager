@@ -1,3 +1,5 @@
+const { REACHED_CONDITION_SQL } = require('./callOutcomes');
+
 // ---------- "مردش من أسبوع" — الطالب اللي فضل أسبوع كامل من غير أي رد على رسايلنا ----------
 //
 // اللون البنفسجي في قايمة التذاكر وفي المتابعة التليفونية. المعنى مختلف عن الأزرق والأحمر
@@ -36,4 +38,30 @@ const SILENT_WEEK_SQL = `(
   )
 )`;
 
-module.exports = { SILENT_WEEK_SQL, SILENT_AFTER_DAYS };
+// ---------- "مردش على التليفون من أسبوع" ----------
+//
+// النسخة التليفونية من اللي فوق: اتصلنا بيه في آخر أسبوع، ومفيش ولا مكالمة وصلنا فيها له.
+// الشرطين لازم يبقوا مع بعض — طالب مااتصلناش بيه أصلًا مش "مردّش"، هو ببساطة ماتجرّبش.
+//
+// معنى "وصلنا له" جاي من utils/callOutcomes.js مش مكتوب هنا، عشان لو الأدمن ضاف نتيجة جديدة
+// أو غيّر التصنيف، الفلتر ده يتغيّر معاه لوحده. "رقم غير صحيح" مستبعد من الوصول هناك عن قصد،
+// فالطالب اللي رقمه غلط بيطلع هنا — وده صح: هو فعلًا محصلش معاه تواصل، والسبب محتاج تصحيح بيانات.
+//
+// بيعتمد على alias الـ tafra_students باسم s — موجود في استعلامات المتابعة وطلاب المنصة
+// وصندوق الدعم (عن طريق STUDENT_FILTER_JOIN_SQL)
+const SILENT_CALLS_WEEK_SQL = `(
+  EXISTS (
+    SELECT 1 FROM call_logs cl
+    WHERE cl.tafra_student_id = s.tafra_student_id
+      AND cl.called_at > NOW() - INTERVAL '${SILENT_AFTER_DAYS} days'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM call_logs cl
+    LEFT JOIN call_outcomes co ON co.id = cl.outcome_id
+    WHERE cl.tafra_student_id = s.tafra_student_id
+      AND cl.called_at > NOW() - INTERVAL '${SILENT_AFTER_DAYS} days'
+      AND ${REACHED_CONDITION_SQL}
+  )
+)`;
+
+module.exports = { SILENT_WEEK_SQL, SILENT_CALLS_WEEK_SQL, SILENT_AFTER_DAYS };
