@@ -93,7 +93,7 @@ function removeUploadedImage(file) {
 // restrictToUserId: بيتحدد بس للموظف (مش الأدمن) — يقصر التذاكر الظاهرة له على المسندة له تحديدًا
 // أو غير المسندة لحد، حتى لو حاول يتلاعب بفلتر assigned_to بنفسه (الشرطين بيتحدوا AND فمايقدرش يشوف
 // تذاكر موظف تاني بأي شكل)
-function buildTicketFilters(query, { restrictToUserId } = {}) {
+function buildTicketFilters(query, { restrictToUserId, isScienceTeam = false } = {}) {
   const conditions = [];
   const params = [];
   const add = (value) => {
@@ -102,7 +102,11 @@ function buildTicketFilters(query, { restrictToUserId } = {}) {
   };
 
   if (restrictToUserId) {
-    conditions.push(`(t.assigned_to = ${add(restrictToUserId)} OR t.assigned_to IS NULL)`);
+    // موظف التيم العلمي بيشوف المحوّل له بس — مش بيشوف صندوق المتابعة أصلًا. التذكرة بتظهر
+    // عنده وقت التحويل وبتختفي أول ما ترجع، والطالب مش حاسس بأي حاجة من ده
+    conditions.push(isScienceTeam
+      ? `t.science_agent_id = ${add(restrictToUserId)}`
+      : `(t.assigned_to = ${add(restrictToUserId)} OR t.assigned_to IS NULL)`);
   }
 
   if (query.status && VALID_STATUSES.includes(query.status)) {
@@ -241,7 +245,9 @@ async function listTickets(req, res) {
   const offset = (page - 1) * limit;
   // الموظف (مش الأدمن) يشوف بس التذاكر المسندة له أو غير المسندة لحد
   const restrictToUserId = req.session.userRole === 'admin' ? null : req.session.userId;
-  const { where, params } = buildTicketFilters(req.query, { restrictToUserId });
+  const { where, params } = buildTicketFilters(req.query, {
+    restrictToUserId, isScienceTeam: req.session.isScienceTeam,
+  });
 
   try {
     const countResult = await pool.query(
@@ -264,6 +270,7 @@ async function listTickets(req, res) {
         bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
         (c.last_contacted_at IS NOT NULL) AS can_message,
         c.is_urgent, tafra_match.name AS tafra_name,
+        t.science_agent_id, science_agent.name AS science_agent_name,
         ${NEVER_REPLIED_SQL} AS never_replied,
         ${SILENT_WEEK_SQL} AS silent_week
        FROM tickets t
@@ -274,6 +281,7 @@ async function listTickets(req, res) {
        ${STUDENT_FILTER_JOIN_SQL}
 
        LEFT JOIN users u ON u.id = t.assigned_to
+       LEFT JOIN users science_agent ON science_agent.id = t.science_agent_id
        LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
        LEFT JOIN LATERAL (
          SELECT message.content, message.direction
@@ -308,7 +316,9 @@ async function listTickets(req, res) {
 // العرض الافتراضي — عشان "تحديد أول عدد" يقدر ياخد أول N من إجمالي النتائج المطابقة مش بس الصفحة الحالية
 async function listTicketIds(req, res) {
   const restrictToUserId = req.session.userRole === 'admin' ? null : req.session.userId;
-  const { where, params } = buildTicketFilters(req.query, { restrictToUserId });
+  const { where, params } = buildTicketFilters(req.query, {
+    restrictToUserId, isScienceTeam: req.session.isScienceTeam,
+  });
   try {
     const result = await pool.query(
       `SELECT t.id
@@ -331,16 +341,24 @@ async function getTicket(req, res) {
   try {
     // الموظف (مش الأدمن) ميقدرش يفتح تذكرة مسندة لموظف تاني، حتى لو حاول يدخل عليها بالـ id مباشرة
     if (req.session.userRole !== 'admin') {
-      const assignmentCheck = await pool.query('SELECT assigned_to FROM tickets WHERE id = $1', [ticketId]);
-      const assignedTo = assignmentCheck.rows[0]?.assigned_to;
-      if (assignedTo !== null && assignedTo !== undefined && Number(assignedTo) !== Number(req.session.userId)) {
-        return res.status(403).json({ error: 'التذكرة دي مسندة لموظف تاني' });
-      }
+      const assignmentCheck = await pool.query(
+        'SELECT assigned_to, science_agent_id FROM tickets WHERE id = $1', [ticketId]
+      );
+      const row = assignmentCheck.rows[0] || {};
+      const me = Number(req.session.userId);
+      // موظف التيم العلمي بيفتح المحوّل له بس — assigned_to بتاعها موظف متابعة تاني وده طبيعي،
+      // فالتحقق بتاعه على science_agent_id مش على الإسناد
+      const allowed = req.session.isScienceTeam
+        ? Number(row.science_agent_id) === me
+        : row.assigned_to === null || row.assigned_to === undefined || Number(row.assigned_to) === me;
+      if (!allowed) return res.status(403).json({ error: 'التذكرة دي مش متاحة ليك' });
     }
 
     // الأدمن بيفتح الشات للمتابعة بس من غير ما يمسح فقاعة "غير مقروء" — عشان الموظف المسؤول يفضل
     // شايفها ويرجعلها هو بنفسه عادي. الموظف المسؤول لسه بيمسحها زي ما هو متوقع لما يفتح التذكرة
-    const updatedCte = req.session.userRole === 'admin'
+    // الأدمن والموظف العلمي بيفتحوا من غير ما يمسحوا فقاعة "غير مقروء" — العدّاد ده بتاع موظف
+    // المتابعة صاحب التذكرة، ومش من حق حد تاني يصفّره نيابة عنه
+    const updatedCte = req.session.userRole === 'admin' || req.session.isScienceTeam
       ? 'SELECT * FROM tickets WHERE id = $1'
       : 'UPDATE tickets SET unread_count = 0 WHERE id = $1 RETURNING *';
     const ticketResult = await pool.query(
@@ -351,13 +369,15 @@ async function getTicket(req, res) {
          ts.name AS subtitle_name,
          bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
          (c.last_contacted_at IS NOT NULL) AS can_message,
-         c.is_urgent, tafra_match.name AS tafra_name
+         c.is_urgent, tafra_match.name AS tafra_name,
+         updated.science_agent_id, science_agent.name AS science_agent_name, updated.science_since
        FROM updated
        JOIN contacts c ON c.id = updated.contact_id
        LEFT JOIN LATERAL (
          SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
        ) tafra_match ON true
 
+       LEFT JOIN users science_agent ON science_agent.id = updated.science_agent_id
        LEFT JOIN ticket_subtitles ts ON ts.id = updated.subtitle_id
        ${BOOTCAMP_MARKS_JOIN_SQL}`,
       [ticketId]

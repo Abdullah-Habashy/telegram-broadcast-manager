@@ -5,6 +5,7 @@ const path = require('path');
 const multer = require('multer');
 const router = express.Router();
 const ticketsController = require('../controllers/tickets.controller');
+const scienceController = require('../controllers/science.controller');
 const { requireAuthApi, requireTicketsAccessApi, requireAdminApi } = require('../middleware/requireAuth');
 
 const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'support');
@@ -40,8 +41,18 @@ router.get('/', ticketsController.listTickets);
 router.get('/ids', ticketsController.listTicketIds);
 router.patch('/bulk-assign', requireAdminApi, ticketsController.bulkAssignTickets);
 router.patch('/bulk-assign-by-contact', requireAdminApi, ticketsController.bulkAssignTicketsByContact);
+// التيم العلمي — الحضور والانصراف. **لازم تفضل فوق أي مسار /:id**: express بيطابق
+// بالترتيب، ولو /:id سبقها كان هياخد "science" على إنها رقم تذكرة ويرجّع خطأ
+router.get('/science/attendance', scienceController.getAttendanceStatus);
+router.post('/science/attendance/check-in', scienceController.checkIn);
+router.post('/science/attendance/check-out', scienceController.checkOut);
+router.get('/science/on-duty', scienceController.listOnDuty);
+
 router.get('/:id', ticketsController.getTicket);
+router.post('/:id/science/transfer', scienceController.transferToScience);
+router.post('/:id/science/return', scienceController.returnFromScience);
 router.post('/:id/urgent', ticketsController.toggleTicketUrgent);
+
 router.patch('/:id/next-follow-up-message', ticketsController.updateNextFollowUpMessage);
 router.patch('/:id', ticketsController.updateTicket);
 router.post('/:id/reply', upload.single('image'), ticketsController.replyToTicket);

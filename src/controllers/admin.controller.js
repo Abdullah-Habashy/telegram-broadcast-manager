@@ -8,7 +8,7 @@ const VALID_ROLES = ['admin', 'agent'];
 async function listUsers(req, res) {
   try {
     const result = await pool.query(
-      `SELECT id, name, email, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, created_at,
+      `SELECT id, name, email, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, is_science_team, created_at,
         (telegram_chat_id IS NOT NULL) AS telegram_linked
        FROM users ORDER BY created_at`
     );
@@ -29,6 +29,7 @@ async function createUser(req, res) {
   const canViewCalls = req.body.can_view_calls === undefined ? true : Boolean(req.body.can_view_calls);
   // "مسند" صلاحية أعلى من العرض العادي — متعطّلة افتراضيًا لو مش متحدد صراحة
   const canAssignCalls = Boolean(req.body.can_assign_calls);
+  const isScienceTeam = Boolean(req.body.is_science_team);
 
   if (!name || !email || !password) return res.status(400).json({ error: 'الاسم والبريد وكلمة المرور مطلوبة' });
   if (password.length < 8) return res.status(400).json({ error: 'كلمة المرور يجب أن تكون 8 أحرف على الأقل' });
@@ -37,10 +38,10 @@ async function createUser(req, res) {
   try {
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await pool.query(
-      `INSERT INTO users (name, email, password_hash, role, can_view_tickets, can_view_calls, can_assign_calls)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, name, email, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, created_at`,
-      [name, email, passwordHash, role, canViewTickets, canViewCalls, canAssignCalls]
+      `INSERT INTO users (name, email, password_hash, role, can_view_tickets, can_view_calls, can_assign_calls, is_science_team)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, email, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, is_science_team, created_at`,
+      [name, email, passwordHash, role, canViewTickets, canViewCalls, canAssignCalls, isScienceTeam]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -89,6 +90,10 @@ async function updateUser(req, res) {
     params.push(Boolean(req.body.can_view_calls));
     updates.push(`can_view_calls = $${params.length}`);
   }
+  if (req.body.is_science_team !== undefined) {
+    params.push(Boolean(req.body.is_science_team));
+    updates.push(`is_science_team = $${params.length}`);
+  }
   if (req.body.can_assign_calls !== undefined) {
     params.push(Boolean(req.body.can_assign_calls));
     updates.push(`can_assign_calls = $${params.length}`);
@@ -109,7 +114,7 @@ async function updateUser(req, res) {
   try {
     const result = await pool.query(
       `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length}
-       RETURNING id, name, email, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, created_at`,
+       RETURNING id, name, email, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, is_science_team, created_at`,
       params
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'الحساب غير موجود' });

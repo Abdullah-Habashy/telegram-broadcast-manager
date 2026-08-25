@@ -241,6 +241,39 @@ function registerMessageHandler(bot) {
     });
   });
 
+  // وسائط البوت مش بيقراها: فيديو، رسالة صوتية، ملف، ملصق. قبل كده كانت بتتجاهل بالسكوت —
+  // الطالب يبعت فيديو لسؤاله وميحصلش أي حاجة: لا اتسجّل، ولا الموظف شافه، ولا حتى الطالب عرف
+  // إنها مـوصلتش. دلوقتي بتتسجّل في المحادثة كسطر واضح (عشان الموظف يعرف إن الطالب حاول)،
+  // والطالب بياخد رد يقوله يبعت مكتوب أو صورة
+  const UNSUPPORTED_MEDIA = [
+    ['video', '🎥 فيديو'],
+    ['video_note', '🎥 فيديو دائري'],
+    ['voice', '🎤 رسالة صوتية'],
+    ['audio', '🎵 ملف صوتي'],
+    ['document', '📎 ملف'],
+    ['sticker', '🏷️ ملصق'],
+    ['animation', '🎞️ صورة متحركة'],
+  ];
+  UNSUPPORTED_MEDIA.forEach(([type, label]) => {
+    bot.on(type, async (ctx) => {
+      const caption = String(ctx.message.caption || '').trim();
+      await processIncomingMessage(bot, ctx, {
+        content: caption ? `${label} — ${caption}` : `${label} (اتطلب منه يبعت مكتوب أو صورة)`,
+        telegramMessageId: ctx.message.message_id,
+        replyToTelegramMessageId: ctx.message.reply_to_message?.message_id ?? null,
+      });
+      try {
+        const setting = await pool.query(
+          "SELECT value FROM settings WHERE key = 'media_not_supported_message'"
+        );
+        const reply = setting.rows[0]?.value;
+        if (reply) await ctx.reply(reply);
+      } catch (error) {
+        console.error('❌ Failed to answer an unsupported media message:', error.message);
+      }
+    });
+  });
+
   bot.on('photo', async (ctx) => {
     const photos = ctx.message.photo;
     const largestPhoto = photos[photos.length - 1];

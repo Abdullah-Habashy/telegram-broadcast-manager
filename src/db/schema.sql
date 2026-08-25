@@ -20,6 +20,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS can_view_calls BOOLEAN NOT NULL DEFAU
 -- صلاحية "مسند" — موظف (مش أدمن) يقدر يسند/يلغي إسناد طلاب متابعة المكالمات لغيره من الموظفين،
 -- بدل ما ده يفضل مقصور على الأدمن بس. افتراضيًا متعطّلة (صلاحية أعلى من الموظف العادي)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS can_assign_calls BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- موظف التيم العلمي: بيستقبل التذاكر المحوّلة من موظفي المتابعة للأسئلة العلمية بس.
+-- **مستثنى من التوزيع التلقائي للتذاكر الجديدة** (utils/ticketAssignment.js) — التيمين
+-- موظفين مختلفين وسارين مختلفين، فلو دخل في الدور العادي كان هيلاقي نفسه مسؤول عن متابعة
+-- طلاب مالهاش علاقة بشغله
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_science_team BOOLEAN NOT NULL DEFAULT FALSE;
 -- ربط حساب الموظف الشخصي على تيليجرام (مرة واحدة عبر أمر /linkstaff) — يُستخدم لإرسال إشعارات تشغيلية
 -- زي رابط Tunnel الجديد تلقائيًا لكل الموظفين، من غير ما نعتمد على قائمة ثابتة في .env
 ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT;
@@ -262,6 +268,15 @@ CREATE INDEX IF NOT EXISTS idx_tickets_follow_up
 -- وفضل من غير رد، بيتنبّه تاني؛ ولو مبعتش، مايفضلش ينق كل ساعة على نفس الحاجة
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS unanswered_alert_at TIMESTAMPTZ;
 
+-- تحويل التذكرة للتيم العلمي. assigned_to **مابيتغيّرش**: موظف المتابعة بيفضل صاحب التذكرة
+-- وشايف كل الرسايل وعنده زرار التحويل طول الوقت، والعمود ده بيزوّد موظف تاني مؤقتًا بدل ما
+-- ينقل الملكية. عشان كده مفيش أي استعلام قائم اتأثر بالميزة دي
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS science_agent_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS science_since TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_tickets_science_agent
+    ON tickets (science_agent_id, last_message_at DESC)
+    WHERE science_agent_id IS NOT NULL;
+
 -- توحيد علامة "عاجل" مع أولوية التذكرة. الاتنين كانوا حقلين منفصلين بنفس المعنى عند المستخدم،
 -- فمحادثة موسومة 🚨 مكانتش بتطلع في فلتر "الأولويات: عاجلة" خالص. من هنا ورايح الكتابة على
 -- الاتنين مربوطة في الكود (src/utils/urgentFlag.js و updateTicket)، والجُمل دي بتلحّق الصفوف
@@ -433,11 +448,34 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT
 );
 
+-- حضور وانصراف التيم العلمي. الصف المفتوح (ended_at فاضي) معناه إن الموظف حاضر دلوقتي،
+-- والصفوف المقفولة بتفضل كسجل للحضور. التوزيع بيختار من الحاضرين بس — وده معنى إن الموظف
+-- "يشتغل" على النظام ده: مايتحوّلوش تذاكر وهو مش موجود
+CREATE TABLE IF NOT EXISTS science_attendance (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ
+);
+-- فهرس جزئي فريد: مستحيل يبقى للموظف الواحد أكتر من وردية مفتوحة في نفس الوقت، حتى لو
+-- اتضغط زرار الحضور مرتين بسرعة أو من تبويبين
+CREATE UNIQUE INDEX IF NOT EXISTS idx_science_attendance_open
+    ON science_attendance (user_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_science_attendance_user_time
+    ON science_attendance (user_id, started_at DESC);
+
 INSERT INTO settings (key, value) VALUES
     ('bot_token_encrypted', NULL),
     ('new_bot_token_encrypted', NULL),
     ('auto_reply_enabled', 'false'),
     ('auto_reply_message', 'شكرًا لتواصلك معنا، هنرد عليك في أقرب وقت.'),
+    -- بتتبعت للطالب لما موظف المتابعة يحاول يحوّل سؤاله للتيم العلمي ومفيش حد منهم مسجّل حضور
+    ('science_offline_message', 'فريق الأسئلة العلمية مش متاح دلوقتي 🧪
+ابعت سؤالك تاني في مواعيد العمل من ١٠ صباحًا لحد ١٢ بالليل وهنجاوبك على طول.'),
+    -- بتتبعت للطالب لما يبعت فيديو أو رسالة صوتية — البوت مابيقراش الوسائط دي، والرسالة دي
+    -- بتخلّيه يعيد السؤال بصيغة الموظف يقدر يشوفها
+    ('media_not_supported_message', 'معلش، مش بنقدر نستقبل صوت أو فيديو هنا 🙏
+ابعت سؤالك مكتوب أو صورة وهنجاوبك على طول.'),
     ('forwarding_enabled', 'false'),
     ('forward_chat_id', NULL),
     ('forward_chat_name', NULL),
