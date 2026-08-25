@@ -4711,7 +4711,7 @@ ${mark}${percent}`;
                   <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
                   ${urgentBadge(ticket.is_urgent)}
                   ${withScience
-                    ? `<span class="science-badge" title="مع التيم العلمي دلوقتي${ticket.science_agent_name ? ' — ' + escapeHtml(ticket.science_agent_name) : ''}">🧪 التيم العلمي</span>`
+                    ? `<span class="science-badge" title="مع التيم العلمي دلوقتي${ticket.science_agent_name ? ' — ' + escapeHtml(ticket.science_agent_name) : ''}">🧪 ${escapeHtml(firstEmployeeName(ticket.science_agent_name) || 'التيم العلمي')}</span>`
                     : (ticket.never_replied ? '<span class="never-replied-badge" title="الرسالة اتفتحت وعدّى عليها أكتر من ١٠ دقايق من غير رد ولا حتى تفاعل بإيموجي">محتاجة رد</span>' : '')}
                   ${silentWeek ? '<span class="silent-week-badge" title="بعتنا له بعد آخر كلام منه وعدّى أسبوع من غير أي رد — الحملات الجماعية مش محسوبة">مردش من أسبوع</span>' : ''}
                   ${ideaBadge}
@@ -4871,6 +4871,7 @@ ${mark}${percent}`;
                 ${assignedUser ? `<span class="ticket-employee-badge ${employeeBadgeClass(assignedUser.id)}" title="الموظف المسؤول: ${escapeHtml(assignedUser.name)}">${escapeHtml(firstEmployeeName(assignedUser.name))}</span>` : ''}
                 ${ticket.current_idea_number ? `<span class="idea-badge-lg" title="رقم الفكرة الحالية">💡 فكرة ${ticket.current_idea_number}</span>` : ''}
                 ${urgentBadge(ticket.is_urgent)}
+                ${ticket.science_agent_id ? `<span class="science-badge" title="السؤال مع التيم العلمي دلوقتي">🧪 ${escapeHtml(ticket.science_agent_name || 'التيم العلمي')}</span>` : ''}
               </h2>
               <div class="ticket-muted">${ticket.telegram_username ? '@' + escapeHtml(ticket.telegram_username) + ' · ' : ''}Chat ID: ${ticket.chat_id}</div>
             </div>
