@@ -6986,7 +6986,7 @@ ${mark}${percent}`;
         list.querySelectorAll('.staff-assign-calls-toggle').forEach((checkbox) => {
           checkbox.addEventListener('change', () => updateStaffUser(checkbox.dataset.userId, { can_assign_calls: checkbox.checked }));
         });
-        panel.querySelectorAll('.staff-science-team-toggle').forEach((checkbox) => {
+        list.querySelectorAll('.staff-science-team-toggle').forEach((checkbox) => {
           checkbox.addEventListener('change', () => updateStaffUser(checkbox.dataset.userId, { is_science_team: checkbox.checked }));
         });
         list.querySelectorAll('.staff-delete-btn').forEach((button) => {
