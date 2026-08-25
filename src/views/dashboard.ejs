@@ -2178,6 +2178,7 @@
           ${incomingTools}
           ${replyQuoteHtml}
           ${message.image_path ? `<img class="ticket-message-image" src="/${escapeHtml(message.image_path)}" alt="صورة مرفقة">` : ''}
+          ${message.voice_path ? `<audio class="ticket-message-voice" controls preload="none" src="/${escapeHtml(message.voice_path)}"></audio>` : ''}
           ${message.content ? `<div class="ticket-message-content">${escapeHtml(message.content)}</div>` : ''}
           <div class="ticket-message-meta">${senderPrefix}${fmtDate(message.occurred_at)}${message.edited_at ? ' · معدّلة' : ''}</div>
         </div>`;
@@ -4639,6 +4640,107 @@ ${mark}${percent}`;
       await refresh();
     }
 
+    // ---------- تسجيل رسالة صوتية للطالب ----------
+    //
+    // اتجاه واحد: الموظف بيسجّل ويبعت. أول ضغطة بتبدأ التسجيل، والتانية بتوقفه وتبعته على طول
+    // — من غير مرحلة "معاينة قبل الإرسال"، لأن ده رد في محادثة شغالة مش استوديو.
+    //
+    // ترتيب الصيغ مهم: تليجرام بيقبل ogg/opus وm4a وmp3 بس. لو المتصفح يقدر يطلّع واحدة منهم
+    // بنستخدمها ويتبعت من غير أي تحويل. كروم وإيدچ مابيقدروش، فبيطلّعوا webm والسيرفر بيغيّر
+    // الحاوية بس (نسخ stream، من غير إعادة ترميز)
+    const VOICE_MIME_PREFERENCE = [
+      'audio/ogg;codecs=opus',
+      'audio/mp4',
+      'audio/webm;codecs=opus',
+      'audio/webm',
+    ];
+    let voiceRecorder = null;
+    let voiceTimer = null;
+
+    function pickVoiceMime() {
+      if (typeof MediaRecorder === 'undefined') return null;
+      return VOICE_MIME_PREFERENCE.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+    }
+
+    function stopVoiceTracks(stream) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+
+    async function startVoiceRecording(button, ticketId) {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        return showToast('متصفحك مابيدعمش التسجيل الصوتي');
+      }
+      const mimeType = pickVoiceMime();
+      if (mimeType === null) return showToast('متصفحك مابيدعمش التسجيل الصوتي');
+
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (error) {
+        // المستخدم رفض الإذن أو مفيش مايك — الرسالة بتفرّق بين الحالتين عشان يعرف يتصرف
+        return showToast(error.name === 'NotAllowedError'
+          ? 'لازم تسمح للموقع باستخدام المايك من إعدادات المتصفح'
+          : 'مفيش مايك متاح');
+      }
+
+      const chunks = [];
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size) chunks.push(event.data);
+      });
+      recorder.addEventListener('stop', async () => {
+        stopVoiceTracks(stream);
+        clearInterval(voiceTimer);
+        voiceRecorder = null;
+        button.classList.remove('recording');
+        button.textContent = '🎙️';
+        if (recorder.cancelled || !chunks.length) return;
+
+        button.disabled = true;
+        try {
+          const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/webm' });
+          const form = new FormData();
+          // الامتداد هنا شكلي — السيرفر بياخد الصيغة من نوع المحتوى مش من الاسم
+          form.append('voice', blob, 'voice');
+          const response = await fetch(`/api/tickets/${ticketId}/voice`, { method: 'POST', body: form });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || 'تعذر إرسال التسجيل');
+          showToast('اتبعت التسجيل الصوتي');
+          loadTicket(ticketId);
+          loadTickets();
+        } catch (error) { showToast(error.message); }
+        finally { button.disabled = false; }
+      });
+
+      recorder.start();
+      voiceRecorder = recorder;
+      button.classList.add('recording');
+      let seconds = 0;
+      const tick = () => {
+        seconds += 1;
+        button.textContent = `⏹ ${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+        // حد أقصى ٥ دقايق: بعدها بيقف ويتبعت لوحده بدل ما يفضل شغال لو حد نسيه
+        if (seconds >= 300) recorder.stop();
+      };
+      button.textContent = '⏹ 00:00';
+      voiceTimer = setInterval(tick, 1000);
+    }
+
+    function bindVoiceButton(ticketId) {
+      const button = document.getElementById('ticket-voice-btn');
+      if (!button) return;
+      button.addEventListener('click', () => {
+        if (voiceRecorder) voiceRecorder.stop();
+        else startVoiceRecording(button, ticketId);
+      });
+      // قفل المحادثة والتسجيل شغال: بنلغيه بدل ما نبعت تسجيل الموظف نسي إنه بيتعمل
+      button.addEventListener('cancel-voice', () => {
+        if (!voiceRecorder) return;
+        voiceRecorder.cancelled = true;
+        voiceRecorder.stop();
+      });
+    }
+
     function ticketQueryString() {
       const query = new URLSearchParams({ page: String(ticketsPage) });
       const values = {
@@ -4972,6 +5074,8 @@ ${mark}${percent}`;
                   <button type="button" class="btn btn-ghost btn-sm" style="width:100%" id="exam-marks-course-btn" title="اختبارات أونلاين بس — المنصة مش بترجع كورس الاختبارات الورقية">كل اختبارات كورساتي المشترك فيها</button>
                 </div>
               </div>
+              <button type="button" class="btn btn-ghost ticket-send-button" id="ticket-voice-btn" style="width:auto"
+                title="تسجيل رسالة صوتية للطالب" aria-label="تسجيل رسالة صوتية">🎙️</button>
               <button class="btn btn-primary ticket-send-button" id="send-ticket-reply" style="width:auto" title="إرسال الرد">
                 ➤ <span class="desktop-button-label">إرسال</span>
               </button>
@@ -5094,6 +5198,7 @@ ${mark}${percent}`;
           });
         });
         document.getElementById('send-ticket-reply').addEventListener('click', sendTicketReply);
+        bindVoiceButton(ticketId);
         document.getElementById('cancel-ticket-reply-context').addEventListener('click', clearReplyContext);
         document.getElementById('mobile-ticket-back').addEventListener('click', closeMobileTicket);
 

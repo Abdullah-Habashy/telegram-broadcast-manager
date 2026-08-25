@@ -1045,3 +1045,14 @@ th.perf-sorted { color: var(--primary); }
   display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px;
   background: var(--success); color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap;
 }
+
+/* الرسالة الصوتية اللي الموظف بعتها. عرض كامل جوّه الفقاعة عشان شريط التشغيل يبان،
+   و preload="none" في الـ HTML عشان محادثة فيها تسجيلات كتير ما تحمّلهمش كلهم مرة واحدة */
+.ticket-message-voice { display: block; width: 100%; min-width: 220px; margin-top: 6px; }
+/* وقت التسجيل: الزرار بيتحوّل لأحمر ينبض مع عدّاد الثواني */
+#ticket-voice-btn.recording {
+  background: var(--danger-tint); color: var(--danger);
+  border-color: var(--danger); animation: voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes voice-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { #ticket-voice-btn.recording { animation: none; } }

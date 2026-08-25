@@ -6,6 +6,8 @@ const multer = require('multer');
 const router = express.Router();
 const ticketsController = require('../controllers/tickets.controller');
 const scienceController = require('../controllers/science.controller');
+const voiceController = require('../controllers/voice.controller');
+const { MAX_BYTES: VOICE_MAX_BYTES } = require('../utils/voiceNote');
 const { requireAuthApi, requireTicketsAccessApi, requireAdminApi } = require('../middleware/requireAuth');
 
 const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'support');
@@ -23,6 +25,26 @@ const upload = multer({
     if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
       return callback(new Error('مسموح بصور JPG وPNG فقط'));
     }
+    callback(null, true);
+  },
+});
+
+// رفع التسجيلات الصوتية — منفصل عن رفع الصور: الصيغ مختلفة والحدود مختلفة، والامتداد بيتاخد
+// من نوع المحتوى عشان ffmpeg يعرف يقرا الحاوية صح
+const voiceUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename: (req, file, callback) => {
+      const extension = {
+        'audio/ogg': '.ogg', 'audio/webm': '.webm', 'audio/mp4': '.m4a',
+        'audio/mpeg': '.mp3', 'audio/x-m4a': '.m4a', 'audio/aac': '.m4a',
+      }[file.mimetype.split(';')[0]] || '.webm';
+      callback(null, `${crypto.randomUUID()}${extension}`);
+    },
+  }),
+  limits: { fileSize: VOICE_MAX_BYTES },
+  fileFilter: (req, file, callback) => {
+    if (!file.mimetype.startsWith('audio/')) return callback(new Error('الملف المرفق مش تسجيل صوتي'));
     callback(null, true);
   },
 });
@@ -51,6 +73,7 @@ router.get('/science/on-duty', scienceController.listOnDuty);
 router.get('/:id', ticketsController.getTicket);
 router.post('/:id/science/transfer', scienceController.transferToScience);
 router.post('/:id/science/return', scienceController.returnFromScience);
+router.post('/:id/voice', voiceUpload.single('voice'), voiceController.sendVoiceNote);
 router.post('/:id/urgent', ticketsController.toggleTicketUrgent);
 
 router.patch('/:id/next-follow-up-message', ticketsController.updateNextFollowUpMessage);

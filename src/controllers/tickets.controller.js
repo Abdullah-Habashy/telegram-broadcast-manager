@@ -389,6 +389,7 @@ async function getTicket(req, res) {
         SELECT 'incoming-' || im.id AS message_key, 'incoming' AS direction,
           im.content, im.received_at AS occurred_at, NULL::text AS sender_name, im.image_path,
           NULL::int AS message_id, NULL::int AS sent_by, NULL::timestamptz AS edited_at,
+          NULL::text AS voice_path,
           im.id AS incoming_message_id, im.flag, im.agent_reaction,
           NULL::int AS reply_to_incoming_message_id,
           -- الطالب عمل Reply: بندوّر على الرسالة الأصلية في الجدولين بالترتيب — رسايلنا الأول
@@ -420,6 +421,7 @@ async function getTicket(req, res) {
         SELECT 'outgoing-' || sm.id AS message_key, 'outgoing' AS direction,
           sm.content, sm.sent_at AS occurred_at, u.name AS sender_name, sm.image_path,
           sm.id AS message_id, sm.sent_by, sm.edited_at,
+          sm.voice_path,
           NULL::int AS incoming_message_id, NULL::text AS flag, NULL::text AS agent_reaction,
           sm.reply_to_incoming_message_id,
           COALESCE(NULLIF(replied.content, ''), CASE WHEN replied.image_path IS NOT NULL THEN '📷 صورة' END) AS reply_to_preview,
