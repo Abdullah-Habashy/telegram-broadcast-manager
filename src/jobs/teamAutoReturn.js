@@ -28,7 +28,7 @@ const DUE_TICKETS_SQL = `
     WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL AND sm.sent_by = t.transfer_agent_id
   ) last_team ON true
   WHERE t.transfer_agent_id IS NOT NULL
-    AND t.transfer_team = ANY($3::text[])
+    AND t.transfer_team = ANY($2::text[])
     AND GREATEST(
       COALESCE(last_in.at, '-infinity'::timestamptz),
       COALESCE(last_team.at, '-infinity'::timestamptz),
@@ -45,7 +45,10 @@ const DUE_TICKETS_SQL = `
 `;
 
 async function returnIdleTeamTickets() {
-  const { rows } = await pool.query(DUE_TICKETS_SQL, [RETURN_AFTER_MINUTES, RETURN_AFTER_MINUTES, IDLE_RETURN_TEAMS]);
+  // باراميترين بالظبط: المهلة وقايمة التيمات. كان فيه تالت مبعوت وماستخدمش في نص الاستعلام،
+  // وبوستجرس بيرفض الاستعلام كله بـ "could not determine data type of parameter" — الوظيفة
+  // كانت بترمي كل ٥ دقايق من غير ما ترجّع ولا تذكرة
+  const { rows } = await pool.query(DUE_TICKETS_SQL, [RETURN_AFTER_MINUTES, IDLE_RETURN_TEAMS]);
   if (!rows.length) return 0;
 
   // الشرط بيتكرر في جملة التحديث نفسها عن طريق قايمة المعرّفات: لو الطالب بعت رسالة بين
