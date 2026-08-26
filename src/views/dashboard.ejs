@@ -983,11 +983,16 @@
           <div id="ai-status" class="ticket-muted" style="margin-bottom:12px"></div>
           <div class="row" style="gap:8px; margin-bottom:16px">
             <label class="row" style="gap:8px"><input type="checkbox" id="ai-enabled"> تشغيل الرد الآلي</label>
+            <select id="ai-provider" class="compact-select" style="width:auto" title="المزوّد اللي هيرد على الطلاب فعليًا"></select>
             <button type="button" class="btn btn-ghost btn-sm" id="ai-log-btn" style="width:auto">سجل الردود</button>
           </div>
 
           <h3 style="font-size:14px; margin:16px 0 8px">جرّب سؤال قبل ما تشغّله</h3>
-          <p class="card-desc">بيوريك النموذج هيرد بإيه من غير ما يبعت لأي طالب. جرّب أسئلة تعرف إجابتها وأسئلة مش موجودة في المصدر.</p>
+          <p class="card-desc">
+            بيشغّل السؤال على <b>كل مزوّد متاح</b> ويوريك ردهم جنب بعض، من غير ما يبعت لأي طالب.
+            أهم اختبار هو <b>سؤال مش موجود في المصدر</b> — النموذج الضعيف بيحب "يساعد" فيخترع إجابة،
+            والفرق بيبان هناك مش في الأسئلة السهلة.
+          </p>
           <div class="row" style="gap:8px; margin-bottom:8px">
             <input type="text" id="ai-test-q" class="compact-input" placeholder="اكتب سؤال زي ما الطالب هيكتبه..." style="flex:1">
             <button type="button" class="btn btn-primary btn-sm" id="ai-test-btn" style="width:auto">جرّب</button>
@@ -4815,6 +4820,7 @@ ${mark}${percent}`;
     // يبعت. الإرسال المباشر كان هيخلّي أي دوسة غلط رسالة راحت للطالب فعلًا.
     // بتتحمّل مرة واحدة وبتتخزّن، مش مع كل تذكرة بيفتحها
     let quickRepliesCache = null;
+    let aiProviders = [];
 
     async function renderQuickReplies() {
       const bar = document.getElementById('quick-replies-bar');
@@ -4894,9 +4900,15 @@ ${reply.content}` : reply.content;
       try {
         const data = await api('/api/assist/knowledge');
         // الحالة بتقول صراحةً ليه الميزة مش شغالة — أكتر سببين إن المفتاح ناقص أو القاعدة فاضية
-        status.innerHTML = data.ai_available
-          ? `مفتاح Claude مضبوط · النموذج <code>${escapeHtml(data.model)}</code> · ${data.knowledge.filter((k) => k.is_active).length} معلومة مفعّلة`
-          : '<b style="color:var(--danger)">مفتاح Claude مش مضبوط على السيرفر</b> — الرد الآلي متعطّل لحد ما يتضاف ANTHROPIC_API_KEY في ملف .env';
+        aiProviders = data.providers || [];
+        const ready = aiProviders.filter((p) => p.available);
+        status.innerHTML = ready.length
+          ? `${ready.map((p) => '✅ ' + escapeHtml(p.label)).join(' · ')} · ${data.knowledge.filter((k) => k.is_active).length} معلومة مفعّلة`
+          : '<b style="color:var(--danger)">مفيش أي مفتاح مضبوط</b> — ضيف ANTHROPIC_API_KEY أو GROQ_API_KEY في ملف .env على السيرفر';
+        const select = document.getElementById('ai-provider');
+        // المزوّد اللي مفتاحه مش مضبوط بيظهر معطّل مش مخفي — عشان تعرف إنه موجود وناقصه مفتاح
+        select.innerHTML = aiProviders.map((p) =>
+          `<option value="${p.key}" ${p.available ? '' : 'disabled'}>${escapeHtml(p.label)}${p.available ? '' : ' (مفيش مفتاح)'}</option>`).join('');
         list.innerHTML = data.knowledge.length
           ? data.knowledge.map((row) => `
             <div class="row-between" style="padding:8px 0; border-bottom:1px solid var(--border); gap:8px">
@@ -4962,18 +4974,22 @@ ${reply.content}` : reply.content;
         event.currentTarget.disabled = true;
         box.innerHTML = '<div class="ticket-muted">بيجرّب...</div>';
         try {
-          const result = await api('/api/assist/knowledge/test', { method: 'POST', body: JSON.stringify({ question }) });
-          const [label, tone] = OUTCOME_LABELS[result.outcome] || ['؟', 'stat-muted'];
-          const hint = result.outcome === 'no_answer'
-            ? '<div class="ticket-muted" style="margin-top:6px">الطالب هياخد رسالة الانتظار، والسؤال هيستنى موظف. لو المفروض يعرف الإجابة دي — ضيفها لقاعدة المعرفة.</div>'
-            : '';
-          box.innerHTML = `
-            <div class="card" style="margin:0; padding:12px">
-              <span class="stat-pill ${tone}">${label}</span>
-              ${result.answer ? `<div style="margin-top:8px; white-space:pre-wrap">${escapeHtml(result.answer)}</div>` : ''}
-              ${result.detail ? `<div class="ticket-muted" style="margin-top:6px">${escapeHtml(result.detail)}</div>` : ''}
-              ${hint}
-            </div>`;
+          const data = await api('/api/assist/knowledge/test', { method: 'POST', body: JSON.stringify({ question }) });
+          box.innerHTML = data.results.map((result) => {
+            const [label, tone] = OUTCOME_LABELS[result.outcome] || ['؟', 'stat-muted'];
+            const provider = (aiProviders.find((p) => p.key === result.provider) || {}).label || result.provider;
+            const cost = result.provider === 'groq' ? 'مجاني' : `${result.input_tokens || 0} توكن دخل`;
+            return `
+              <div class="card" style="margin:0 0 8px; padding:12px">
+                <div class="row-between">
+                  <b>${escapeHtml(provider)}</b>
+                  <span class="ticket-muted" style="font-size:11px">${result.latency_ms ? result.latency_ms + 'ms · ' : ''}${escapeHtml(cost)}</span>
+                </div>
+                <span class="stat-pill ${tone}" style="margin-top:6px">${label}</span>
+                ${result.answer ? `<div style="margin-top:8px; white-space:pre-wrap">${escapeHtml(result.answer)}</div>` : ''}
+                ${result.detail ? `<div class="ticket-muted" style="margin-top:6px">${escapeHtml(result.detail)}</div>` : ''}
+              </div>`;
+          }).join('') + '<div class="ticket-muted">لو المزوّدين اختلفوا في سؤال <b>مش</b> موجود في المصدر — اللي قال «مش لاقي» هو الصح.</div>';
         } catch (e) { box.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
         finally { event.currentTarget.disabled = false; }
       });
@@ -4990,10 +5006,17 @@ ${reply.content}` : reply.content;
         } catch (e) { showToast(e.message); }
       });
 
+      document.getElementById('ai-provider').addEventListener('change', async (event) => {
+        try {
+          await api('/api/assist/ai-settings', { method: 'PUT', body: JSON.stringify({ ai_provider: event.target.value }) });
+          showToast('المزوّد اتغيّر');
+        } catch (e) { showToast(e.message); }
+      });
+
       const aiToggle = document.getElementById('ai-enabled');
       aiToggle.addEventListener('change', async () => {
         try {
-          await api('/api/settings', { method: 'PUT', body: JSON.stringify({ ai_reply_enabled: String(aiToggle.checked) }) });
+          await api('/api/assist/ai-settings', { method: 'PUT', body: JSON.stringify({ ai_reply_enabled: String(aiToggle.checked) }) });
           showToast(aiToggle.checked ? 'الرد الآلي اشتغل' : 'الرد الآلي اتقفل');
         } catch (e) { showToast(e.message); aiToggle.checked = !aiToggle.checked; }
       });
@@ -6719,6 +6742,8 @@ ${reply.content}` : reply.content;
         // ويوحي إن الميزة مقفولة وهي شغالة
         const aiToggle = document.getElementById('ai-enabled');
         if (aiToggle) aiToggle.checked = s.ai_reply_enabled === 'true';
+        const providerSelect = document.getElementById('ai-provider');
+        if (providerSelect && s.ai_provider) providerSelect.value = s.ai_provider;
         const statusEl = document.getElementById('token-status');
         const activeBot = (s.bot_profiles || []).find((profile) => profile.is_active);
         if (activeBot) {

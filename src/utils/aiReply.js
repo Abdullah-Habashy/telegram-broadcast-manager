@@ -1,52 +1,15 @@
-const Anthropic = require('@anthropic-ai/sdk');
 const pool = require('../config/db');
-const env = require('../config/env');
+const { callProvider, listProviders, PROVIDERS } = require('./aiProviders');
 
 // ---------- الرد الآلي المقيّد بقاعدة المعرفة ----------
 //
 // **مش تدريب.** محتوى ai_knowledge بيتبعت للنموذج مع كل سؤال كسياق، والنموذج ممنوع يجاوب من
 // برّه. يعني تعديل أي صف في الجدول بيطبّق في نفس اللحظة — من غير إعادة تدريب ولا نشر.
 //
-// النموذج له مخرجان بس: يجاوب من المصدر، أو يقول إنه مش لاقي — ومفيش حالة تالتة. الإجابة
-// بتترجع في حقل منفصل عن قرار "لقيت ولا لأ" عشان القرار ده يبقى صريح ونقدر نتحقق منه، بدل ما
-// نحاول نستنتجه من نص الرد
-const MODEL = 'claude-opus-5';
+// المزوّد قابل للتبديل (Claude مدفوع / Llama على Groq مجاني) لأن السؤال "المجاني يكفي ولا لأ"
+// مالوش إجابة نظرية — بيتقاس بتشغيل نفس الأسئلة على الاتنين. آلية المقارنة في compareProviders
 
-// الرد على طالب في شات لازم يبقى قصير. الحد ده سقف أمان مش هدف — التعليمات بتطلب الاختصار
-const MAX_TOKENS = 1024;
-
-const client = env.anthropicApiKey ? new Anthropic({ apiKey: env.anthropicApiKey }) : null;
-
-function isEnabled() {
-  return Boolean(client);
-}
-
-// الأداة هي وسيلة الإجبار على مخرج منظّم: النموذج لازم ينده بيها، فبناخد قراره كحقل منطقي
-// مش كنص نحاول نفسّره. strict بيضمن إن المدخلات مطابقة للمخطط بالظبط
-const ANSWER_TOOL = {
-  name: 'reply_to_student',
-  description: 'سجّل نتيجة محاولة الإجابة على سؤال الطالب من المصدر المسموح.',
-  strict: true,
-  input_schema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      found_in_source: {
-        type: 'boolean',
-        description: 'true لو الإجابة موجودة صراحةً في المصدر المرفق. false لو مش موجودة أو مش أكيدة.',
-      },
-      blocked_topic: {
-        type: 'boolean',
-        description: 'true لو السؤال بيمس أي موضوع من المواضيع الممنوعة.',
-      },
-      answer: {
-        type: 'string',
-        description: 'الرد للطالب بالعامية المصرية، جملتين على الأكثر. فاضي لو found_in_source = false أو blocked_topic = true.',
-      },
-    },
-    required: ['found_in_source', 'blocked_topic', 'answer'],
-  },
-};
+const DEFAULT_PROVIDER = 'anthropic';
 
 function buildSystemPrompt(knowledge, blockedTopics) {
   const source = knowledge
@@ -72,15 +35,14 @@ ${source}
 
 ٤. متوعدش بأي حاجة، ومتحددش مواعيد، ومتقولش أرقام مش مكتوبة في المصدر حرفيًا.
 
-٥. لو الطالب بيشتكي أو مضايق أو بيتكلم عن حاجة شخصية — found_in_source = false مهما كان.
-
-ندِه بأداة reply_to_student دايمًا.`;
+٥. لو الطالب بيشتكي أو مضايق أو بيتكلم عن حاجة شخصية — found_in_source = false مهما كان.`;
 }
 
 async function loadContext() {
   const [knowledge, settings] = await Promise.all([
     pool.query('SELECT question, answer FROM ai_knowledge WHERE is_active ORDER BY id'),
-    pool.query("SELECT key, value FROM settings WHERE key IN ('ai_reply_enabled', 'ai_reply_prefix', 'ai_blocked_topics')"),
+    pool.query(`SELECT key, value FROM settings WHERE key IN
+      ('ai_reply_enabled', 'ai_reply_prefix', 'ai_blocked_topics', 'ai_provider')`),
   ]);
   return {
     knowledge: knowledge.rows,
@@ -88,72 +50,65 @@ async function loadContext() {
   };
 }
 
-// بترجع { sent, answer, outcome, detail } — والمنادي هو اللي بيبعت فعلًا.
-// الفصل ده مقصود: الدالة دي مسؤولة عن "إيه الرد الصح" بس، والإرسال والتسجيل عند اللي بينده
-async function generateReply({ question }) {
-  if (!client) return { outcome: 'error', detail: 'ANTHROPIC_API_KEY مش مضبوط' };
+// أي مزوّد متاح أصلًا؟ الميزة بتتعطّل لوحدها لو مفيش ولا مفتاح مضبوط
+function isEnabled() {
+  return listProviders().some((p) => p.available);
+}
 
+// بترجع { outcome, answer, ... } — والمنادي هو اللي بيبعت فعلًا. الفصل مقصود: الدالة دي
+// مسؤولة عن "إيه الرد الصح" بس، والإرسال والتسجيل عند اللي بينده
+async function generateReply({ question, provider, skipEnabledCheck = false }) {
   const { knowledge, settings } = await loadContext();
-  if (settings.ai_reply_enabled !== 'true') return { outcome: 'error', detail: 'الرد الآلي مقفول' };
-  if (!knowledge.length) return { outcome: 'error', detail: 'قاعدة المعرفة فاضية' };
+  const providerKey = provider || settings.ai_provider || DEFAULT_PROVIDER;
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    // effort منخفض عن قصد: دي مهمة استخراج من نص قصير مش مسألة تحتاج تفكير عميق،
-    // والرد على طالب مستني لازم يكون سريع
-    output_config: { effort: 'low' },
-    // التخزين المؤقت هو أكبر موفّر تكلفة هنا: قاعدة المعرفة بتتبعت كاملة مع **كل** سؤال،
-    // وهي نفسها بالحرف في كل مرة. من غير الكاش بتتحسب بسعر كامل ١٠ آلاف مرة؛ معاه بتتكتب
-    // مرة وتتقري بعُشر السعر.
-    //
-    // ttl ساعة مش ٥ دقايق: الرسايل بتيجي متفرقة بالليل، والكاش اللي بيموت بعد ٥ دقايق
-    // بيتكتب من أول وجديد كل شوية — والكتابة أغلى من القراءة، فالنتيجة تكلفة أعلى مش أقل
-    system: [{
-      type: 'text',
-      text: buildSystemPrompt(knowledge, settings.ai_blocked_topics || 'لا يوجد'),
-      cache_control: { type: 'ephemeral', ttl: '1h' },
-    }],
-    tools: [ANSWER_TOOL],
-    tool_choice: { type: 'tool', name: ANSWER_TOOL.name },
-    messages: [{ role: 'user', content: question }],
-  });
-
-  const usage = {
-    input_tokens: response.usage?.input_tokens ?? null,
-    output_tokens: response.usage?.output_tokens ?? null,
-    cache_read_tokens: response.usage?.cache_read_input_tokens ?? null,
-    cache_write_tokens: response.usage?.cache_creation_input_tokens ?? null,
-  };
-
-  // النموذج ممكن يرفض الطلب نفسه لأسباب أمان — ساعتها مفيش نداء أداة، والسؤال بيروح لموظف
-  if (response.stop_reason === 'refusal') {
-    return { outcome: 'blocked', detail: 'النموذج رفض الطلب', ...usage };
+  // التجربة من اللوحة بتتخطى شرط التشغيل: الأدمن لازم يقدر يجرّب قبل ما يشغّل
+  if (!skipEnabledCheck && settings.ai_reply_enabled !== 'true') {
+    return { outcome: 'error', detail: 'الرد الآلي مقفول', provider: providerKey };
   }
-  const toolUse = response.content.find((block) => block.type === 'tool_use');
-  if (!toolUse) return { outcome: 'error', detail: 'النموذج مانداش بالأداة', ...usage };
+  if (!knowledge.length) return { outcome: 'error', detail: 'قاعدة المعرفة فاضية', provider: providerKey };
 
-  const { found_in_source: found, blocked_topic: blocked, answer } = toolUse.input;
-  if (blocked) return { outcome: 'blocked', detail: 'موضوع ممنوع', ...usage };
-  if (!found || !String(answer || '').trim()) return { outcome: 'no_answer', ...usage };
-
-  return {
-    outcome: 'sent',
-    answer: `${settings.ai_reply_prefix ? settings.ai_reply_prefix + '\n\n' : ''}${answer.trim()}`,
+  const systemPrompt = buildSystemPrompt(knowledge, settings.ai_blocked_topics || 'لا يوجد');
+  const startedAt = Date.now();
+  const { output, usage } = await callProvider(providerKey, { systemPrompt, question });
+  const base = {
+    provider: providerKey,
+    model: PROVIDERS[providerKey]?.model || null,
+    latency_ms: Date.now() - startedAt,
     ...usage,
   };
+
+  if (output.blocked_topic) return { outcome: 'blocked', detail: 'موضوع ممنوع', ...base };
+  if (!output.found_in_source || !output.answer.trim()) return { outcome: 'no_answer', ...base };
+
+  const prefix = settings.ai_reply_prefix ? `${settings.ai_reply_prefix}\n\n` : '';
+  return { outcome: 'sent', answer: `${prefix}${output.answer.trim()}`, ...base };
+}
+
+// بيشغّل نفس السؤال على كل مزوّد متاح عشان المقارنة تبقى على نفس المدخل بالظبط.
+// الأسئلة اللي **مش** في المصدر هي أهم اختبار: النموذج الضعيف بيحب "يساعد" فيخترع إجابة،
+// والفرق بين المزوّدين بيبان هناك مش في الأسئلة السهلة
+async function compareProviders({ question }) {
+  const available = listProviders().filter((p) => p.available);
+  const results = await Promise.all(available.map(async (p) => {
+    try {
+      return await generateReply({ question, provider: p.key, skipEnabledCheck: true });
+    } catch (error) {
+      return { outcome: 'error', detail: error.message, provider: p.key, model: p.model };
+    }
+  }));
+  return { question, results };
 }
 
 async function logAttempt({ ticketId, incomingMessageId, question, result }) {
   await pool.query(
     `INSERT INTO ai_reply_log
        (ticket_id, incoming_message_id, question, answer, outcome, detail,
-        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, provider)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [ticketId, incomingMessageId, question, result.answer || null, result.outcome,
       result.detail || null, result.input_tokens ?? null, result.output_tokens ?? null,
-      result.cache_read_tokens ?? null, result.cache_write_tokens ?? null]
+      result.cache_read_tokens ?? null, result.cache_write_tokens ?? null, result.provider || null]
   );
 }
 
-module.exports = { generateReply, logAttempt, isEnabled, MODEL };
+module.exports = { generateReply, compareProviders, logAttempt, isEnabled, listProviders };

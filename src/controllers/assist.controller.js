@@ -83,7 +83,7 @@ async function deleteQuickReply(req, res) {
 async function listKnowledge(req, res) {
   try {
     const { rows } = await pool.query('SELECT * FROM ai_knowledge ORDER BY id');
-    res.json({ knowledge: rows, ai_available: aiReply.isEnabled(), model: aiReply.MODEL });
+    res.json({ knowledge: rows, ai_available: aiReply.isEnabled(), providers: aiReply.listProviders() });
   } catch (error) {
     console.error('❌ Failed to list the knowledge base:', error.message);
     res.status(500).json({ error: 'تعذر تحميل قاعدة المعرفة' });
@@ -143,16 +143,41 @@ async function deleteKnowledge(req, res) {
 
 // تجربة سؤال من اللوحة قبل ما الطلاب يشوفوا الرد. **مابيبعتش حاجة لحد** — الغرض إن الأدمن
 // يشوف بنفسه النموذج بيرد بإيه، ويكتشف الثغرات في قاعدة المعرفة قبل ما يشغّل الميزة
+// بيشغّل السؤال على **كل** مزوّد متاح ويرجّع النتايج جنب بعض. المقارنة على نفس السؤال هي
+// الطريقة الوحيدة للحكم إذا كان المجاني يكفي — وأهم أسئلة الاختبار هي اللي **مش** في المصدر
 async function testKnowledge(req, res) {
   const question = String(req.body.question || '').trim();
   if (!question) return res.status(400).json({ error: 'اكتب سؤال للتجربة' });
-  if (!aiReply.isEnabled()) return res.status(503).json({ error: 'مفتاح Claude مش مضبوط على السيرفر' });
+  if (!aiReply.isEnabled()) {
+    return res.status(503).json({ error: 'مفيش أي مفتاح مضبوط على السيرفر — لا Claude ولا Groq' });
+  }
   try {
-    const result = await aiReply.generateReply({ question });
-    res.json(result);
+    res.json(await aiReply.compareProviders({ question }));
   } catch (error) {
     console.error('❌ AI test failed:', error.message);
     res.status(500).json({ error: error.message });
+  }
+}
+
+// إعدادات الرد الآلي. مفاتيح محددة بالاسم مش أي مفتاح بيتبعت — فتح جدول الإعدادات كله
+// للكتابة كان هيخلّي أي خطأ في الواجهة يقدر يكتب فوق توكن البوت أو مواعيد العمل
+const AI_SETTING_KEYS = ['ai_reply_enabled', 'ai_provider', 'ai_reply_prefix', 'ai_blocked_topics'];
+
+async function updateAiSettings(req, res) {
+  const entries = Object.entries(req.body || {}).filter(([key]) => AI_SETTING_KEYS.includes(key));
+  if (!entries.length) return res.status(400).json({ error: 'مفيش إعدادات صالحة' });
+  try {
+    for (const [key, value] of entries) {
+      await pool.query(
+        `INSERT INTO settings (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [key, String(value)]
+      );
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Failed to update AI settings:', error.message);
+    res.status(500).json({ error: 'تعذر حفظ الإعدادات' });
   }
 }
 
@@ -182,4 +207,5 @@ async function getAiLog(req, res) {
 module.exports = {
   listQuickReplies, createQuickReply, updateQuickReply, deleteQuickReply,
   listKnowledge, createKnowledge, updateKnowledge, deleteKnowledge, testKnowledge, getAiLog,
+  updateAiSettings,
 };

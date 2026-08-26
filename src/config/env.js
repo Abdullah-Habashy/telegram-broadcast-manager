@@ -29,4 +29,6 @@ module.exports = {
   // مفتاح Claude للرد الآلي. **مش في قايمة required عن قصد**: من غيره الرد الآلي بيتعطّل
   // لوحده والباقي بيشتغل عادي — مايستاهلش يمنع السيرفر من الإقلاع
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  // Groq — نماذج مفتوحة بطبقة مجانية. زي مفتاح Claude: غيابه بيعطّل المزوّد ده بس
+  groqApiKey: process.env.GROQ_API_KEY || '',
 };

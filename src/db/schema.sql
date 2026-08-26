@@ -547,6 +547,8 @@ CREATE INDEX IF NOT EXISTS idx_ai_reply_log_time ON ai_reply_log (created_at DES
 -- التكلفة الحقيقية ولا نسبة إصابة الكاش — والتقدير هنا بيفرق أضعاف
 ALTER TABLE ai_reply_log ADD COLUMN IF NOT EXISTS cache_read_tokens INTEGER;
 ALTER TABLE ai_reply_log ADD COLUMN IF NOT EXISTS cache_write_tokens INTEGER;
+-- أي مزوّد رد — من غيره مفيش طريقة تقارن أداء المجاني بالمدفوع على بيانات حقيقية
+ALTER TABLE ai_reply_log ADD COLUMN IF NOT EXISTS provider VARCHAR(20);
 
 -- علامة إن الرسالة دي مولّدة آليًا — الموظف لازم يفرّقها عن كلام زمايله وهو بيراجع الصبح
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_ai BOOLEAN NOT NULL DEFAULT FALSE;
@@ -565,6 +567,8 @@ INSERT INTO settings (key, value) VALUES
 ابعت مشكلتك تاني في مواعيد العمل من ١٠ صباحًا لحد ١٢ بالليل وهنحلّها على طول.'),
     -- الرد الآلي بالذكاء الصناعي — مقفول لحد ما الأدمن يشغّله بعد ما يملا قاعدة المعرفة
     ('ai_reply_enabled', 'false'),
+    -- المزوّد المستخدم فعليًا: anthropic (مدفوع وأدق) أو groq (مجاني). التبديل من اللوحة
+    ('ai_provider', 'anthropic'),
     -- بيتحط في أول كل رد آلي. الطالب لازم يعرف إنه بيكلم آلة مش موظف
     ('ai_reply_prefix', '🤖 رد آلي — لو محتاج حاجة تانية سيبها وهيرد عليك الفريق في مواعيد العمل.'),
     -- مواضيع النموذج ممنوع يقربها مهما كان اللي في قاعدة المعرفة: فلوس، استرداد، شكاوى،

@@ -19,5 +19,6 @@ router.patch('/knowledge/:id', requireAdminApi, assistController.updateKnowledge
 router.delete('/knowledge/:id', requireAdminApi, assistController.deleteKnowledge);
 router.post('/knowledge/test', requireAdminApi, assistController.testKnowledge);
 router.get('/ai-log', requireAdminApi, assistController.getAiLog);
+router.put('/ai-settings', requireAdminApi, assistController.updateAiSettings);
 
 module.exports = router;
