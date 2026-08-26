@@ -276,11 +276,8 @@
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap"><input type="checkbox" id="staff-can-view-tickets" checked> صندوق الدعم</label>
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap"><input type="checkbox" id="staff-can-view-calls" checked> المتابعة التليفونية</label>
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="يقدر يسند/يلغي إسناد طلاب المكالمات لغيره من الموظفين"><input type="checkbox" id="staff-can-assign-calls"> مسند المكالمات</label>
-              <select id="staff-team" class="compact-select" title="التيم المتخصص — بيستقبل التذاكر المحوّلة لتيمه بس، ومستثنى من التوزيع التلقائي للتذاكر الجديدة">
-                <option value="">فريق المتابعة</option>
-                <option value="science">🧪 التيم العلمي</option>
-                <option value="tech">🛠️ الدعم الفني</option>
-              </select>
+              <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="بيستقبل الأسئلة العلمية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="new-staff-team" id="staff-team-science" value="science"> تيم علمي</label>
+              <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="بيستقبل المشاكل التقنية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="new-staff-team" id="staff-team-tech" value="tech"> دعم فني</label>
               <button type="button" class="btn btn-primary" id="create-staff-btn" style="width:auto">إنشاء الحساب</button>
             </div>
             <div id="staff-users-list"><div class="empty-state">بيتحمّل...</div></div>
@@ -4600,7 +4597,19 @@ ${mark}${percent}`;
       });
       loadTickets();
       if (currentUserTeam) initTeamAttendance();
-      if (currentUserRole === 'admin') loadAdminUsers();
+      if (currentUserRole === 'admin') {
+        loadAdminUsers();
+        // نفس تنافي المربعين في كارت الموظف — نموذج الإضافة لازم يمنع تعليم الاتنين كمان،
+        // وإلا الأدمن يعلّم اتنين ويتحفظ واحد من غير ما حد يقوله
+        document.querySelectorAll('.new-staff-team').forEach((checkbox) => {
+          checkbox.addEventListener('change', () => {
+            if (!checkbox.checked) return;
+            document.querySelectorAll('.new-staff-team').forEach((other) => {
+              if (other !== checkbox) other.checked = false;
+            });
+          });
+        });
+      }
       if (pendingDeepLinkTicketId) {
         const ticketId = Number(pendingDeepLinkTicketId);
         pendingDeepLinkTicketId = null;
@@ -7062,11 +7071,8 @@ ${mark}${percent}`;
                     <label class="icon-toggle" title="صلاحية صندوق الدعم"><input type="checkbox" class="staff-view-tickets-toggle" data-user-id="${user.id}" ${user.can_view_tickets ? 'checked' : ''}> 🎫</label>
                     <label class="icon-toggle" title="صلاحية المتابعة التليفونية"><input type="checkbox" class="staff-view-calls-toggle" data-user-id="${user.id}" ${user.can_view_calls ? 'checked' : ''}> 📞</label>
                     <label class="icon-toggle" title="مسند — يقدر يسند/يلغي إسناد طلاب المكالمات لغيره من الموظفين"><input type="checkbox" class="staff-assign-calls-toggle" data-user-id="${user.id}" ${user.can_assign_calls ? 'checked' : ''}> 🧭</label>
-                    <select class="compact-select staff-team-select" data-user-id="${user.id}" style="width:auto; font-size:11.5px" title="التيم المتخصص — التيمات المتخصصة مستثناة من التوزيع التلقائي للتذاكر الجديدة">
-                      <option value="" ${!user.team ? 'selected' : ''}>فريق المتابعة</option>
-                      <option value="science" ${user.team === 'science' ? 'selected' : ''}>🧪 علمي</option>
-                      <option value="tech" ${user.team === 'tech' ? 'selected' : ''}>🛠️ فني</option>
-                    </select>
+                    <label class="icon-toggle" title="التيم العلمي — بيستقبل الأسئلة العلمية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="staff-team-toggle" data-user-id="${user.id}" data-team="science" ${user.team === 'science' ? 'checked' : ''}> 🧪</label>
+                    <label class="icon-toggle" title="الدعم الفني — بيستقبل المشاكل التقنية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="staff-team-toggle" data-user-id="${user.id}" data-team="tech" ${user.team === 'tech' ? 'checked' : ''}> 🛠️</label>
                   `}
                   ${reportCell}
                   ${sessionCell}
@@ -7111,8 +7117,16 @@ ${mark}${percent}`;
         list.querySelectorAll('.staff-assign-calls-toggle').forEach((checkbox) => {
           checkbox.addEventListener('change', () => updateStaffUser(checkbox.dataset.userId, { can_assign_calls: checkbox.checked }));
         });
-        list.querySelectorAll('.staff-team-select').forEach((select) => {
-          select.addEventListener('change', () => updateStaffUser(select.dataset.userId, { team: select.value || null }));
+        // الموظف في تيم واحد بس (users.team قيمة واحدة)، فالمربعين متنافيين: تعليم واحد
+        // بيشيل التاني فورًا في الشاشة بدل ما الموظف يفضل شايف الاتنين متعلّمين لحد التحديث
+        list.querySelectorAll('.staff-team-toggle').forEach((checkbox) => {
+          checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+              list.querySelectorAll(`.staff-team-toggle[data-user-id="${checkbox.dataset.userId}"]`)
+                .forEach((other) => { if (other !== checkbox) other.checked = false; });
+            }
+            updateStaffUser(checkbox.dataset.userId, { team: checkbox.checked ? checkbox.dataset.team : null });
+          });
         });
         list.querySelectorAll('.staff-delete-btn').forEach((button) => {
           button.addEventListener('click', async () => {
@@ -7215,7 +7229,7 @@ ${mark}${percent}`;
         const can_view_tickets = document.getElementById('staff-can-view-tickets').checked;
         const can_view_calls = document.getElementById('staff-can-view-calls').checked;
         const can_assign_calls = document.getElementById('staff-can-assign-calls').checked;
-        const team = document.getElementById('staff-team')?.value || null;
+        const team = document.querySelector('.new-staff-team:checked')?.value || null;
         if (!name || !email || !password) return showToast('املأ بيانات الحساب كاملة');
         try {
           await api('/api/admin/users', {
