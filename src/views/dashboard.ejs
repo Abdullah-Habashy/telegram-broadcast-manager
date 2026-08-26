@@ -963,6 +963,46 @@
           <h1>الإعدادات</h1>
           <p>توكن البوت والرد التلقائي</p>
         </div>
+        <div class="card">
+          <h2>الردود الجاهزة</h2>
+          <p class="card-desc">نصوص بيستخدمها الموظف كتير. بتظهر كأزرار فوق مربع الرد، والضغط بيحطها في المربع عشان يعدّل عليها قبل ما يبعت — مش بتتبعت لوحدها.</p>
+          <div class="row" style="gap:8px; margin-bottom:10px">
+            <input type="text" id="qr-title" class="compact-input" placeholder="العنوان (اللي هيظهر على الزرار)" style="max-width:240px">
+            <button type="button" class="btn btn-primary btn-sm" id="qr-add" style="width:auto">إضافة</button>
+          </div>
+          <textarea id="qr-content" class="compact-input" rows="3" placeholder="نص الرد اللي هيتحط في مربع الموظف..." style="width:100%; margin-bottom:12px"></textarea>
+          <div id="qr-list"></div>
+        </div>
+
+        <div class="card">
+          <h2>الرد الآلي بالذكاء الصناعي</h2>
+          <p class="card-desc">
+            بيرد على الطالب <b>بره مواعيد العمل بس</b>، و<b>من قاعدة المعرفة تحت بس</b> — لو السؤال مش موجود فيها،
+            الطالب بياخد رسالة الانتظار العادية والسؤال بيستنى موظف. مفيش تدريب: أي تعديل تحت بيطبّق فورًا.
+          </p>
+          <div id="ai-status" class="ticket-muted" style="margin-bottom:12px"></div>
+          <div class="row" style="gap:8px; margin-bottom:16px">
+            <label class="row" style="gap:8px"><input type="checkbox" id="ai-enabled"> تشغيل الرد الآلي</label>
+            <button type="button" class="btn btn-ghost btn-sm" id="ai-log-btn" style="width:auto">سجل الردود</button>
+          </div>
+
+          <h3 style="font-size:14px; margin:16px 0 8px">جرّب سؤال قبل ما تشغّله</h3>
+          <p class="card-desc">بيوريك النموذج هيرد بإيه من غير ما يبعت لأي طالب. جرّب أسئلة تعرف إجابتها وأسئلة مش موجودة في المصدر.</p>
+          <div class="row" style="gap:8px; margin-bottom:8px">
+            <input type="text" id="ai-test-q" class="compact-input" placeholder="اكتب سؤال زي ما الطالب هيكتبه..." style="flex:1">
+            <button type="button" class="btn btn-primary btn-sm" id="ai-test-btn" style="width:auto">جرّب</button>
+          </div>
+          <div id="ai-test-result" style="margin-bottom:16px"></div>
+
+          <h3 style="font-size:14px; margin:16px 0 8px">قاعدة المعرفة</h3>
+          <div class="row" style="gap:8px; margin-bottom:8px">
+            <input type="text" id="kb-question" class="compact-input" placeholder="السؤال زي ما الطالب بيسأله" style="flex:1">
+          </div>
+          <textarea id="kb-answer" class="compact-input" rows="2" placeholder="الإجابة — بالعامية وواضحة ومن غير وعود ولا مواعيد" style="width:100%; margin-bottom:8px"></textarea>
+          <button type="button" class="btn btn-primary btn-sm" id="kb-add" style="width:auto; margin-bottom:12px">إضافة معلومة</button>
+          <div id="kb-list"></div>
+        </div>
+
 
         <div class="subtabs" id="settings-subtabs">
           <button type="button" class="subtab-btn active" data-subtab="tafra">ربط طفرة</button>
@@ -2137,8 +2177,10 @@
     }
 
     function ticketMessageHtml(message) {
+      // الرسالة الآلية بتتنسب صراحةً لـ "رد آلي" مش لفريق الدعم — الموظف اللي بيراجع الصبح
+      // لازم يفرّق بين اللي زميله كتبه واللي النموذج قاله
       const senderPrefix = message.direction === 'outgoing'
-        ? escapeHtml(message.sender_name || 'فريق الدعم') + ' · ' : '';
+        ? escapeHtml(message.is_ai ? '🤖 رد آلي' : (message.sender_name || 'فريق الدعم')) + ' · ' : '';
       // تمييز رسائل الطالب (نجمة = رسالة حلوة، إكس = شكوى)، والرد (quote) والتفاعل بإيموجي — كلهم
       // بيشتغلوا على رسائل الطالب الواردة بس
       const replyPreviewText = (message.content ? message.content : (message.image_path ? '📷 صورة' : '')).slice(0, 120);
@@ -2176,7 +2218,7 @@
         return '';
       })();
       return `
-        <div class="ticket-message ${message.direction}" data-message-key="${escapeHtml(messageKeyOf(message))}"
+        <div class="ticket-message ${message.direction} ${message.is_ai ? 'is-ai' : ''}" data-message-key="${escapeHtml(messageKeyOf(message))}"
           data-message-id="${message.message_id || ''}" data-edited-at="${message.edited_at || ''}">
           ${canManageMessage(message) ? `
             <div class="msg-tools">
@@ -3240,7 +3282,7 @@
       if (tab === 'reports') initReports();
       if (tab === 'performance') initPerformance();
       if (tab === 'templates') loadTemplates();
-      if (tab === 'settings') loadSettings();
+      if (tab === 'settings') { loadSettings(); initAssistPanel(); }
     }
 
     // ---------- طلاب منصة طفرة ----------
@@ -4768,6 +4810,198 @@ ${mark}${percent}`;
       });
     }
 
+    // ---------- الردود الجاهزة ----------
+    // الضغط بيحط النص في مربع الرد **مش بيبعته**: الموظف بيعدّل عليه (اسم، تفصيلة) وبعدين
+    // يبعت. الإرسال المباشر كان هيخلّي أي دوسة غلط رسالة راحت للطالب فعلًا.
+    // بتتحمّل مرة واحدة وبتتخزّن، مش مع كل تذكرة بيفتحها
+    let quickRepliesCache = null;
+
+    async function renderQuickReplies() {
+      const bar = document.getElementById('quick-replies-bar');
+      if (!bar) return;
+      try {
+        if (!quickRepliesCache) {
+          quickRepliesCache = (await api('/api/assist/quick-replies')).quick_replies || [];
+        }
+        const active = quickRepliesCache.filter((row) => row.is_active);
+        if (!active.length) { bar.innerHTML = ''; return; }
+        bar.innerHTML = active.map((row) => `
+          <button type="button" class="quick-reply-chip" data-quick-reply="${row.id}"
+            title="${escapeHtml(row.content.slice(0, 160))}">${escapeHtml(row.title)}</button>`).join('');
+        bar.querySelectorAll('[data-quick-reply]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const reply = active.find((row) => String(row.id) === button.dataset.quickReply);
+            if (!reply) return;
+            const box = document.getElementById('ticket-reply-content');
+            // بيتضاف لآخر اللي مكتوب مش بيمسحه — الموظف ممكن يكون كاتب مقدمة بإيده
+            box.value = box.value.trim() ? `${box.value.trim()}
+${reply.content}` : reply.content;
+            box.focus();
+            box.dispatchEvent(new Event('input'));
+          });
+        });
+      } catch (_) { bar.innerHTML = ''; }
+    }
+
+    // ---------- شاشة الردود الجاهزة وقاعدة المعرفة (أدمن) ----------
+    const OUTCOME_LABELS = {
+      sent: ['✅ اتبعت', 'stat-success'],
+      no_answer: ['🔍 مش في المصدر', 'stat-muted'],
+      blocked: ['🚫 موضوع ممنوع', 'stat-warning'],
+      error: ['⚠️ خطأ', 'stat-warning'],
+    };
+
+    async function loadQuickRepliesAdmin() {
+      const list = document.getElementById('qr-list');
+      if (!list) return;
+      try {
+        const data = await api('/api/assist/quick-replies');
+        quickRepliesCache = data.quick_replies || [];
+        list.innerHTML = quickRepliesCache.length
+          ? quickRepliesCache.map((row) => `
+            <div class="row-between" style="padding:8px 0; border-bottom:1px solid var(--border); gap:8px">
+              <div style="flex:1; min-width:0">
+                <b>${escapeHtml(row.title)}</b>
+                <div class="ticket-muted" style="font-size:12px; white-space:pre-wrap">${escapeHtml(row.content)}</div>
+              </div>
+              <label class="icon-toggle" title="مفعّل"><input type="checkbox" data-qr-active="${row.id}" ${row.is_active ? 'checked' : ''}> ⚡</label>
+              <button type="button" class="btn btn-danger-ghost btn-sm" data-qr-del="${row.id}" style="width:auto">حذف</button>
+            </div>`).join('')
+          : '<div class="empty-state">مفيش ردود جاهزة لسه</div>';
+        list.querySelectorAll('[data-qr-active]').forEach((box) => {
+          box.addEventListener('change', () => api(`/api/assist/quick-replies/${box.dataset.qrActive}`,
+            { method: 'PATCH', body: JSON.stringify({ is_active: box.checked }) })
+            .then(() => { quickRepliesCache = null; showToast('اتحدّث'); })
+            .catch((e) => showToast(e.message)));
+        });
+        list.querySelectorAll('[data-qr-del]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            if (!confirm('تحذف الرد الجاهز ده؟')) return;
+            try {
+              await api(`/api/assist/quick-replies/${button.dataset.qrDel}`, { method: 'DELETE' });
+              quickRepliesCache = null;
+              loadQuickRepliesAdmin();
+            } catch (e) { showToast(e.message); }
+          });
+        });
+      } catch (e) { list.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
+    }
+
+    async function loadKnowledge() {
+      const list = document.getElementById('kb-list');
+      const status = document.getElementById('ai-status');
+      if (!list) return;
+      try {
+        const data = await api('/api/assist/knowledge');
+        // الحالة بتقول صراحةً ليه الميزة مش شغالة — أكتر سببين إن المفتاح ناقص أو القاعدة فاضية
+        status.innerHTML = data.ai_available
+          ? `مفتاح Claude مضبوط · النموذج <code>${escapeHtml(data.model)}</code> · ${data.knowledge.filter((k) => k.is_active).length} معلومة مفعّلة`
+          : '<b style="color:var(--danger)">مفتاح Claude مش مضبوط على السيرفر</b> — الرد الآلي متعطّل لحد ما يتضاف ANTHROPIC_API_KEY في ملف .env';
+        list.innerHTML = data.knowledge.length
+          ? data.knowledge.map((row) => `
+            <div class="row-between" style="padding:8px 0; border-bottom:1px solid var(--border); gap:8px">
+              <div style="flex:1; min-width:0">
+                <b>${escapeHtml(row.question)}</b>
+                <div class="ticket-muted" style="font-size:12px; white-space:pre-wrap">${escapeHtml(row.answer)}</div>
+              </div>
+              <label class="icon-toggle" title="مفعّلة — المعطّلة بتتشال من المصدر فورًا"><input type="checkbox" data-kb-active="${row.id}" ${row.is_active ? 'checked' : ''}> ⚡</label>
+              <button type="button" class="btn btn-danger-ghost btn-sm" data-kb-del="${row.id}" style="width:auto">حذف</button>
+            </div>`).join('')
+          : '<div class="empty-state">قاعدة المعرفة فاضية — النموذج مش هيرد على أي حاجة لحد ما تضيف معلومات</div>';
+        list.querySelectorAll('[data-kb-active]').forEach((box) => {
+          box.addEventListener('change', () => api(`/api/assist/knowledge/${box.dataset.kbActive}`,
+            { method: 'PATCH', body: JSON.stringify({ is_active: box.checked }) })
+            .then(() => showToast('اتحدّث')).catch((e) => showToast(e.message)));
+        });
+        list.querySelectorAll('[data-kb-del]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            if (!confirm('تحذف المعلومة دي؟')) return;
+            try {
+              await api(`/api/assist/knowledge/${button.dataset.kbDel}`, { method: 'DELETE' });
+              loadKnowledge();
+            } catch (e) { showToast(e.message); }
+          });
+        });
+      } catch (e) { list.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
+    }
+
+    function initAssistPanel() {
+      const addQr = document.getElementById('qr-add');
+      if (!addQr || addQr.dataset.bound === '1') return;
+      addQr.dataset.bound = '1';
+
+      addQr.addEventListener('click', async () => {
+        const title = document.getElementById('qr-title').value.trim();
+        const content = document.getElementById('qr-content').value.trim();
+        if (!title || !content) return showToast('اكتب العنوان والنص');
+        try {
+          await api('/api/assist/quick-replies', { method: 'POST', body: JSON.stringify({ title, content }) });
+          document.getElementById('qr-title').value = '';
+          document.getElementById('qr-content').value = '';
+          quickRepliesCache = null;
+          loadQuickRepliesAdmin();
+        } catch (e) { showToast(e.message); }
+      });
+
+      document.getElementById('kb-add').addEventListener('click', async () => {
+        const question = document.getElementById('kb-question').value.trim();
+        const answer = document.getElementById('kb-answer').value.trim();
+        if (!question || !answer) return showToast('اكتب السؤال والإجابة');
+        try {
+          await api('/api/assist/knowledge', { method: 'POST', body: JSON.stringify({ question, answer }) });
+          document.getElementById('kb-question').value = '';
+          document.getElementById('kb-answer').value = '';
+          loadKnowledge();
+        } catch (e) { showToast(e.message); }
+      });
+
+      document.getElementById('ai-test-btn').addEventListener('click', async (event) => {
+        const question = document.getElementById('ai-test-q').value.trim();
+        const box = document.getElementById('ai-test-result');
+        if (!question) return showToast('اكتب سؤال');
+        event.currentTarget.disabled = true;
+        box.innerHTML = '<div class="ticket-muted">بيجرّب...</div>';
+        try {
+          const result = await api('/api/assist/knowledge/test', { method: 'POST', body: JSON.stringify({ question }) });
+          const [label, tone] = OUTCOME_LABELS[result.outcome] || ['؟', 'stat-muted'];
+          const hint = result.outcome === 'no_answer'
+            ? '<div class="ticket-muted" style="margin-top:6px">الطالب هياخد رسالة الانتظار، والسؤال هيستنى موظف. لو المفروض يعرف الإجابة دي — ضيفها لقاعدة المعرفة.</div>'
+            : '';
+          box.innerHTML = `
+            <div class="card" style="margin:0; padding:12px">
+              <span class="stat-pill ${tone}">${label}</span>
+              ${result.answer ? `<div style="margin-top:8px; white-space:pre-wrap">${escapeHtml(result.answer)}</div>` : ''}
+              ${result.detail ? `<div class="ticket-muted" style="margin-top:6px">${escapeHtml(result.detail)}</div>` : ''}
+              ${hint}
+            </div>`;
+        } catch (e) { box.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
+        finally { event.currentTarget.disabled = false; }
+      });
+
+      document.getElementById('ai-log-btn').addEventListener('click', async () => {
+        try {
+          const data = await api('/api/assist/ai-log');
+          const lines = data.log.map((row) => {
+            const label = (OUTCOME_LABELS[row.outcome] || ['؟'])[0];
+            const answer = row.answer ? '\nج: ' + row.answer : '';
+            return `${label} · ${fmtDate(row.created_at)} · ${row.student_name || '—'}\nس: ${row.question}${answer}`;
+          });
+          alert(lines.join('\n\n') || 'مفيش ردود آلية لسه');
+        } catch (e) { showToast(e.message); }
+      });
+
+      const aiToggle = document.getElementById('ai-enabled');
+      aiToggle.addEventListener('change', async () => {
+        try {
+          await api('/api/settings', { method: 'PUT', body: JSON.stringify({ ai_reply_enabled: String(aiToggle.checked) }) });
+          showToast(aiToggle.checked ? 'الرد الآلي اشتغل' : 'الرد الآلي اتقفل');
+        } catch (e) { showToast(e.message); aiToggle.checked = !aiToggle.checked; }
+      });
+
+      loadQuickRepliesAdmin();
+      loadKnowledge();
+    }
+
     function ticketQueryString() {
       const query = new URLSearchParams({ page: String(ticketsPage) });
       const values = {
@@ -5081,6 +5315,7 @@ ${mark}${percent}`;
               <span class="ticket-reply-context-preview" id="ticket-reply-context-preview"></span>
               <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="cancel-ticket-reply-context" title="إلغاء الرد" aria-label="إلغاء الرد">✕</button>
             </div>
+            <div id="quick-replies-bar" class="quick-replies-bar"></div>
             <div class="ticket-reply-main">
               <textarea id="ticket-reply-content" placeholder="اكتب ردك للطالب..."></textarea>
             </div>
@@ -5242,6 +5477,7 @@ ${mark}${percent}`;
         });
         document.getElementById('send-ticket-reply').addEventListener('click', sendTicketReply);
         bindVoiceButton(ticketId);
+        renderQuickReplies();
         document.getElementById('cancel-ticket-reply-context').addEventListener('click', clearReplyContext);
         document.getElementById('mobile-ticket-back').addEventListener('click', closeMobileTicket);
 
@@ -6479,6 +6715,10 @@ ${mark}${percent}`;
     async function loadSettings() {
       try {
         const s = await api('/api/settings');
+        // زرار الرد الآلي بيعكس القيمة المحفوظة — من غير ده بيرجع فاضي مع كل فتح للتبويب
+        // ويوحي إن الميزة مقفولة وهي شغالة
+        const aiToggle = document.getElementById('ai-enabled');
+        if (aiToggle) aiToggle.checked = s.ai_reply_enabled === 'true';
         const statusEl = document.getElementById('token-status');
         const activeBot = (s.bot_profiles || []).find((profile) => profile.is_active);
         if (activeBot) {

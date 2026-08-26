@@ -26,4 +26,7 @@ module.exports = {
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+  // مفتاح Claude للرد الآلي. **مش في قايمة required عن قصد**: من غيره الرد الآلي بيتعطّل
+  // لوحده والباقي بيشتغل عادي — مايستاهلش يمنع السيرفر من الإقلاع
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
 };

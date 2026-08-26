@@ -10,6 +10,7 @@
 const pool = require('../config/db');
 const { isWithinWorkingHours, currentCairoTime, nextWorkingWindowPhrase } = require('../utils/workingHours');
 const { getFirstName } = require('../utils/messagePersonalization');
+const aiReply = require('../utils/aiReply');
 
 // بترجع true لو بعتت فعلاً — عشان اللي بينداها يعرف إنه مايبعتش رد تاني بعدها
 async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
@@ -41,6 +42,32 @@ async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
       tafra_name: tafraResult.rows[0]?.name,
       gender: tafraResult.rows[0]?.gender,
     }));
+
+  // محاولة الرد الآلي قبل رسالة الانتظار: لو النموذج لقى الإجابة في قاعدة المعرفة، الطالب
+  // بياخد إجابته فورًا بدل ما يستنى للصبح. ولو ملقاش — أو الموضوع ممنوع أو حصل أي خطأ —
+  // بنكمّل لرسالة الانتظار العادية زي ما كانت بالظبط.
+  //
+  // **الفشل هنا مايوقفش حاجة**: أي مشكلة في النموذج أو الشبكة معناها الطالب ياخد رسالة
+  // الانتظار، مش إنه يقعد من غير أي رد
+  const question = String(ctx.message?.text || '').trim();
+  if (question && aiReply.isEnabled()) {
+    try {
+      const result = await aiReply.generateReply({ question });
+      await aiReply.logAttempt({ ticketId, incomingMessageId: null, question, result })
+        .catch((err) => console.error('❌ Failed to log the AI reply attempt:', err.message));
+      if (result.outcome === 'sent') {
+        const aiMessage = await ctx.reply(result.answer);
+        await pool.query(
+          `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id, is_ai)
+           VALUES ($1, NULL, $2, $3, TRUE)`,
+          [ticketId, result.answer, aiMessage.message_id]
+        );
+        return true;
+      }
+    } catch (error) {
+      console.error('❌ AI reply failed, falling back to the waiting message:', error.message);
+    }
+  }
 
   const telegramMessage = await ctx.reply(text);
   // بيتسجّل في المحادثة (بدون is_welcome) عشان الموظف يشوف الطالب استلم إيه ومايكرّرش نفس الكلام.

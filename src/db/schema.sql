@@ -497,6 +497,56 @@ END $$;
 ALTER TABLE team_attendance ADD COLUMN IF NOT EXISTS team VARCHAR(20);
 UPDATE team_attendance SET team = 'science' WHERE team IS NULL;
 
+-- ---------- الردود الجاهزة ----------
+-- نصوص بيستخدمها الموظف كتير. الضغط بيحطها في مربع الرد **مش بيبعتها** — الموظف بيعدّل
+-- عليها الأول (اسم الطالب، تفصيلة في السؤال) وبعدين يبعت. الإرسال المباشر كان هيخلّي أي
+-- دوسة غلط رسالة راحت للطالب
+CREATE TABLE IF NOT EXISTS quick_replies (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(120) NOT NULL,
+    content TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_quick_replies_order ON quick_replies (sort_order, id) WHERE is_active;
+
+-- ---------- قاعدة معرفة الرد الآلي ----------
+-- المصدر الوحيد اللي النموذج مسموح له يجاوب منه. مش "تدريب": المحتوى بيتبعت مع كل سؤال
+-- وبيتقري لحظتها، فتعديل أي صف هنا بيطبّق فورًا من غير إعادة تدريب ولا نشر.
+--
+-- الصفوف المعطّلة (is_active = FALSE) بتتشال من السياق فورًا — الطريقة السريعة لسحب معلومة
+-- غلط من غير ما تحذفها وتفقد نصّها
+CREATE TABLE IF NOT EXISTS ai_knowledge (
+    id SERIAL PRIMARY KEY,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_knowledge_active ON ai_knowledge (id) WHERE is_active;
+
+-- سجل كل نداء للنموذج: السؤال، الرد، اتبعت ولا لأ والسبب. من غيره مفيش طريقة تعرف بيها
+-- النموذج بيرفض ليه، ولا تراجع صح إيه اللي اتقال للطلاب وانت نايم
+CREATE TABLE IF NOT EXISTS ai_reply_log (
+    id SERIAL PRIMARY KEY,
+    ticket_id INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+    incoming_message_id INTEGER REFERENCES incoming_messages(id) ON DELETE SET NULL,
+    question TEXT NOT NULL,
+    answer TEXT,
+    -- sent · no_answer (مش في المصدر) · blocked (موضوع ممنوع) · error
+    outcome VARCHAR(20) NOT NULL,
+    detail TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_reply_log_time ON ai_reply_log (created_at DESC);
+
+-- علامة إن الرسالة دي مولّدة آليًا — الموظف لازم يفرّقها عن كلام زمايله وهو بيراجع الصبح
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_ai BOOLEAN NOT NULL DEFAULT FALSE;
+
 INSERT INTO settings (key, value) VALUES
     ('bot_token_encrypted', NULL),
     ('new_bot_token_encrypted', NULL),
@@ -509,6 +559,13 @@ INSERT INTO settings (key, value) VALUES
     -- بتخلّيه يعيد السؤال بصيغة الموظف يقدر يشوفها
     ('tech_offline_message', 'فريق الدعم الفني مش متاح دلوقتي 🛠️
 ابعت مشكلتك تاني في مواعيد العمل من ١٠ صباحًا لحد ١٢ بالليل وهنحلّها على طول.'),
+    -- الرد الآلي بالذكاء الصناعي — مقفول لحد ما الأدمن يشغّله بعد ما يملا قاعدة المعرفة
+    ('ai_reply_enabled', 'false'),
+    -- بيتحط في أول كل رد آلي. الطالب لازم يعرف إنه بيكلم آلة مش موظف
+    ('ai_reply_prefix', '🤖 رد آلي — لو محتاج حاجة تانية سيبها وهيرد عليك الفريق في مواعيد العمل.'),
+    -- مواضيع النموذج ممنوع يقربها مهما كان اللي في قاعدة المعرفة: فلوس، استرداد، شكاوى،
+    -- وأي حاجة نفسية. الرسالة بتروح للموظف زي ما هي بدون أي محاولة رد
+    ('ai_blocked_topics', 'استرداد الفلوس، الخصومات، الشكاوى من موظف، أي حاجة نفسية أو صحية، الوعود بمواعيد أو نتائج امتحانات'),
     ('media_not_supported_message', 'معلش، مش بنقدر نستقبل صوت أو فيديو هنا 🙏
 ابعت سؤالك مكتوب أو صورة وهنجاوبك على طول.'),
     ('forwarding_enabled', 'false'),

@@ -11,6 +11,7 @@
     "sync:tafra-enrollments": "node src/scripts/syncTafraEnrollments.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "bcrypt": "^5.1.1",
     "connect-pg-simple": "^9.0.1",
     "csv-parse": "^5.5.6",
