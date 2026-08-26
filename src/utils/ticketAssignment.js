@@ -1,3 +1,4 @@
+const { getTeam } = require('./teams');
 // توزيع التذاكر الجديدة بالتبادل (دور ثابت) على موظفي صندوق الدعم — يُستدعى فقط عند إنشاء تذكرة
 // جديدة تمامًا (أول رسالة بيننا وبين الطالب مطلقًا)، مش عند أي تحديث لتذكرة موجودة أصلًا.
 // لازم يتنفّذ جوّه نفس الـ transaction اللي بتنشئ التذكرة، وبنفس الـ client، عشان قفل الصف
@@ -38,11 +39,18 @@ async function getNextTicketAssignee(client) {
 // بيرجّع null لو مفيش حد حاضر — والمستدعي بيتصرف (بيبعت للطالب رسالة "بره المواعيد") بدل
 // ما يحوّل التذكرة لطابور مخفي محدش بيبصله
 async function getNextTeamAgent(client, teamKey) {
+  // التيم اللي بيشترط حضور بيوزّع على الحاضرين بس؛ اللي مابيشترطش (الواتساب) بيوزّع على
+  // كل موظفيه النشطين — توجيهه تلقائي في أي وقت، فربطه بوردية كان هيخلّي طالب اللي بييجي
+  // بالليل ميروحش لحد
+  const team = getTeam(teamKey);
+  if (!team) return null;
   const eligibleResult = await client.query(
-    `SELECT u.id FROM users u
-     JOIN team_attendance ta ON ta.user_id = u.id AND ta.ended_at IS NULL
-     WHERE u.is_active = TRUE AND u.team = $1
-     ORDER BY u.id ASC`,
+    team.requiresAttendance
+      ? `SELECT u.id FROM users u
+         JOIN team_attendance ta ON ta.user_id = u.id AND ta.ended_at IS NULL
+         WHERE u.is_active = TRUE AND u.team = $1
+         ORDER BY u.id ASC`
+      : `SELECT u.id FROM users u WHERE u.is_active = TRUE AND u.team = $1 ORDER BY u.id ASC`,
     [teamKey]
   );
   const eligibleIds = eligibleResult.rows.map((row) => row.id);

@@ -14,6 +14,7 @@ const { startWelcomeMessageSender } = require('./jobs/welcomeMessageSender');
 const { startCallAutoAssign } = require('./jobs/callAutoAssign');
 const { startUnansweredAlert } = require('./jobs/unansweredAlert');
 const { startTeamAutoReturn } = require('./jobs/teamAutoReturn');
+const { startWhatsappRouting } = require('./jobs/whatsappRouting');
 const { requireAuth } = require('./middleware/requireAuth');
 
 const authRoutes = require('./routes/auth.routes');
@@ -227,6 +228,7 @@ async function start() {
     startCallAutoAssign();
     startUnansweredAlert();
     startTeamAutoReturn();
+    startWhatsappRouting();
   });
 }
 

@@ -278,6 +278,7 @@
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="يقدر يسند/يلغي إسناد طلاب المكالمات لغيره من الموظفين"><input type="checkbox" id="staff-can-assign-calls"> مسند المكالمات</label>
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="بيستقبل الأسئلة العلمية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="new-staff-team" id="staff-team-science" value="science"> تيم علمي</label>
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="بيستقبل المشاكل التقنية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="new-staff-team" id="staff-team-tech" value="tech"> دعم فني</label>
+              <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="بيتحوّل عليه تلقائيًا كل طالب دخل البوت ومش مشترك في أي كورس"><input type="checkbox" class="new-staff-team" id="staff-team-whatsapp" value="whatsapp"> موظف واتساب</label>
               <button type="button" class="btn btn-primary" id="create-staff-btn" style="width:auto">إنشاء الحساب</button>
             </div>
             <div id="staff-users-list"><div class="empty-state">بيتحمّل...</div></div>
@@ -1215,6 +1216,7 @@
     const TEAM_INFO = {
       science: { label: 'التيم العلمي', icon: '🧪', tone: 'science', transferTitle: 'تحويل السؤال للتيم العلمي' },
       tech: { label: 'الدعم الفني', icon: '🛠️', tone: 'tech', transferTitle: 'تحويل المشكلة للدعم الفني' },
+      whatsapp: { label: 'موظف واتساب', icon: '💬', tone: 'whatsapp', transferTitle: 'تحويل الطالب لموظف واتساب' },
     };
     const currentUserId = Number('<%= userId %>');
     const canAssignCalls = <%- canAssignCalls ? 'true' : 'false' %>;
@@ -4848,13 +4850,12 @@ ${mark}${percent}`;
                   ${telegramReachBadge(ticket.can_message)}
                   <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
                   ${urgentBadge(ticket.is_urgent)}
-                  ${transferTeam
-                    ? `<span class="team-badge team-badge-${transferTeam.tone}" title="مع ${transferTeam.label} دلوقتي${ticket.transfer_agent_name ? ' — ' + escapeHtml(ticket.transfer_agent_name) : ''}">${transferTeam.icon} ${escapeHtml(firstEmployeeName(ticket.transfer_agent_name) || transferTeam.label)}</span>`
-                    : (ticket.never_replied ? '<span class="never-replied-badge" title="الرسالة اتفتحت وعدّى عليها أكتر من ١٠ دقايق من غير رد ولا حتى تفاعل بإيموجي">محتاجة رد</span>' : '')}
+                  ${!transferTeam && ticket.never_replied ? '<span class="never-replied-badge" title="الرسالة اتفتحت وعدّى عليها أكتر من ١٠ دقايق من غير رد ولا حتى تفاعل بإيموجي">محتاجة رد</span>' : ''}
                   ${silentWeek ? '<span class="silent-week-badge" title="بعتنا له بعد آخر كلام منه وعدّى أسبوع من غير أي رد — الحملات الجماعية مش محسوبة">مردش من أسبوع</span>' : ''}
                   ${ideaBadge}
                   ${bootcampMarksHtml(ticket, 'sm')}
-                  ${ticket.assigned_name ? `<span class="ticket-employee-badge ${employeeBadgeClass(ticket.assigned_to)}" title="الموظف المسؤول: ${escapeHtml(ticket.assigned_name)}">${escapeHtml(firstEmployeeName(ticket.assigned_name))}</span>` : ''}
+                  ${ticket.assigned_name ? `<span class="ticket-employee-badge ${employeeBadgeClass(ticket.assigned_to)}" title="موظف المتابعة المسؤول: ${escapeHtml(ticket.assigned_name)}">${escapeHtml(firstEmployeeName(ticket.assigned_name))}</span>` : ''}
+                  ${transferTeam ? `<span class="team-badge team-badge-${transferTeam.tone}" title="ومعاه ${transferTeam.label}${ticket.transfer_agent_name ? ' — ' + escapeHtml(ticket.transfer_agent_name) : ''}">${transferTeam.icon} ${escapeHtml(firstEmployeeName(ticket.transfer_agent_name) || transferTeam.label)}</span>` : ''}
                 </span>
                 ${ticket.unread_count ? `<span class="unread-count" title="${ticket.unread_count} رسائل غير مقروءة">${ticket.unread_count}</span>` : ''}
               </div>
@@ -5006,10 +5007,10 @@ ${mark}${percent}`;
                 ${telegramReachBadge(ticket.can_message)}
                 ${bootcampMarksHtml(ticket)}
                 <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
-                ${assignedUser ? `<span class="ticket-employee-badge ${employeeBadgeClass(assignedUser.id)}" title="الموظف المسؤول: ${escapeHtml(assignedUser.name)}">${escapeHtml(firstEmployeeName(assignedUser.name))}</span>` : ''}
+                ${assignedUser ? `<span class="ticket-employee-badge ${employeeBadgeClass(assignedUser.id)}" title="موظف المتابعة المسؤول: ${escapeHtml(assignedUser.name)}">${escapeHtml(firstEmployeeName(assignedUser.name))}</span>` : ''}
+                ${ticket.transfer_agent_id && TEAM_INFO[ticket.transfer_team] ? `<span class="team-badge team-badge-${TEAM_INFO[ticket.transfer_team].tone}" title="ومعاه ${TEAM_INFO[ticket.transfer_team].label} دلوقتي">${TEAM_INFO[ticket.transfer_team].icon} ${escapeHtml(ticket.transfer_agent_name || TEAM_INFO[ticket.transfer_team].label)}</span>` : ''}
                 ${ticket.current_idea_number ? `<span class="idea-badge-lg" title="رقم الفكرة الحالية">💡 فكرة ${ticket.current_idea_number}</span>` : ''}
                 ${urgentBadge(ticket.is_urgent)}
-                ${ticket.transfer_agent_id && TEAM_INFO[ticket.transfer_team] ? `<span class="team-badge team-badge-${TEAM_INFO[ticket.transfer_team].tone}" title="التذكرة مع ${TEAM_INFO[ticket.transfer_team].label} دلوقتي">${TEAM_INFO[ticket.transfer_team].icon} ${escapeHtml(ticket.transfer_agent_name || TEAM_INFO[ticket.transfer_team].label)}</span>` : ''}
               </h2>
               <div class="ticket-muted">${ticket.telegram_username ? '@' + escapeHtml(ticket.telegram_username) + ' · ' : ''}Chat ID: ${ticket.chat_id}</div>
             </div>
@@ -7091,6 +7092,7 @@ ${mark}${percent}`;
                     <label class="icon-toggle" title="مسند — يقدر يسند/يلغي إسناد طلاب المكالمات لغيره من الموظفين"><input type="checkbox" class="staff-assign-calls-toggle" data-user-id="${user.id}" ${user.can_assign_calls ? 'checked' : ''}> 🧭</label>
                     <label class="icon-toggle" title="التيم العلمي — بيستقبل الأسئلة العلمية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="staff-team-toggle" data-user-id="${user.id}" data-team="science" ${user.team === 'science' ? 'checked' : ''}> 🧪</label>
                     <label class="icon-toggle" title="الدعم الفني — بيستقبل المشاكل التقنية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="staff-team-toggle" data-user-id="${user.id}" data-team="tech" ${user.team === 'tech' ? 'checked' : ''}> 🛠️</label>
+                    <label class="icon-toggle" title="موظف واتساب — بيتحوّل عليه تلقائيًا كل طالب دخل البوت ومش مشترك في أي كورس، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="staff-team-toggle" data-user-id="${user.id}" data-team="whatsapp" ${user.team === 'whatsapp' ? 'checked' : ''}> 💬</label>
                   `}
                   ${reportCell}
                   ${sessionCell}
