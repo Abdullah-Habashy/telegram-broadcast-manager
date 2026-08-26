@@ -4908,6 +4908,21 @@ ${mark}${percent}`;
     let quickRepliesCache = null;
     let aiProviders = [];
 
+    // "بتوعي بس" ولا "الكل". بيتخزّن في المتصفح زي باقي الفلاتر في اللوحة، فاختيار الموظف
+    // بيفضل معاه بين الجلسات من غير عمود في القاعدة
+    const QUICK_REPLY_SCOPE_KEY = 'quick-reply-scope';
+    function quickReplyScope() {
+      try { return localStorage.getItem(QUICK_REPLY_SCOPE_KEY) === 'mine' ? 'mine' : 'all'; }
+      catch (_) { return 'all'; }
+    }
+
+    // **مصدر واحد للاتنين**: الشرايح وقايمة / بيندهوا الدالة دي، فالترقيم والمحتوى مستحيل
+    // يختلفوا بينهم. لو كل واحد فلتر لوحده، /3 كان ممكن يوصل لرد غير اللي رقمه ٣ على الشاشة
+    function visibleQuickReplies() {
+      const all = (quickRepliesCache || []).filter((r) => r.is_active);
+      return quickReplyScope() === 'mine' ? all.filter((r) => r.is_mine) : all;
+    }
+
     async function renderQuickReplies() {
       const bar = document.getElementById('quick-replies-bar');
       if (!bar) return;
@@ -4915,13 +4930,26 @@ ${mark}${percent}`;
         if (!quickRepliesCache) {
           quickRepliesCache = (await api('/api/assist/quick-replies')).quick_replies || [];
         }
-        const active = quickRepliesCache.filter((row) => row.is_active);
-        if (!active.length) { bar.innerHTML = ''; return; }
+        const total = quickRepliesCache.filter((row) => row.is_active).length;
+        const mineCount = quickRepliesCache.filter((row) => row.is_active && row.is_mine).length;
+        if (!total) { bar.innerHTML = ''; return; }
+        const active = visibleQuickReplies();
+        const scope = quickReplyScope();
+        // المفتاح بيظهر بس لما يكون فيه ردود شخصية فعلًا — من غيرها هو خيار بين "الكل"
+        // و"مفيش حاجة"، وده مش خيار
+        const toggle = mineCount
+          ? `<button type="button" class="quick-reply-scope ${scope === 'mine' ? 'on' : ''}" id="quick-reply-scope-btn"
+               title="${scope === 'mine' ? `بتشوف بتوعك بس (${mineCount}) — اضغط لعرض الكل (${total})` : `بتشوف الكل (${total}) — اضغط لعرض بتوعك بس (${mineCount})`}">${scope === 'mine' ? '👤 بتوعي' : '👥 الكل'}</button>`
+          : '';
         // الرقم على كل شريحة هو نفسه اللي بيشتغل مع /: الموظف بيشوفه وهو بيستخدم الشرايح
         // فبيحفظه من غير ما يحفظ حاجة، وبعد كام يوم بيكتب /3 على طول
-        bar.innerHTML = active.map((row, i) => `
+        bar.innerHTML = toggle + active.map((row, i) => `
           <button type="button" class="quick-reply-chip" data-quick-reply="${row.id}"
             title="${escapeHtml(row.content.slice(0, 160))}"><span class="quick-reply-num">${i + 1}</span>${escapeHtml(row.title)}</button>`).join('');
+        document.getElementById('quick-reply-scope-btn')?.addEventListener('click', () => {
+          try { localStorage.setItem(QUICK_REPLY_SCOPE_KEY, scope === 'mine' ? 'all' : 'mine'); } catch (_) {}
+          renderQuickReplies();
+        });
         bar.querySelectorAll('[data-quick-reply]').forEach((button) => {
           button.addEventListener('click', () => {
             const reply = active.find((row) => String(row.id) === button.dataset.quickReply);
@@ -5339,7 +5367,7 @@ ${reply.content}` : reply.content;
     function renderSlashMenu(query) {
       const menu = document.getElementById('quick-reply-menu');
       if (!menu) return;
-      const all = (quickRepliesCache || []).filter((r) => r.is_active);
+      const all = visibleQuickReplies();
       const term = query.trim().toLowerCase();
       slashMatches = !term
         ? all

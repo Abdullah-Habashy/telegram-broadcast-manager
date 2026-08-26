@@ -1115,3 +1115,12 @@ th.perf-sorted { color: var(--primary); }
   background: var(--surface-sunken); color: var(--text-muted);
 }
 .quick-reply-chip .quick-reply-num { margin-inline-end: 5px; }
+
+/* مفتاح "بتوعي / الكل" في أول شريط الردود. شكله مختلف عن الشرايح عن قصد — هو مش رد،
+   فلو شبههم كان الموظف هيدوسه فاكره رد */
+.quick-reply-scope {
+  flex: none; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+  border: 1px dashed var(--border); background: transparent; color: var(--text-muted);
+  font-family: inherit; font-size: 11.5px;
+}
+.quick-reply-scope.on { border-style: solid; border-color: var(--primary); color: var(--primary); background: var(--primary-tint); }
