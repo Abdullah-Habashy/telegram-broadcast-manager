@@ -3312,7 +3312,8 @@
 
     function bindStudentReportLinkActions() {
       document.getElementById('create-report-link-btn')?.addEventListener('click', async (event) => {
-        event.currentTarget.disabled = true;
+        const button = event.currentTarget;
+        button.disabled = true;
         try {
           await api('/api/student-report/' + currentReportStudentId, { method: 'POST', body: JSON.stringify({}) });
           showToast('اتعمل رابط للتقرير');
@@ -5128,7 +5129,8 @@ ${reply.content}` : reply.content;
       document.getElementById('ai-mine-preview').addEventListener('click', async (event) => {
         const box = document.getElementById('ai-mine-preview-box');
         const min = document.getElementById('ai-mine-min').value;
-        event.currentTarget.disabled = true;
+        const button = event.currentTarget;
+        button.disabled = true;
         box.innerHTML = '<div class="ticket-muted">بيقرا...</div>';
         try {
           const data = await api(`/api/assist/mine/preview?min_repeats=${min}`);
@@ -5139,12 +5141,13 @@ ${reply.content}` : reply.content;
                    <b>${c.uses}×</b> ${escapeHtml(c.answer.slice(0, 110))}</div>`).join('')
             : '<div class="empty-state">مفيش ردود متكررة بالحد ده — قلّله</div>';
         } catch (error) { box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`; }
-        finally { event.currentTarget.disabled = false; }
+        finally { button.disabled = false; }
       });
 
       document.getElementById('ai-mine-go').addEventListener('click', async (event) => {
         // بياخد وقت (عشرات الردود بتتبعت مرة واحدة) — الزرار بيتقفل عشان مايتضغطش مرتين
-        event.currentTarget.disabled = true;
+        const button = event.currentTarget;
+        button.disabled = true;
         try {
           showToast('بيقرا المحادثات السابقة — ممكن ياخد نص دقيقة');
           const data = await api('/api/assist/mine', {
@@ -5157,7 +5160,7 @@ ${reply.content}` : reply.content;
             ? `من ${data.clusters} رد متكرر → ${aiSuggestions.length} معلومة`
             : 'مفيش معرفة قابلة للاستخراج بالحد ده');
         } catch (error) { showToast(error.message); }
-        finally { event.currentTarget.disabled = false; }
+        finally { button.disabled = false; }
       });
 
       document.getElementById('ai-file-go').addEventListener('click', async () => {
@@ -5182,7 +5185,8 @@ ${reply.content}` : reply.content;
           };
         }).filter(Boolean);
         if (!chosen.length) return showToast('محدش متعلّم عليه');
-        event.currentTarget.disabled = true;
+        const button = event.currentTarget;
+        button.disabled = true;
         try {
           const result = await api('/api/assist/knowledge/apply',
             { method: 'POST', body: JSON.stringify({ changes: chosen }) });
@@ -5191,7 +5195,7 @@ ${reply.content}` : reply.content;
           renderSuggestions();
           loadKnowledge();
         } catch (error) { showToast(error.message); }
-        finally { event.currentTarget.disabled = false; }
+        finally { button.disabled = false; }
       });
 
       document.getElementById('ai-discard').addEventListener('click', () => {
@@ -5200,7 +5204,8 @@ ${reply.content}` : reply.content;
       });
 
       document.getElementById('ai-instructions-save').addEventListener('click', async (event) => {
-        event.currentTarget.disabled = true;
+        const button = event.currentTarget;
+        button.disabled = true;
         try {
           await api('/api/assist/ai-settings', {
             method: 'PUT',
@@ -5208,7 +5213,7 @@ ${reply.content}` : reply.content;
           });
           showToast('التعليمات اتحفظت — بتطبّق على الرد الجاي على طول');
         } catch (error) { showToast(error.message); }
-        finally { event.currentTarget.disabled = false; }
+        finally { button.disabled = false; }
       });
 
       renderAiChat();
@@ -5249,7 +5254,8 @@ ${reply.content}` : reply.content;
         const question = document.getElementById('ai-test-q').value.trim();
         const box = document.getElementById('ai-test-result');
         if (!question) return showToast('اكتب سؤال');
-        event.currentTarget.disabled = true;
+        const button = event.currentTarget;
+        button.disabled = true;
         box.innerHTML = '<div class="ticket-muted">بيجرّب...</div>';
         try {
           const data = await api('/api/assist/knowledge/test', { method: 'POST', body: JSON.stringify({ question }) });
@@ -5269,7 +5275,7 @@ ${reply.content}` : reply.content;
               </div>`;
           }).join('') + '<div class="ticket-muted">لو المزوّدين اختلفوا في سؤال <b>مش</b> موجود في المصدر — اللي قال «مش لاقي» هو الصح.</div>';
         } catch (e) { box.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
-        finally { event.currentTarget.disabled = false; }
+        finally { button.disabled = false; }
       });
 
       document.getElementById('ai-log-btn').addEventListener('click', async () => {
