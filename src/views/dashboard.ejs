@@ -998,6 +998,24 @@
         </div>
 
         <div class="card">
+          <h2>استخرج من محادثاتكم السابقة</h2>
+          <p class="card-desc">
+            أقوى مصدر عندك مش ملف — هو الأسئلة اللي الطلاب سألوها فعلًا والإجابات اللي فريقك
+            كتبها. <b>الفلتر هو التكرار:</b> الرد اللي الموظف كتبه ٣٣ مرة هو سؤال شائع بالتعريف،
+            واللي اتكتب مرة حالة خاصة. التحيات والشكر بيتشالوا تلقائيًا.
+          </p>
+          <div class="row" style="gap:8px; align-items:center">
+            <label class="row" style="gap:6px; white-space:nowrap">
+              الحد الأدنى للتكرار
+              <input type="number" id="ai-mine-min" class="compact-input" value="5" min="2" max="50" style="width:70px">
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" id="ai-mine-preview" style="width:auto">شوف الخام</button>
+            <button type="button" class="btn btn-primary btn-sm" id="ai-mine-go" style="width:auto">استخرج</button>
+          </div>
+          <div id="ai-mine-preview-box" style="margin-top:10px"></div>
+        </div>
+
+        <div class="card">
           <h2>رفع مصدر</h2>
           <p class="card-desc">
             ارفع ملف نصي (‎.txt‎ أو ‎.md‎ أو ‎.csv‎) أو الصق النص، وهيتحوّل لأسئلة وإجابات
@@ -5105,6 +5123,41 @@ ${reply.content}` : reply.content;
         harvestInto('/api/assist/harvest/chat',
           { messages: aiChatMessages.map((m) => ({ role: m.role, content: m.content })) },
           'بيلخّص المحادثة...');
+      });
+
+      document.getElementById('ai-mine-preview').addEventListener('click', async (event) => {
+        const box = document.getElementById('ai-mine-preview-box');
+        const min = document.getElementById('ai-mine-min').value;
+        event.currentTarget.disabled = true;
+        box.innerHTML = '<div class="ticket-muted">بيقرا...</div>';
+        try {
+          const data = await api(`/api/assist/mine/preview?min_repeats=${min}`);
+          box.innerHTML = data.clusters.length
+            ? `<div class="ticket-muted" style="margin-bottom:6px">${data.clusters.length} رد متكرر — دي اللي هتتبعت للنموذج يفرزها</div>`
+              + data.clusters.slice(0, 12).map((c) =>
+                `<div style="padding:4px 0; border-bottom:1px solid var(--border); font-size:12px">
+                   <b>${c.uses}×</b> ${escapeHtml(c.answer.slice(0, 110))}</div>`).join('')
+            : '<div class="empty-state">مفيش ردود متكررة بالحد ده — قلّله</div>';
+        } catch (error) { box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`; }
+        finally { event.currentTarget.disabled = false; }
+      });
+
+      document.getElementById('ai-mine-go').addEventListener('click', async (event) => {
+        // بياخد وقت (عشرات الردود بتتبعت مرة واحدة) — الزرار بيتقفل عشان مايتضغطش مرتين
+        event.currentTarget.disabled = true;
+        try {
+          showToast('بيقرا المحادثات السابقة — ممكن ياخد نص دقيقة');
+          const data = await api('/api/assist/mine', {
+            method: 'POST',
+            body: JSON.stringify({ min_repeats: Number(document.getElementById('ai-mine-min').value) }),
+          });
+          aiSuggestions = data.changes || [];
+          renderSuggestions();
+          showToast(aiSuggestions.length
+            ? `من ${data.clusters} رد متكرر → ${aiSuggestions.length} معلومة`
+            : 'مفيش معرفة قابلة للاستخراج بالحد ده');
+        } catch (error) { showToast(error.message); }
+        finally { event.currentTarget.disabled = false; }
       });
 
       document.getElementById('ai-file-go').addEventListener('click', async () => {

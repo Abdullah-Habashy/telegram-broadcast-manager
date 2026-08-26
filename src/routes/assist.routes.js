@@ -26,5 +26,7 @@ router.post('/chat', requireAdminApi, assistController.chat);
 router.post('/harvest/chat', requireAdminApi, assistController.harvestChat);
 router.post('/harvest/file', requireAdminApi, assistController.harvestFile);
 router.post('/knowledge/apply', requireAdminApi, assistController.applyChanges);
+router.get('/mine/preview', requireAdminApi, assistController.previewClusters);
+router.post('/mine', requireAdminApi, assistController.mineHistory);
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const aiReply = require('../utils/aiReply');
 const aiHarvest = require('../utils/aiHarvest');
+const aiMining = require('../utils/aiMining');
 
 // ---------- الردود الجاهزة وقاعدة معرفة الرد الآلي ----------
 //
@@ -259,6 +260,35 @@ async function applyChanges(req, res) {
   }
 }
 
+// استخراج من المحادثات اللي حصلت فعلًا. الفلتر تكرار الرد: اللي الموظف كتبه مرات كتير هو
+// سؤال شائع بالتعريف، واللي اتكتب مرة حالة خاصة. من غير الفلتر ده كان لازم نبعت آلاف
+// الأزواج للنموذج ونستقبل مخرج أغلبه دردشة
+async function mineHistory(req, res) {
+  const minRepeats = Math.max(2, Math.min(50, Number(req.body.min_repeats) || aiMining.DEFAULT_MIN_REPEATS));
+  try {
+    const result = await aiMining.mineFromHistory({
+      providerKey: req.body.provider || 'anthropic',
+      minRepeats,
+    });
+    res.json({ ...result, min_repeats: minRepeats });
+  } catch (error) {
+    console.error('❌ Mining failed:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// معاينة الردود المتكررة من غير أي نداء للنموذج — عشان الأدمن يشوف الخام ويظبط حد التكرار
+async function previewClusters(req, res) {
+  const minRepeats = Math.max(2, Math.min(50, Number(req.query.min_repeats) || aiMining.DEFAULT_MIN_REPEATS));
+  try {
+    const clusters = await aiMining.findClusters({ minRepeats });
+    res.json({ clusters, min_repeats: minRepeats });
+  } catch (error) {
+    console.error('❌ Failed to preview clusters:', error.message);
+    res.status(500).json({ error: 'تعذر قراءة الردود المتكررة' });
+  }
+}
+
 // سجل الردود الآلية — الأدمن بيراجع منه إيه اللي اتقال، وإيه اللي النموذج ملقاهوش
 // (الصفوف دي بالذات هي قايمة الشغل: كل واحد فيها معلومة ناقصة من قاعدة المعرفة)
 async function getAiLog(req, res) {
@@ -285,5 +315,5 @@ async function getAiLog(req, res) {
 module.exports = {
   listQuickReplies, createQuickReply, updateQuickReply, deleteQuickReply,
   listKnowledge, createKnowledge, updateKnowledge, deleteKnowledge, testKnowledge, getAiLog,
-  updateAiSettings, chat, harvestChat, harvestFile, applyChanges,
+  updateAiSettings, chat, harvestChat, harvestFile, applyChanges, mineHistory, previewClusters,
 };
