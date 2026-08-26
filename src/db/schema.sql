@@ -543,6 +543,10 @@ CREATE TABLE IF NOT EXISTS ai_reply_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_ai_reply_log_time ON ai_reply_log (created_at DESC);
+-- توكنز الكاش: قراءة بعُشر السعر، وكتابة بمرة وربع. من غير تسجيلهم مفيش طريقة تعرف بيها
+-- التكلفة الحقيقية ولا نسبة إصابة الكاش — والتقدير هنا بيفرق أضعاف
+ALTER TABLE ai_reply_log ADD COLUMN IF NOT EXISTS cache_read_tokens INTEGER;
+ALTER TABLE ai_reply_log ADD COLUMN IF NOT EXISTS cache_write_tokens INTEGER;
 
 -- علامة إن الرسالة دي مولّدة آليًا — الموظف لازم يفرّقها عن كلام زمايله وهو بيراجع الصبح
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_ai BOOLEAN NOT NULL DEFAULT FALSE;

@@ -103,7 +103,17 @@ async function generateReply({ question }) {
     // effort منخفض عن قصد: دي مهمة استخراج من نص قصير مش مسألة تحتاج تفكير عميق،
     // والرد على طالب مستني لازم يكون سريع
     output_config: { effort: 'low' },
-    system: [{ type: 'text', text: buildSystemPrompt(knowledge, settings.ai_blocked_topics || 'لا يوجد') }],
+    // التخزين المؤقت هو أكبر موفّر تكلفة هنا: قاعدة المعرفة بتتبعت كاملة مع **كل** سؤال،
+    // وهي نفسها بالحرف في كل مرة. من غير الكاش بتتحسب بسعر كامل ١٠ آلاف مرة؛ معاه بتتكتب
+    // مرة وتتقري بعُشر السعر.
+    //
+    // ttl ساعة مش ٥ دقايق: الرسايل بتيجي متفرقة بالليل، والكاش اللي بيموت بعد ٥ دقايق
+    // بيتكتب من أول وجديد كل شوية — والكتابة أغلى من القراءة، فالنتيجة تكلفة أعلى مش أقل
+    system: [{
+      type: 'text',
+      text: buildSystemPrompt(knowledge, settings.ai_blocked_topics || 'لا يوجد'),
+      cache_control: { type: 'ephemeral', ttl: '1h' },
+    }],
     tools: [ANSWER_TOOL],
     tool_choice: { type: 'tool', name: ANSWER_TOOL.name },
     messages: [{ role: 'user', content: question }],
@@ -112,6 +122,8 @@ async function generateReply({ question }) {
   const usage = {
     input_tokens: response.usage?.input_tokens ?? null,
     output_tokens: response.usage?.output_tokens ?? null,
+    cache_read_tokens: response.usage?.cache_read_input_tokens ?? null,
+    cache_write_tokens: response.usage?.cache_creation_input_tokens ?? null,
   };
 
   // النموذج ممكن يرفض الطلب نفسه لأسباب أمان — ساعتها مفيش نداء أداة، والسؤال بيروح لموظف
@@ -135,10 +147,12 @@ async function generateReply({ question }) {
 async function logAttempt({ ticketId, incomingMessageId, question, result }) {
   await pool.query(
     `INSERT INTO ai_reply_log
-       (ticket_id, incoming_message_id, question, answer, outcome, detail, input_tokens, output_tokens)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+       (ticket_id, incoming_message_id, question, answer, outcome, detail,
+        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [ticketId, incomingMessageId, question, result.answer || null, result.outcome,
-      result.detail || null, result.input_tokens ?? null, result.output_tokens ?? null]
+      result.detail || null, result.input_tokens ?? null, result.output_tokens ?? null,
+      result.cache_read_tokens ?? null, result.cache_write_tokens ?? null]
   );
 }
 
