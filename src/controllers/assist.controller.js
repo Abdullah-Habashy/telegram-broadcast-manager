@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const aiReply = require('../utils/aiReply');
+const aiHarvest = require('../utils/aiHarvest');
 
 // ---------- الردود الجاهزة وقاعدة معرفة الرد الآلي ----------
 //
@@ -181,6 +182,82 @@ async function updateAiSettings(req, res) {
   }
 }
 
+// ===== المساحة التجريبية: محادثة + حصاد =====
+
+// محادثة بنفس قواعد الرد على الطالب بالظبط — الغرض إن الأدمن يشوف اللي الطالب هيشوفه.
+// كل دور بيرجّع النتيجة (رد / مش لاقي / ممنوع) عشان الثغرة تبان لحظتها، والأدمن يكتب
+// الإجابة الصح في الرسالة اللي بعدها فتتحصد في الآخر
+async function chat(req, res) {
+  const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
+  const last = messages.filter((m) => m.role === 'user').slice(-1)[0];
+  if (!last?.content) return res.status(400).json({ error: 'مفيش رسالة' });
+  try {
+    const result = await aiReply.generateReply({
+      question: String(last.content).trim(),
+      provider: req.body.provider,
+      skipEnabledCheck: true,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('❌ AI chat failed:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// بيقرا المحادثة ويقترح إضافات وتصحيحات. **مابيكتبش** — الاقتراحات بتترد للمراجعة
+async function harvestChat(req, res) {
+  const messages = Array.isArray(req.body.messages) ? req.body.messages : [];
+  if (messages.length < 2) return res.status(400).json({ error: 'المحادثة قصيرة أوي على الحصاد' });
+  try {
+    const changes = await aiHarvest.harvestFromMessages({
+      messages,
+      providerKey: req.body.provider || 'anthropic',
+    });
+    res.json({ changes });
+  } catch (error) {
+    console.error('❌ Harvest failed:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// رفع ملف نصي وتحويله لأسئلة وإجابات. نفس القاعدة: اقتراحات للمراجعة مش كتابة مباشرة
+async function harvestFile(req, res) {
+  const text = String(req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'الملف فاضي أو مش نص' });
+  if (text.length > 60000) return res.status(400).json({ error: 'الملف كبير أوي — قسّمه لأجزاء' });
+  try {
+    const changes = await aiHarvest.harvestFromText({
+      text, providerKey: req.body.provider || 'anthropic',
+    });
+    res.json({ changes });
+  } catch (error) {
+    console.error('❌ File harvest failed:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// تطبيق اللي الأدمن وافق عليه. الاقتراحات بتتبعت من المتصفح تاني بعد التعديل، فبتتحقق هنا
+// من أول وجديد — الثقة في اللي جاي من الواجهة مش في محلها لما الموضوع مصدر معلومات
+async function applyChanges(req, res) {
+  const changes = Array.isArray(req.body.changes) ? req.body.changes : [];
+  const clean = changes
+    .filter((c) => c && String(c.question || '').trim() && String(c.answer || '').trim())
+    .map((c) => ({
+      action: c.action === 'update' && Number(c.target_id) ? 'update' : 'add',
+      target_id: Number(c.target_id) || null,
+      question: String(c.question).trim(),
+      answer: String(c.answer).trim(),
+    }));
+  if (!clean.length) return res.status(400).json({ error: 'مفيش اقتراحات صالحة' });
+  try {
+    const result = await aiHarvest.applyChanges(clean, req.body.source === 'file' ? 'file' : 'chat');
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Failed to apply knowledge changes:', error.message);
+    res.status(500).json({ error: 'تعذر حفظ التعديلات' });
+  }
+}
+
 // سجل الردود الآلية — الأدمن بيراجع منه إيه اللي اتقال، وإيه اللي النموذج ملقاهوش
 // (الصفوف دي بالذات هي قايمة الشغل: كل واحد فيها معلومة ناقصة من قاعدة المعرفة)
 async function getAiLog(req, res) {
@@ -207,5 +284,5 @@ async function getAiLog(req, res) {
 module.exports = {
   listQuickReplies, createQuickReply, updateQuickReply, deleteQuickReply,
   listKnowledge, createKnowledge, updateKnowledge, deleteKnowledge, testKnowledge, getAiLog,
-  updateAiSettings,
+  updateAiSettings, chat, harvestChat, harvestFile, applyChanges,
 };

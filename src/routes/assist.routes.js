@@ -21,4 +21,10 @@ router.post('/knowledge/test', requireAdminApi, assistController.testKnowledge);
 router.get('/ai-log', requireAdminApi, assistController.getAiLog);
 router.put('/ai-settings', requireAdminApi, assistController.updateAiSettings);
 
+// المساحة التجريبية — أدمن بس: دي اللي بتحدد إيه اللي هيدخل مصادر البوت
+router.post('/chat', requireAdminApi, assistController.chat);
+router.post('/harvest/chat', requireAdminApi, assistController.harvestChat);
+router.post('/harvest/file', requireAdminApi, assistController.harvestFile);
+router.post('/knowledge/apply', requireAdminApi, assistController.applyChanges);
+
 module.exports = router;

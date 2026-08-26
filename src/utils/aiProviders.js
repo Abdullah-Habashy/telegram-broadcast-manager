@@ -67,16 +67,19 @@ function normalizeOutput(raw) {
   };
 }
 
-async function callAnthropic({ systemPrompt, question }) {
+// tool اختيارية: لو مبعوتة بتستخدم بدل أداة الرد الافتراضية. ده اللي بيخلّي نفس المزوّدين
+// يخدموا الرد على الطالب والحصاد من المحادثات والملفات — نفس الطريق ونفس التحقق
+async function callAnthropic({ systemPrompt, question, tool, maxTokens }) {
+  const activeTool = tool || ANSWER_TOOL;
   const response = await anthropicClient.messages.create({
     model: PROVIDERS.anthropic.model,
-    max_tokens: 1024,
+    max_tokens: maxTokens || 1024,
     output_config: { effort: 'low' },
     // الكاش على المصدر: بيتبعت كامل مع كل سؤال وهو نفسه بالحرف، فالكتابة مرة والقراءة بعُشر
     // السعر. ttl ساعة لأن الرسايل بتيجي متفرقة بالليل وكاش الـ ٥ دقايق بيتكتب من أول وجديد
     system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral', ttl: '1h' } }],
-    tools: [ANSWER_TOOL],
-    tool_choice: { type: 'tool', name: ANSWER_TOOL.name },
+    tools: [activeTool],
+    tool_choice: { type: 'tool', name: activeTool.name },
     messages: [{ role: 'user', content: question }],
   });
 
@@ -91,12 +94,13 @@ async function callAnthropic({ systemPrompt, question }) {
   }
   const toolUse = response.content.find((block) => block.type === 'tool_use');
   if (!toolUse) throw new Error('النموذج مانداش بالأداة');
-  return { output: normalizeOutput(toolUse.input), usage };
+  // الحصاد له شكل مخرج مختلف عن الرد، فبيترجّع خام والمنادي بيتحقق منه بنفسه
+  return { output: tool ? toolUse.input : normalizeOutput(toolUse.input), usage };
 }
 
 // Groq بيتكلم بروتوكول OpenAI، فالنداء fetch مباشر — مفيش SDK رسمي ليه ومش محتاج واحد
 // لنداء واحد. JSON mode بدل الأدوات: أثبت على النماذج المفتوحة، وبيشترط كلمة json في التعليمات
-async function callGroq({ systemPrompt, question }) {
+async function callGroq({ systemPrompt, question, tool, jsonShape, maxTokens }) {
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -106,6 +110,7 @@ async function callGroq({ systemPrompt, question }) {
     body: JSON.stringify({
       model: PROVIDERS.groq.model,
       temperature: 0,
+      max_tokens: maxTokens || 1024,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -113,7 +118,7 @@ async function callGroq({ systemPrompt, question }) {
           content: `${systemPrompt}
 
 رد بـ JSON بالشكل ده بالظبط، من غير أي كلام قبله أو بعده:
-{"found_in_source": true/false, "blocked_topic": true/false, "answer": "..."}`,
+${jsonShape || '{"found_in_source": true/false, "blocked_topic": true/false, "answer": "..."}'}`,
         },
         { role: 'user', content: question },
       ],
@@ -129,7 +134,7 @@ async function callGroq({ systemPrompt, question }) {
   let parsed = null;
   try { parsed = JSON.parse(content); } catch (_) { parsed = null; }
   return {
-    output: normalizeOutput(parsed),
+    output: tool ? parsed : normalizeOutput(parsed),
     usage: {
       input_tokens: data.usage?.prompt_tokens ?? null,
       output_tokens: data.usage?.completion_tokens ?? null,

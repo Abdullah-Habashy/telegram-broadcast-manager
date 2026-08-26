@@ -526,6 +526,10 @@ CREATE TABLE IF NOT EXISTS ai_knowledge (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_ai_knowledge_active ON ai_knowledge (id) WHERE is_active;
+-- منين جت المعلومة: manual (اتكتبت بالإيد) · chat (اتحصدت من محادثة تجريبية) · file (من ملف
+-- مرفوع). مهم عند المراجعة: المعلومة اللي النموذج اقترحها من محادثة تستاهل نظرة تانية أكتر
+-- من اللي الأدمن كتبها بنفسه
+ALTER TABLE ai_knowledge ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'manual';
 
 -- سجل كل نداء للنموذج: السؤال، الرد، اتبعت ولا لأ والسبب. من غيره مفيش طريقة تعرف بيها
 -- النموذج بيرفض ليه، ولا تراجع صح إيه اللي اتقال للطلاب وانت نايم
