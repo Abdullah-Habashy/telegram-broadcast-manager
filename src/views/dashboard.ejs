@@ -1345,7 +1345,7 @@
     const TEAM_INFO = {
       science: { label: 'التيم العلمي', icon: '🧪', tone: 'science', transferTitle: 'تحويل السؤال للتيم العلمي' },
       tech: { label: 'الدعم الفني', icon: '🛠️', tone: 'tech', transferTitle: 'تحويل المشكلة للدعم الفني' },
-      whatsapp: { label: 'موظف واتساب', icon: '💬', tone: 'whatsapp', transferTitle: 'تحويل الطالب لموظف واتساب' },
+      whatsapp: { label: 'موظف واتساب', icon: '💬', tone: 'whatsapp', transferTitle: 'تحويل الطالب لموظف واتساب', canHandOff: true },
     };
     const currentUserId = Number('<%= userId %>');
     const canAssignCalls = <%- canAssignCalls ? 'true' : 'false' %>;
@@ -5665,6 +5665,32 @@ ${reply.content}` : reply.content;
           `<option value="${subtitle.id}" ${Number(subtitle.id) === Number(ticket.subtitle_id) ? 'selected' : ''}>${escapeHtml(subtitle.name)}</option>`
         ).join('') + '<option value="__add__">＋ إضافة عنوان فرعي جديد</option>';
 
+        // زراير التيمات — اتبنت هنا مش جوه الـ innerHTML عشان التلاتة تفرعات ماتبقاش تعشيش
+        // template literals جوه بعض. موظف المتابعة عنده زرار لكل تيم بيحوّل بيه وبيسحب بيه،
+        // وموظف التيم عنده زرار الإرجاع. الجديد: التيم اللي تيمه canHandOff (الواتساب) شايف
+        // كمان زراير باقي التيمات ويسلّم لهم على طول — الطالب غير المشترك ممكن يسأل سؤال
+        // علمي أو تكون عنده مشكلة تقنية، وموظف الواتساب هو الوحيد الشايف التذكرة ساعتها
+        const myTeam = currentUserTeam ? TEAM_INFO[currentUserTeam] : null;
+        const canHandOffTicket = Boolean(myTeam && myTeam.canHandOff && ticket.transfer_team === currentUserTeam);
+        const handOffButtons = canHandOffTicket
+          ? Object.entries(TEAM_INFO).filter(([key]) => key !== currentUserTeam).map(([key, team]) => `
+                  <button type="button" class="btn btn-ghost btn-sm icon-only-mobile team-transfer-btn"
+                    data-team="${key}" title="${team.transferTitle}"
+                    aria-label="${team.transferTitle}">${team.icon}</button>`).join('')
+          : '';
+        const teamButtonsHtml = myTeam
+          ? handOffButtons + (ticket.transfer_agent_id
+              ? `<button type="button" class="btn btn-sm" id="ticket-team-return" style="width:auto"
+                  title="رجّعها لفريق المتابعة">✅ خلصت — رجّعها</button>`
+              : '')
+          : Object.entries(TEAM_INFO).map(([key, team]) => `
+                  <button type="button" class="btn btn-ghost btn-sm icon-only-mobile team-transfer-btn"
+                    data-team="${key}"
+                    title="${ticket.transfer_team === key ? `مع ${team.label} دلوقتي — اضغط لسحبها` : team.transferTitle}"
+                    aria-label="${team.transferTitle}"
+                    ${ticket.transfer_agent_id && ticket.transfer_team !== key ? 'disabled' : ''}
+                    style="${ticket.transfer_team === key ? `background:var(--${team.tone}-tint)` : ''}">${team.icon}</button>`).join('');
+
         panel.innerHTML = `
           <div class="ticket-conversation-header">
             <button type="button" class="btn btn-ghost btn-sm mobile-ticket-back icon-only-mobile" id="mobile-ticket-back" title="رجوع للتذاكر" aria-label="رجوع للتذاكر">←</button>
@@ -5689,15 +5715,7 @@ ${reply.content}` : reply.content;
               title="${ticket.next_follow_up_message ? 'رسالة المتابعة القادمة مخصّصة — اضغط للتعديل' : 'تعديل رسالة المتابعة التلقائية القادمة'}"
               aria-label="تعديل رسالة المتابعة"
               style="${ticket.next_follow_up_message ? 'background:var(--primary-tint)' : ''}">✏️</button>
-            ${currentUserTeam
-              ? (ticket.transfer_agent_id ? `<button type="button" class="btn btn-sm" id="ticket-team-return" style="width:auto">✅ خلصت — رجّعها</button>` : '')
-              : Object.entries(TEAM_INFO).map(([key, team]) => `
-                  <button type="button" class="btn btn-ghost btn-sm icon-only-mobile team-transfer-btn"
-                    data-team="${key}"
-                    title="${ticket.transfer_team === key ? `مع ${team.label} دلوقتي — اضغط لسحبها` : team.transferTitle}"
-                    aria-label="${team.transferTitle}"
-                    ${ticket.transfer_agent_id && ticket.transfer_team !== key ? 'disabled' : ''}
-                    style="${ticket.transfer_team === key ? `background:var(--${team.tone}-tint)` : ''}">${team.icon}</button>`).join('')}
+            ${teamButtonsHtml}
             <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-urgent-toggle"
               title="${ticket.is_urgent ? 'إلغاء علامة عاجل' : 'وسم كحالة عاجلة'}" aria-label="عاجل"
               style="${ticket.is_urgent ? 'background:var(--danger-tint,#fdeaea)' : ''}">🚨</button>
@@ -5836,12 +5854,16 @@ ${reply.content}` : reply.content;
               if (ticket.transfer_team === teamKey) {
                 await api(`/api/tickets/${ticket.id}/teams/return`, { method: 'POST' });
                 showToast(`رجّعت التذكرة من ${team.label}`);
+                loadTicket(ticket.id);
+                loadTickets();
               } else {
                 const result = await api(`/api/tickets/${ticket.id}/teams/${teamKey}/transfer`, { method: 'POST' });
                 showToast('اتحوّلت لـ ' + (result.agent_name || team.label));
+                loadTickets();
+                // موظف التيم بيشوف المحوّل له بس، فالتذكرة خرجت من إيده خلاص — إعادة فتحها
+                // هترجع 403. موظف المتابعة بيفضل شايفها فبنحدّثها قدامه
+                if (currentUserTeam) closeMobileTicket(); else loadTicket(ticket.id);
               }
-              loadTicket(ticket.id);
-              loadTickets();
             } catch (error) {
               // مفيش حد حاضر: الرسالة اللي رجعت من السيرفر بتقول كده، والطالب اتبعتله تنبيه
               showToast(error.message);

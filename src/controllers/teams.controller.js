@@ -125,7 +125,7 @@ async function transferToTeam(req, res) {
   try {
     await client.query('BEGIN');
     const ticketResult = await client.query(
-      `SELECT t.id, t.transfer_agent_id, c.chat_id FROM tickets t
+      `SELECT t.id, t.transfer_agent_id, t.transfer_team, c.chat_id FROM tickets t
        JOIN contacts c ON c.id = t.contact_id WHERE t.id = $1 FOR UPDATE`,
       [ticketId]
     );
@@ -135,8 +135,15 @@ async function transferToTeam(req, res) {
       return res.status(404).json({ error: 'التذكرة غير موجودة' });
     }
     if (ticket.transfer_agent_id) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'التذكرة محوّلة لتيم بالفعل' });
+      // التذكرة مع تيم بالفعل. الاستثناء الوحيد: الموظف الماسكها بنفسه بيسلّمها لتيم تاني،
+      // ولتيمه خاصية canHandOff (الواتساب). من غير ده التسليم كان لازم يعدّي على المتابعة —
+      // خطوة زيادة وسط محادثة الطالب، وموظف المتابعة مش شايف السؤال أصلًا عشان يوجّهه
+      const holderTeam = getTeam(ticket.transfer_team);
+      const isHolder = Number(ticket.transfer_agent_id) === Number(req.session.userId);
+      if (!isHolder || !holderTeam?.canHandOff || holderTeam.key === team.key) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'التذكرة محوّلة لتيم بالفعل' });
+      }
     }
 
     const agentId = await getNextTeamAgent(client, team.key);
