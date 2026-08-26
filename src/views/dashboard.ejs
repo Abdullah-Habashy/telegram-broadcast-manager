@@ -34,6 +34,7 @@
         <div class="nav-item" data-tab="performance"><span class="ind"></span> متابعة الأداء</div>
         <div class="nav-item" data-tab="reports"><span class="ind"></span> التقارير</div>
         <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
+        <div class="nav-item" data-tab="ai"><span class="ind"></span> الذكاء الصناعي</div>
         <div class="nav-item" data-tab="settings"><span class="ind"></span> الإعدادات</div>
       <% } %>
 
@@ -958,22 +959,55 @@
       </section>
 
       <!-- ===== الإعدادات ===== -->
-      <section class="tab-panel" id="tab-settings" style="display:none">
+      <section class="tab-panel" id="tab-ai" style="display:none">
         <div class="page-header">
-          <h1>الإعدادات</h1>
-          <p>توكن البوت والرد التلقائي</p>
-        </div>
-        <div class="card">
-          <h2>الردود الجاهزة</h2>
-          <p class="card-desc">نصوص بيستخدمها الموظف كتير. بتظهر كأزرار فوق مربع الرد، والضغط بيحطها في المربع عشان يعدّل عليها قبل ما يبعت — مش بتتبعت لوحدها.</p>
-          <div class="row" style="gap:8px; margin-bottom:10px">
-            <input type="text" id="qr-title" class="compact-input" placeholder="العنوان (اللي هيظهر على الزرار)" style="max-width:240px">
-            <button type="button" class="btn btn-primary btn-sm" id="qr-add" style="width:auto">إضافة</button>
-          </div>
-          <textarea id="qr-content" class="compact-input" rows="3" placeholder="نص الرد اللي هيتحط في مربع الموظف..." style="width:100%; margin-bottom:12px"></textarea>
-          <div id="qr-list"></div>
+          <h1>الذكاء الصناعي</h1>
+          <p>المساحة التجريبية ومصادر الرد الآلي</p>
         </div>
 
+        <div class="card">
+          <h2>المساحة التجريبية</h2>
+          <p class="card-desc">
+            كلّمه زي ما الطالب هيكلّمه. لو قال «مش لاقي الإجابة» — ده معناه إن المصدر ناقص:
+            اكتب الإجابة الصح في الرسالة اللي بعدها، وفي الآخر دوس <b>لخّص وحدّث المصادر</b>
+            وهيقترح عليك اللي اتعلمه. <b>مفيش رسالة بتتبعت لأي طالب من هنا.</b>
+          </p>
+          <div id="ai-chat-log" class="ai-chat-log"></div>
+          <div class="row" style="gap:8px; margin-top:10px">
+            <input type="text" id="ai-chat-input" class="compact-input" placeholder="اكتب زي ما الطالب هيكتب..." style="flex:1">
+            <button type="button" class="btn btn-primary btn-sm" id="ai-chat-send" style="width:auto">ابعت</button>
+          </div>
+          <div class="row" style="gap:8px; margin-top:10px">
+            <button type="button" class="btn btn-ghost btn-sm" id="ai-chat-harvest" style="width:auto">📥 لخّص وحدّث المصادر</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="ai-chat-clear" style="width:auto">محادثة جديدة</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>رفع مصدر</h2>
+          <p class="card-desc">
+            ارفع ملف نصي (‎.txt‎ أو ‎.md‎ أو ‎.csv‎) أو الصق النص، وهيتحوّل لأسئلة وإجابات
+            تراجعها قبل الحفظ.
+          </p>
+          <div class="row" style="gap:8px; margin-bottom:8px">
+            <input type="file" id="ai-file" accept=".txt,.md,.csv,text/plain" class="compact-input" style="width:auto">
+            <button type="button" class="btn btn-primary btn-sm" id="ai-file-go" style="width:auto">حلّل</button>
+          </div>
+          <textarea id="ai-file-text" class="compact-input" rows="4" placeholder="أو الصق النص هنا مباشرة..." style="width:100%"></textarea>
+        </div>
+
+        <div class="card" id="ai-suggestions-card" style="display:none">
+          <h2>الاقتراحات — راجعها قبل الحفظ</h2>
+          <p class="card-desc">
+            دي اقتراحات النموذج، <b>ولسه ما اتحفظتش</b>. عدّل أي نص قبل ما توافق، وشيل علامة
+            اللي مش عايزه. اللي عليه <b>تصحيح</b> بيستبدل معلومة موجودة.
+          </p>
+          <div id="ai-suggestions"></div>
+          <div class="row" style="gap:8px; margin-top:12px">
+            <button type="button" class="btn btn-primary btn-sm" id="ai-apply" style="width:auto">احفظ اللي متعلّم عليه</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="ai-discard" style="width:auto">تجاهل</button>
+          </div>
+        </div>
         <div class="card">
           <h2>الرد الآلي بالذكاء الصناعي</h2>
           <p class="card-desc">
@@ -1007,6 +1041,24 @@
           <button type="button" class="btn btn-primary btn-sm" id="kb-add" style="width:auto; margin-bottom:12px">إضافة معلومة</button>
           <div id="kb-list"></div>
         </div>
+      </section>
+
+      <section class="tab-panel" id="tab-settings" style="display:none">
+        <div class="page-header">
+          <h1>الإعدادات</h1>
+          <p>توكن البوت والرد التلقائي</p>
+        </div>
+        <div class="card">
+          <h2>الردود الجاهزة</h2>
+          <p class="card-desc">نصوص بيستخدمها الموظف كتير. بتظهر كأزرار فوق مربع الرد، والضغط بيحطها في المربع عشان يعدّل عليها قبل ما يبعت — مش بتتبعت لوحدها.</p>
+          <div class="row" style="gap:8px; margin-bottom:10px">
+            <input type="text" id="qr-title" class="compact-input" placeholder="العنوان (اللي هيظهر على الزرار)" style="max-width:240px">
+            <button type="button" class="btn btn-primary btn-sm" id="qr-add" style="width:auto">إضافة</button>
+          </div>
+          <textarea id="qr-content" class="compact-input" rows="3" placeholder="نص الرد اللي هيتحط في مربع الموظف..." style="width:100%; margin-bottom:12px"></textarea>
+          <div id="qr-list"></div>
+        </div>
+
 
 
         <div class="subtabs" id="settings-subtabs">
@@ -3288,6 +3340,7 @@
       if (tab === 'performance') initPerformance();
       if (tab === 'templates') loadTemplates();
       if (tab === 'settings') { loadSettings(); initAssistPanel(); }
+      if (tab === 'ai') { loadSettings(); initAssistPanel(); initAiTab(); }
     }
 
     // ---------- طلاب منصة طفرة ----------
@@ -4935,6 +4988,151 @@ ${reply.content}` : reply.content;
           });
         });
       } catch (e) { list.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
+    }
+
+    // ---------- المساحة التجريبية ----------
+    // المحادثة في المتصفح بس — مفيش تخزين على السيرفر. الحصاد بياخد النص كله ويرجّع اقتراحات،
+    // والاقتراحات هي اللي بتتحفظ لو الأدمن وافق. الرسايل نفسها مالهاش قيمة بعد الحصاد
+    let aiChatMessages = [];
+    let aiSuggestions = [];
+
+    function renderAiChat() {
+      const log = document.getElementById('ai-chat-log');
+      if (!aiChatMessages.length) {
+        log.innerHTML = '<div class="empty-state">ابدأ بسؤال زي ما الطالب هيسأله</div>';
+        return;
+      }
+      log.innerHTML = aiChatMessages.map((m) => {
+        if (m.role === 'user') {
+          return `<div class="ai-chat-msg user">${escapeHtml(m.content)}</div>`;
+        }
+        const [label, tone] = OUTCOME_LABELS[m.outcome] || ['', 'stat-muted'];
+        // النتيجة بتتعرض مع كل دور مش في الآخر: الثغرة لازم تبان لحظة حصولها عشان الأدمن
+        // يكتب التصحيح وهو فاكر السؤال
+        const badge = m.outcome && m.outcome !== 'sent'
+          ? `<span class="stat-pill ${tone}" style="margin-bottom:4px; display:inline-block">${label}</span><br>` : '';
+        return `<div class="ai-chat-msg bot">${badge}${escapeHtml(m.content)}</div>`;
+      }).join('');
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function sendAiChat() {
+      const input = document.getElementById('ai-chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      aiChatMessages.push({ role: 'user', content: text });
+      renderAiChat();
+      const button = document.getElementById('ai-chat-send');
+      button.disabled = true;
+      try {
+        const result = await api('/api/assist/chat', {
+          method: 'POST',
+          body: JSON.stringify({ messages: aiChatMessages }),
+        });
+        const body = result.answer
+          || (result.outcome === 'no_answer' ? 'مش لاقي الإجابة في المصدر — اكتبلي الإجابة الصح وهحفظها.'
+            : result.outcome === 'blocked' ? 'الموضوع ده ممنوع عليّ، والسؤال بيروح لموظف.'
+              : result.detail || 'حصل خطأ');
+        aiChatMessages.push({ role: 'assistant', content: body, outcome: result.outcome });
+      } catch (error) {
+        aiChatMessages.push({ role: 'assistant', content: error.message, outcome: 'error' });
+      } finally {
+        button.disabled = false;
+        renderAiChat();
+      }
+    }
+
+    function renderSuggestions() {
+      const card = document.getElementById('ai-suggestions-card');
+      const box = document.getElementById('ai-suggestions');
+      if (!aiSuggestions.length) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      box.innerHTML = aiSuggestions.map((c, i) => `
+        <div class="card" style="margin:0 0 8px; padding:12px">
+          <label class="row" style="gap:8px; margin-bottom:8px">
+            <input type="checkbox" data-sug="${i}" checked>
+            <b>${c.action === 'update' ? `✏️ تصحيح للمعلومة #${c.target_id}` : '➕ معلومة جديدة'}</b>
+          </label>
+          <input type="text" class="compact-input" data-sug-q="${i}" value="${escapeHtml(c.question)}" style="width:100%; margin-bottom:6px">
+          <textarea class="compact-input" data-sug-a="${i}" rows="2" style="width:100%">${escapeHtml(c.answer)}</textarea>
+          ${c.reason ? `<div class="ticket-muted" style="font-size:11px; margin-top:6px">${escapeHtml(c.reason)}</div>` : ''}
+        </div>`).join('');
+    }
+
+    async function harvestInto(endpoint, payload, label) {
+      try {
+        showToast(label);
+        const data = await api(endpoint, { method: 'POST', body: JSON.stringify(payload) });
+        aiSuggestions = data.changes || [];
+        renderSuggestions();
+        if (!aiSuggestions.length) showToast('مفيش معلومات جديدة في اللي اتقال');
+      } catch (error) { showToast(error.message); }
+    }
+
+    function initAiTab() {
+      const send = document.getElementById('ai-chat-send');
+      if (!send || send.dataset.bound === '1') return;
+      send.dataset.bound = '1';
+
+      send.addEventListener('click', sendAiChat);
+      document.getElementById('ai-chat-input').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); sendAiChat(); }
+      });
+
+      document.getElementById('ai-chat-clear').addEventListener('click', () => {
+        aiChatMessages = [];
+        renderAiChat();
+      });
+
+      document.getElementById('ai-chat-harvest').addEventListener('click', () => {
+        if (aiChatMessages.length < 2) return showToast('كلّمه الأول');
+        harvestInto('/api/assist/harvest/chat',
+          { messages: aiChatMessages.map((m) => ({ role: m.role, content: m.content })) },
+          'بيلخّص المحادثة...');
+      });
+
+      document.getElementById('ai-file-go').addEventListener('click', async () => {
+        const pasted = document.getElementById('ai-file-text').value.trim();
+        const file = document.getElementById('ai-file').files[0];
+        // النص الملصوق له الأولوية على الملف: لو الاتنين موجودين، اللي الأدمن كتبه دلوقتي
+        // أقرب لقصده من ملف ممكن يكون اختاره من شوية ونسيه
+        const text = pasted || (file ? await file.text() : '');
+        if (!text.trim()) return showToast('ارفع ملف أو الصق نص');
+        harvestInto('/api/assist/harvest/file', { text }, 'بيحلّل النص...');
+      });
+
+      document.getElementById('ai-apply').addEventListener('click', async (event) => {
+        const chosen = aiSuggestions.map((c, i) => {
+          if (!document.querySelector(`[data-sug="${i}"]`)?.checked) return null;
+          return {
+            action: c.action,
+            target_id: c.target_id,
+            // النص المعدّل من الشاشة مش الأصلي — الأدمن ممكن يكون صحّح صياغة قبل الموافقة
+            question: document.querySelector(`[data-sug-q="${i}"]`).value,
+            answer: document.querySelector(`[data-sug-a="${i}"]`).value,
+          };
+        }).filter(Boolean);
+        if (!chosen.length) return showToast('محدش متعلّم عليه');
+        event.currentTarget.disabled = true;
+        try {
+          const result = await api('/api/assist/knowledge/apply',
+            { method: 'POST', body: JSON.stringify({ changes: chosen }) });
+          showToast(`اتحفظ: ${result.added} جديدة · ${result.updated} تصحيح`);
+          aiSuggestions = [];
+          renderSuggestions();
+          loadKnowledge();
+        } catch (error) { showToast(error.message); }
+        finally { event.currentTarget.disabled = false; }
+      });
+
+      document.getElementById('ai-discard').addEventListener('click', () => {
+        aiSuggestions = [];
+        renderSuggestions();
+      });
+
+      renderAiChat();
+      loadKnowledge();
     }
 
     function initAssistPanel() {
