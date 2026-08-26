@@ -5,7 +5,7 @@ const path = require('path');
 const multer = require('multer');
 const router = express.Router();
 const ticketsController = require('../controllers/tickets.controller');
-const scienceController = require('../controllers/science.controller');
+const teamsController = require('../controllers/teams.controller');
 const voiceController = require('../controllers/voice.controller');
 const { MAX_BYTES: VOICE_MAX_BYTES } = require('../utils/voiceNote');
 const { requireAuthApi, requireTicketsAccessApi, requireAdminApi } = require('../middleware/requireAuth');
@@ -63,16 +63,16 @@ router.get('/', ticketsController.listTickets);
 router.get('/ids', ticketsController.listTicketIds);
 router.patch('/bulk-assign', requireAdminApi, ticketsController.bulkAssignTickets);
 router.patch('/bulk-assign-by-contact', requireAdminApi, ticketsController.bulkAssignTicketsByContact);
-// التيم العلمي — الحضور والانصراف. **لازم تفضل فوق أي مسار /:id**: express بيطابق
+// التيمات المتخصصة — الحضور والانصراف. **لازم تفضل فوق أي مسار /:id**: express بيطابق
 // بالترتيب، ولو /:id سبقها كان هياخد "science" على إنها رقم تذكرة ويرجّع خطأ
-router.get('/science/attendance', scienceController.getAttendanceStatus);
-router.post('/science/attendance/check-in', scienceController.checkIn);
-router.post('/science/attendance/check-out', scienceController.checkOut);
-router.get('/science/on-duty', scienceController.listOnDuty);
+router.get('/teams/attendance', teamsController.getAttendanceStatus);
+router.post('/teams/attendance/check-in', teamsController.checkIn);
+router.post('/teams/attendance/check-out', teamsController.checkOut);
+router.get('/teams/on-duty', teamsController.listOnDuty);
 
 router.get('/:id', ticketsController.getTicket);
-router.post('/:id/science/transfer', scienceController.transferToScience);
-router.post('/:id/science/return', scienceController.returnFromScience);
+router.post('/:id/teams/:team/transfer', teamsController.transferToTeam);
+router.post('/:id/teams/return', teamsController.returnFromTeam);
 router.post('/:id/voice', voiceUpload.single('voice'), voiceController.sendVoiceNote);
 router.post('/:id/urgent', ticketsController.toggleTicketUrgent);
 

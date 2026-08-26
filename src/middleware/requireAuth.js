@@ -46,7 +46,7 @@ async function requireTicketsAccessApi(req, res, next) {
   }
   try {
     const result = await pool.query(
-      'SELECT role, is_active, can_view_tickets, is_science_team FROM users WHERE id = $1',
+      'SELECT role, is_active, can_view_tickets, team FROM users WHERE id = $1',
       [req.session.userId]
     );
     const user = result.rows[0];
@@ -56,8 +56,8 @@ async function requireTicketsAccessApi(req, res, next) {
     const canView = user.role === 'admin' || user.can_view_tickets;
     req.session.userRole = user.role;
     req.session.canViewTickets = canView;
-    // بيحدد الموظف بيشوف أنهي تذاكر: موظف المتابعة بيشوف المسندة له، والعلمي بيشوف المحوّلة له
-    req.session.isScienceTeam = Boolean(user.is_science_team);
+    // بيحدد الموظف بيشوف أنهي تذاكر: موظف المتابعة بيشوف المسندة له، والمتخصص بيشوف المحوّلة له
+    req.session.userTeam = user.role === 'admin' ? null : (user.team || null);
     if (!canView) return res.status(403).json({ error: 'مفيش صلاحية لعرض صندوق الدعم' });
     next();
   } catch (error) {

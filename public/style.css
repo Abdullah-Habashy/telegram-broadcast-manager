@@ -1033,18 +1033,26 @@ th.perf-sorted { color: var(--primary); }
   background: var(--violet); color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap;
 }
 
-/* تذكرة محوّلة للتيم العلمي دلوقتي. الأخضر بيكسب الأزرق والأحمر و"مردش من أسبوع": موظف
+/* تذكرة محوّلة لتيم متخصص دلوقتي. لون التحويل بيكسب الأزرق والأحمر و"مردش من أسبوع": موظف
    المتابعة شايفها (التذكرة مش بتنتقل ملكيتها) بس مش مستنية منه حاجة، فأي لون تاني هيبقى غلط.
-   وعند موظف التيم العلمي دي التذاكر الوحيدة اللي بيشوفها أصلًا */
-.ticket-list-item.with-science {
-  background: var(--success-tint);
-  border-inline-start: 3.5px solid var(--success);
-}
-.ticket-list-item.with-science .ticket-list-title { color: var(--success); }
-.science-badge {
+   وعند موظف التيم دي التذاكر الوحيدة اللي بيشوفها أصلًا.
+   إضافة تيم جديد = صف في utils/teams.js + متغيري لون هنا */
+/* الدعم الفني بنفسجي مزرق (#7c3aed) مش نفس بنفسجي "مردش من أسبوع" (#8b2fc9) — اللونين
+   من نفس العيلة والفرق بينهم محدود، بس مايظهروش على نفس الصف أبدًا: لون التحويل بيكسب،
+   والشارة جنبه بتقول اسم الموظف مش "مردش من أسبوع" */
+:root { --science: #1f9d63; --science-tint: #e5f6ee; --tech: #6d3ff0; --tech-tint: #eae4fe; }
+
+.ticket-list-item.transfer-science { background: var(--science-tint); border-inline-start: 3.5px solid var(--science); }
+.ticket-list-item.transfer-science .ticket-list-title { color: var(--science); }
+.ticket-list-item.transfer-tech { background: var(--tech-tint); border-inline-start: 3.5px solid var(--tech); }
+.ticket-list-item.transfer-tech .ticket-list-title { color: var(--tech); }
+
+.team-badge {
   display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px;
-  background: var(--success); color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap;
+  color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap;
 }
+.team-badge-science { background: var(--science); }
+.team-badge-tech { background: var(--tech); }
 
 /* الرسالة الصوتية اللي الموظف بعتها. عرض كامل جوّه الفقاعة عشان شريط التشغيل يبان،
    و preload="none" في الـ HTML عشان محادثة فيها تسجيلات كتير ما تحمّلهمش كلهم مرة واحدة */

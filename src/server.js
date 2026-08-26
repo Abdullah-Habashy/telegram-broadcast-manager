@@ -13,7 +13,7 @@ const { startStaffActivityDigest } = require('./jobs/staffActivityDigest');
 const { startWelcomeMessageSender } = require('./jobs/welcomeMessageSender');
 const { startCallAutoAssign } = require('./jobs/callAutoAssign');
 const { startUnansweredAlert } = require('./jobs/unansweredAlert');
-const { startScienceAutoReturn } = require('./jobs/scienceAutoReturn');
+const { startTeamAutoReturn } = require('./jobs/teamAutoReturn');
 const { requireAuth } = require('./middleware/requireAuth');
 
 const authRoutes = require('./routes/auth.routes');
@@ -122,7 +122,7 @@ app.use('/', authRoutes);
 // ===== الصفحة الرئيسية (لوحة التحكم) =====
 app.get('/', requireAuth, async (req, res) => {
   const result = await pool.query(
-    'SELECT name, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, is_science_team FROM users WHERE id = $1',
+    'SELECT name, role, is_active, can_view_tickets, can_view_calls, can_assign_calls, team FROM users WHERE id = $1',
     [req.session.userId]
   );
   const user = result.rows[0];
@@ -136,12 +136,13 @@ app.get('/', requireAuth, async (req, res) => {
   req.session.canViewTickets = canViewTickets;
   req.session.canViewCalls = canViewCalls;
   req.session.canAssignCalls = canAssignCalls;
-  const isScienceTeam = user.role !== 'admin' && Boolean(user.is_science_team);
-  req.session.isScienceTeam = isScienceTeam;
+  // موظف التيم المتخصص بيشوف المحوّل له بس. الأدمن مستثنى: هو بيشوف كل حاجة أصلًا
+  const userTeam = user.role === 'admin' ? null : (user.team || null);
+  req.session.userTeam = userTeam;
   const defaultTab = user.role === 'admin' ? 'overview' : canViewTickets ? 'tickets' : canViewCalls ? 'calls' : null;
   res.render('dashboard', {
     userName: user.name, userRole: user.role, userId: req.session.userId,
-    canViewTickets, canViewCalls, canAssignCalls, isScienceTeam, defaultTab,
+    canViewTickets, canViewCalls, canAssignCalls, userTeam, defaultTab,
     impersonatorAdminName: req.session.impersonatorAdminId ? req.session.impersonatorAdminName : null,
   });
 });
@@ -225,7 +226,7 @@ async function start() {
     startWelcomeMessageSender();
     startCallAutoAssign();
     startUnansweredAlert();
-    startScienceAutoReturn();
+    startTeamAutoReturn();
   });
 }
 

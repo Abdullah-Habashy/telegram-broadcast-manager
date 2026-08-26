@@ -21,11 +21,18 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS can_view_calls BOOLEAN NOT NULL DEFAU
 -- بدل ما ده يفضل مقصور على الأدمن بس. افتراضيًا متعطّلة (صلاحية أعلى من الموظف العادي)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS can_assign_calls BOOLEAN NOT NULL DEFAULT FALSE;
 
--- موظف التيم العلمي: بيستقبل التذاكر المحوّلة من موظفي المتابعة للأسئلة العلمية بس.
--- **مستثنى من التوزيع التلقائي للتذاكر الجديدة** (utils/ticketAssignment.js) — التيمين
--- موظفين مختلفين وسارين مختلفين، فلو دخل في الدور العادي كان هيلاقي نفسه مسؤول عن متابعة
--- طلاب مالهاش علاقة بشغله
+-- تيم الموظف المتخصص: NULL معناها موظف متابعة عادي، و'science' أو 'tech' معناها إنه بيستقبل
+-- التذاكر المحوّلة لتيمه بس. **التيمات المتخصصة مستثناة من التوزيع التلقائي للتذاكر الجديدة**
+-- (utils/ticketAssignment.js) — سارين مختلفين وموظفين مختلفين، فلو دخلوا الدور العادي كانوا
+-- هيلاقوا نفسهم مسؤولين عن متابعة طلاب مالهاش علاقة بشغلهم.
+--
+-- عمود واحد بقيمة بدل راية لكل تيم: إضافة تيم تالت بقت صف في TEAMS جوه الكود مش عمود جديد
+-- في القاعدة وهجرة ومسار وزرار
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_science_team BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS team VARCHAR(20);
+-- نقل الرايات القديمة للعمود الجديد. الشرط بيخلّيها تنفّذ مرة واحدة فعليًا
+UPDATE users SET team = 'science' WHERE is_science_team AND team IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_team ON users (team) WHERE team IS NOT NULL;
 -- ربط حساب الموظف الشخصي على تيليجرام (مرة واحدة عبر أمر /linkstaff) — يُستخدم لإرسال إشعارات تشغيلية
 -- زي رابط Tunnel الجديد تلقائيًا لكل الموظفين، من غير ما نعتمد على قائمة ثابتة في .env
 ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT;
@@ -273,9 +280,17 @@ ALTER TABLE tickets ADD COLUMN IF NOT EXISTS unanswered_alert_at TIMESTAMPTZ;
 -- ينقل الملكية. عشان كده مفيش أي استعلام قائم اتأثر بالميزة دي
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS science_agent_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS science_since TIMESTAMPTZ;
-CREATE INDEX IF NOT EXISTS idx_tickets_science_agent
-    ON tickets (science_agent_id, last_message_at DESC)
-    WHERE science_agent_id IS NOT NULL;
+-- الأعمدة العامة اللي حلّت محل science_* لما التحويل بقى لأكتر من تيم. transfer_team بيقول
+-- التذكرة مع أنهي تيم دلوقتي، وده اللي بيحدد اللون والزرار ومين بيشوفها
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS transfer_team VARCHAR(20);
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS transfer_agent_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS transfer_since TIMESTAMPTZ;
+UPDATE tickets SET transfer_team = 'science', transfer_agent_id = science_agent_id,
+                   transfer_since = science_since
+ WHERE science_agent_id IS NOT NULL AND transfer_agent_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tickets_transfer_agent
+    ON tickets (transfer_agent_id, last_message_at DESC)
+    WHERE transfer_agent_id IS NOT NULL;
 
 -- توحيد علامة "عاجل" مع أولوية التذكرة. الاتنين كانوا حقلين منفصلين بنفس المعنى عند المستخدم،
 -- فمحادثة موسومة 🚨 مكانتش بتطلع في فلتر "الأولويات: عاجلة" خالص. من هنا ورايح الكتابة على
@@ -468,6 +483,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_science_attendance_open
     ON science_attendance (user_id) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_science_attendance_user_time
     ON science_attendance (user_id, started_at DESC);
+-- الجدول بقى بيخدم كل التيمات المتخصصة مش العلمي بس. الاسم القديم كان هيكدب على اللي يقراه،
+-- والتغيير ده إعادة تسمية مش حذف — البيانات كلها بتتنقل معاها. الحارس بيخلّيها تنفّذ مرة واحدة
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'science_attendance')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'team_attendance')
+  THEN
+    ALTER TABLE science_attendance RENAME TO team_attendance;
+  END IF;
+END $$;
+-- التيم بيتسجّل مع الوردية عشان سجل الحضور يفضل مقروء لو الموظف اتنقل بين التيمات
+ALTER TABLE team_attendance ADD COLUMN IF NOT EXISTS team VARCHAR(20);
+UPDATE team_attendance SET team = 'science' WHERE team IS NULL;
 
 INSERT INTO settings (key, value) VALUES
     ('bot_token_encrypted', NULL),
@@ -479,6 +507,8 @@ INSERT INTO settings (key, value) VALUES
 ابعت سؤالك تاني في مواعيد العمل من ١٠ صباحًا لحد ١٢ بالليل وهنجاوبك على طول.'),
     -- بتتبعت للطالب لما يبعت فيديو أو رسالة صوتية — البوت مابيقراش الوسائط دي، والرسالة دي
     -- بتخلّيه يعيد السؤال بصيغة الموظف يقدر يشوفها
+    ('tech_offline_message', 'فريق الدعم الفني مش متاح دلوقتي 🛠️
+ابعت مشكلتك تاني في مواعيد العمل من ١٠ صباحًا لحد ١٢ بالليل وهنحلّها على طول.'),
     ('media_not_supported_message', 'معلش، مش بنقدر نستقبل صوت أو فيديو هنا 🙏
 ابعت سؤالك مكتوب أو صورة وهنجاوبك على طول.'),
     ('forwarding_enabled', 'false'),

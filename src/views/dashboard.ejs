@@ -154,9 +154,9 @@
         <div class="subtab-section" data-subtab="conversations">
         <div class="ticket-toolbar card">
           <input type="search" id="ticket-search" class="compact-input" placeholder="بحث بالاسم، الهاتف، كلمة من المحادثة أو رقم التذكرة">
-          <% if (isScienceTeam) { %>
-            <button type="button" class="btn btn-sm" id="science-attendance-btn" style="width:auto">تسجيل الحضور</button>
-            <span id="science-attendance-info" class="ticket-muted" style="font-size:12px"></span>
+          <% if (userTeam) { %>
+            <button type="button" class="btn btn-sm" id="team-attendance-btn" style="width:auto">تسجيل الحضور</button>
+            <span id="team-attendance-info" class="ticket-muted" style="font-size:12px"></span>
           <% } %>
           <button type="button" class="btn btn-ghost btn-sm agent-filter-toggle" id="agent-filter-toggle" title="إظهار الفلاتر" aria-label="إظهار الفلاتر">⚲</button>
           <div class="ticket-advanced-filters" id="ticket-advanced-filters">
@@ -276,7 +276,11 @@
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap"><input type="checkbox" id="staff-can-view-tickets" checked> صندوق الدعم</label>
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap"><input type="checkbox" id="staff-can-view-calls" checked> المتابعة التليفونية</label>
               <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="يقدر يسند/يلغي إسناد طلاب المكالمات لغيره من الموظفين"><input type="checkbox" id="staff-can-assign-calls"> مسند المكالمات</label>
-              <label class="row" style="white-space:nowrap; flex-wrap:nowrap" title="بيستقبل الأسئلة العلمية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" id="staff-is-science-team"> تيم علمي</label>
+              <select id="staff-team" class="compact-select" title="التيم المتخصص — بيستقبل التذاكر المحوّلة لتيمه بس، ومستثنى من التوزيع التلقائي للتذاكر الجديدة">
+                <option value="">فريق المتابعة</option>
+                <option value="science">🧪 التيم العلمي</option>
+                <option value="tech">🛠️ الدعم الفني</option>
+              </select>
               <button type="button" class="btn btn-primary" id="create-staff-btn" style="width:auto">إنشاء الحساب</button>
             </div>
             <div id="staff-users-list"><div class="empty-state">بيتحمّل...</div></div>
@@ -1209,7 +1213,12 @@
 
   <script>
     const currentUserRole = '<%= userRole %>';
-    const currentUserIsScienceTeam = <%- isScienceTeam ? 'true' : 'false' %>;
+    const currentUserTeam = <%- userTeam ? JSON.stringify(userTeam) : 'null' %>;
+    // نفس تعريف utils/teams.js — أي تيم جديد بيتضاف في الاتنين
+    const TEAM_INFO = {
+      science: { label: 'التيم العلمي', icon: '🧪', tone: 'science', transferTitle: 'تحويل السؤال للتيم العلمي' },
+      tech: { label: 'الدعم الفني', icon: '🛠️', tone: 'tech', transferTitle: 'تحويل المشكلة للدعم الفني' },
+    };
     const currentUserId = Number('<%= userId %>');
     const canAssignCalls = <%- canAssignCalls ? 'true' : 'false' %>;
     const canViewCalls = <%- canViewCalls ? 'true' : 'false' %>;
@@ -4590,7 +4599,7 @@ ${mark}${percent}`;
         resetFilterGroup('tickets', TICKET_FILTER_IDS, loadTickets, { [ticketsAttendanceId]: 'entered' });
       });
       loadTickets();
-      if (currentUserIsScienceTeam) initScienceAttendance();
+      if (currentUserTeam) initTeamAttendance();
       if (currentUserRole === 'admin') loadAdminUsers();
       if (pendingDeepLinkTicketId) {
         const ticketId = Number(pendingDeepLinkTicketId);
@@ -4600,11 +4609,11 @@ ${mark}${percent}`;
       }
     }
 
-    // زرار الحضور بتاع التيم العلمي. التذاكر مابتتحوّلش على حد مش مسجّل حضور، والانصراف
+    // زرار الحضور بتاع التيمات المتخصصة. التذاكر مابتتحوّلش على حد مش مسجّل حضور، والانصراف
     // بيرجّع كل اللي في إيده لفريق المتابعة — عشان مايفضلش سؤال طالب واقف عند حد مشي
-    async function initScienceAttendance() {
-      const button = document.getElementById('science-attendance-btn');
-      const info = document.getElementById('science-attendance-info');
+    async function initTeamAttendance() {
+      const button = document.getElementById('team-attendance-btn');
+      const info = document.getElementById('team-attendance-info');
       if (!button || button.dataset.bound === '1') return;
       button.dataset.bound = '1';
 
@@ -4618,17 +4627,17 @@ ${mark}${percent}`;
       };
 
       const refresh = async () => {
-        try { render(await api('/api/tickets/science/attendance')); }
+        try { render(await api('/api/tickets/teams/attendance')); }
         catch (error) { info.textContent = error.message; }
       };
 
       button.addEventListener('click', async () => {
         button.disabled = true;
         try {
-          const state = await api('/api/tickets/science/attendance');
+          const state = await api('/api/tickets/teams/attendance');
           if (state.present && state.holding
             && !confirm(`معاك ${state.holding} تذكرة، هترجع لفريق المتابعة. تأكيد الانصراف؟`)) return;
-          const result = await api(`/api/tickets/science/attendance/${state.present ? 'check-out' : 'check-in'}`,
+          const result = await api(`/api/tickets/teams/attendance/${state.present ? 'check-out' : 'check-in'}`,
             { method: 'POST' });
           showToast(result.present ? 'اتسجّل حضورك' : `اتسجّل انصرافك${result.returned ? ` — رجّعنا ${result.returned} تذكرة` : ''}`);
           await refresh();
@@ -4797,23 +4806,23 @@ ${mark}${percent}`;
           // تلقائية. الأزرق بيغلب لأنه أكثر إلحاحًا — فيه كلام من الطالب محدش فتحه أصلًا
           // الأخضر بيكسب الألوان كلها: التذكرة وهي مع التيم العلمي مش مستنية حاجة من موظف
           // المتابعة، فتعليمها حمرا (محتاجة رد) أو "مردش من أسبوع" هيبقى كلام غلط
-          const withScience = Boolean(ticket.science_agent_id);
-          const silentWeek = Boolean(ticket.silent_week) && !hasUnread && !withScience;
+          const transferTeam = ticket.transfer_agent_id ? TEAM_INFO[ticket.transfer_team] : null;
+          const silentWeek = Boolean(ticket.silent_week) && !hasUnread && !transferTeam;
           const checkboxHtml = currentUserRole === 'admin'
             ? `<label class="ticket-select-checkbox"><input type="checkbox" class="ticket-selector" value="${ticket.id}" ${selectedTicketIds.has(Number(ticket.id)) ? 'checked' : ''} aria-label="تحديد التذكرة"></label>`
             : '';
           return `
             <div class="ticket-list-row">
             ${checkboxHtml}
-            <button type="button" class="ticket-list-item ${Number(ticket.id) === Number(currentTicketId) ? 'active' : ''} ${withScience ? 'with-science' : ''} ${!withScience && hasUnread ? 'has-unread' : ''} ${!withScience && ticket.never_replied ? 'never-replied' : ''} ${silentWeek ? 'silent-week' : ''}" data-ticket-id="${ticket.id}">
+            <button type="button" class="ticket-list-item ${Number(ticket.id) === Number(currentTicketId) ? 'active' : ''} ${transferTeam ? 'transfer-' + transferTeam.tone : ''} ${!transferTeam && hasUnread ? 'has-unread' : ''} ${!transferTeam && ticket.never_replied ? 'never-replied' : ''} ${silentWeek ? 'silent-week' : ''}" data-ticket-id="${ticket.id}">
               <div class="ticket-list-title">
                 <span class="ticket-name-with-subtitle">
                   <span>${escapeHtml(name)}</span>
                   ${telegramReachBadge(ticket.can_message)}
                   <span class="ticket-subtitle-badge">${escapeHtml(ticket.subtitle_name || 'مطلوب المتابعة')}</span>
                   ${urgentBadge(ticket.is_urgent)}
-                  ${withScience
-                    ? `<span class="science-badge" title="مع التيم العلمي دلوقتي${ticket.science_agent_name ? ' — ' + escapeHtml(ticket.science_agent_name) : ''}">🧪 ${escapeHtml(firstEmployeeName(ticket.science_agent_name) || 'التيم العلمي')}</span>`
+                  ${transferTeam
+                    ? `<span class="team-badge team-badge-${transferTeam.tone}" title="مع ${transferTeam.label} دلوقتي${ticket.transfer_agent_name ? ' — ' + escapeHtml(ticket.transfer_agent_name) : ''}">${transferTeam.icon} ${escapeHtml(firstEmployeeName(ticket.transfer_agent_name) || transferTeam.label)}</span>`
                     : (ticket.never_replied ? '<span class="never-replied-badge" title="الرسالة اتفتحت وعدّى عليها أكتر من ١٠ دقايق من غير رد ولا حتى تفاعل بإيموجي">محتاجة رد</span>' : '')}
                   ${silentWeek ? '<span class="silent-week-badge" title="بعتنا له بعد آخر كلام منه وعدّى أسبوع من غير أي رد — الحملات الجماعية مش محسوبة">مردش من أسبوع</span>' : ''}
                   ${ideaBadge}
@@ -4973,7 +4982,7 @@ ${mark}${percent}`;
                 ${assignedUser ? `<span class="ticket-employee-badge ${employeeBadgeClass(assignedUser.id)}" title="الموظف المسؤول: ${escapeHtml(assignedUser.name)}">${escapeHtml(firstEmployeeName(assignedUser.name))}</span>` : ''}
                 ${ticket.current_idea_number ? `<span class="idea-badge-lg" title="رقم الفكرة الحالية">💡 فكرة ${ticket.current_idea_number}</span>` : ''}
                 ${urgentBadge(ticket.is_urgent)}
-                ${ticket.science_agent_id ? `<span class="science-badge" title="السؤال مع التيم العلمي دلوقتي">🧪 ${escapeHtml(ticket.science_agent_name || 'التيم العلمي')}</span>` : ''}
+                ${ticket.transfer_agent_id && TEAM_INFO[ticket.transfer_team] ? `<span class="team-badge team-badge-${TEAM_INFO[ticket.transfer_team].tone}" title="التذكرة مع ${TEAM_INFO[ticket.transfer_team].label} دلوقتي">${TEAM_INFO[ticket.transfer_team].icon} ${escapeHtml(ticket.transfer_agent_name || TEAM_INFO[ticket.transfer_team].label)}</span>` : ''}
               </h2>
               <div class="ticket-muted">${ticket.telegram_username ? '@' + escapeHtml(ticket.telegram_username) + ' · ' : ''}Chat ID: ${ticket.chat_id}</div>
             </div>
@@ -4985,12 +4994,15 @@ ${mark}${percent}`;
               title="${ticket.next_follow_up_message ? 'رسالة المتابعة القادمة مخصّصة — اضغط للتعديل' : 'تعديل رسالة المتابعة التلقائية القادمة'}"
               aria-label="تعديل رسالة المتابعة"
               style="${ticket.next_follow_up_message ? 'background:var(--primary-tint)' : ''}">✏️</button>
-            ${currentUserIsScienceTeam
-              ? (ticket.science_agent_id ? `<button type="button" class="btn btn-sm" id="ticket-science-return" style="width:auto">✅ خلصت — رجّعها</button>` : '')
-              : `<button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-science-transfer"
-                   title="${ticket.science_agent_id ? 'مع التيم العلمي دلوقتي — اضغط لسحبها' : 'تحويل السؤال للتيم العلمي'}"
-                   aria-label="تحويل للتيم العلمي"
-                   style="${ticket.science_agent_id ? 'background:var(--success-tint,#e3f5ec)' : ''}">🧪</button>`}
+            ${currentUserTeam
+              ? (ticket.transfer_agent_id ? `<button type="button" class="btn btn-sm" id="ticket-team-return" style="width:auto">✅ خلصت — رجّعها</button>` : '')
+              : Object.entries(TEAM_INFO).map(([key, team]) => `
+                  <button type="button" class="btn btn-ghost btn-sm icon-only-mobile team-transfer-btn"
+                    data-team="${key}"
+                    title="${ticket.transfer_team === key ? `مع ${team.label} دلوقتي — اضغط لسحبها` : team.transferTitle}"
+                    aria-label="${team.transferTitle}"
+                    ${ticket.transfer_agent_id && ticket.transfer_team !== key ? 'disabled' : ''}
+                    style="${ticket.transfer_team === key ? `background:var(--${team.tone}-tint)` : ''}">${team.icon}</button>`).join('')}
             <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="ticket-urgent-toggle"
               title="${ticket.is_urgent ? 'إلغاء علامة عاجل' : 'وسم كحالة عاجلة'}" aria-label="عاجل"
               style="${ticket.is_urgent ? 'background:var(--danger-tint,#fdeaea)' : ''}">🚨</button>
@@ -5115,32 +5127,35 @@ ${mark}${percent}`;
           } catch (error) { showToast(error.message); }
         });
 
-        // التحويل للتيم العلمي — نفس الزرار بيسحبها لو كانت محوّلة بالفعل
-        document.getElementById('ticket-science-transfer')?.addEventListener('click', async (event) => {
-          const button = event.currentTarget;
-          button.disabled = true;
-          try {
-            if (ticket.science_agent_id) {
-              await api(`/api/tickets/${ticket.id}/science/return`, { method: 'POST' });
-              showToast('رجّعت التذكرة من التيم العلمي');
-            } else {
-              const result = await api(`/api/tickets/${ticket.id}/science/transfer`, { method: 'POST' });
-              showToast('اتحوّلت لـ ' + (result.science_agent_name || 'التيم العلمي'));
-            }
-            loadTicket(ticket.id);
-            loadTickets();
-          } catch (error) {
-            // مفيش حد حاضر: الرسالة اللي رجعت من السيرفر بتقول كده، والطالب اتبعتله تنبيه
-            showToast(error.message);
-            loadTicket(ticket.id);
-          } finally { button.disabled = false; }
+        // زراير التحويل — واحد لكل تيم، ونفس الزرار بيسحب التذكرة لو هي مع تيمه بالفعل
+        panel.querySelectorAll('.team-transfer-btn').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const teamKey = button.dataset.team;
+            const team = TEAM_INFO[teamKey];
+            button.disabled = true;
+            try {
+              if (ticket.transfer_team === teamKey) {
+                await api(`/api/tickets/${ticket.id}/teams/return`, { method: 'POST' });
+                showToast(`رجّعت التذكرة من ${team.label}`);
+              } else {
+                const result = await api(`/api/tickets/${ticket.id}/teams/${teamKey}/transfer`, { method: 'POST' });
+                showToast('اتحوّلت لـ ' + (result.agent_name || team.label));
+              }
+              loadTicket(ticket.id);
+              loadTickets();
+            } catch (error) {
+              // مفيش حد حاضر: الرسالة اللي رجعت من السيرفر بتقول كده، والطالب اتبعتله تنبيه
+              showToast(error.message);
+              loadTicket(ticket.id);
+            } finally { button.disabled = false; }
+          });
         });
 
-        document.getElementById('ticket-science-return')?.addEventListener('click', async (event) => {
+        document.getElementById('ticket-team-return')?.addEventListener('click', async (event) => {
           const button = event.currentTarget;
           button.disabled = true;
           try {
-            await api(`/api/tickets/${ticket.id}/science/return`, { method: 'POST' });
+            await api(`/api/tickets/${ticket.id}/teams/return`, { method: 'POST' });
             showToast('رجّعت التذكرة لفريق المتابعة');
             loadTickets();
             closeMobileTicket();
@@ -7047,7 +7062,11 @@ ${mark}${percent}`;
                     <label class="icon-toggle" title="صلاحية صندوق الدعم"><input type="checkbox" class="staff-view-tickets-toggle" data-user-id="${user.id}" ${user.can_view_tickets ? 'checked' : ''}> 🎫</label>
                     <label class="icon-toggle" title="صلاحية المتابعة التليفونية"><input type="checkbox" class="staff-view-calls-toggle" data-user-id="${user.id}" ${user.can_view_calls ? 'checked' : ''}> 📞</label>
                     <label class="icon-toggle" title="مسند — يقدر يسند/يلغي إسناد طلاب المكالمات لغيره من الموظفين"><input type="checkbox" class="staff-assign-calls-toggle" data-user-id="${user.id}" ${user.can_assign_calls ? 'checked' : ''}> 🧭</label>
-                    <label class="icon-toggle" title="تيم علمي — بيستقبل الأسئلة العلمية المحوّلة من فريق المتابعة، ومستثنى من التوزيع التلقائي للتذاكر الجديدة"><input type="checkbox" class="staff-science-team-toggle" data-user-id="${user.id}" ${user.is_science_team ? 'checked' : ''}> 🧪</label>
+                    <select class="compact-select staff-team-select" data-user-id="${user.id}" style="width:auto; font-size:11.5px" title="التيم المتخصص — التيمات المتخصصة مستثناة من التوزيع التلقائي للتذاكر الجديدة">
+                      <option value="" ${!user.team ? 'selected' : ''}>فريق المتابعة</option>
+                      <option value="science" ${user.team === 'science' ? 'selected' : ''}>🧪 علمي</option>
+                      <option value="tech" ${user.team === 'tech' ? 'selected' : ''}>🛠️ فني</option>
+                    </select>
                   `}
                   ${reportCell}
                   ${sessionCell}
@@ -7092,8 +7111,8 @@ ${mark}${percent}`;
         list.querySelectorAll('.staff-assign-calls-toggle').forEach((checkbox) => {
           checkbox.addEventListener('change', () => updateStaffUser(checkbox.dataset.userId, { can_assign_calls: checkbox.checked }));
         });
-        list.querySelectorAll('.staff-science-team-toggle').forEach((checkbox) => {
-          checkbox.addEventListener('change', () => updateStaffUser(checkbox.dataset.userId, { is_science_team: checkbox.checked }));
+        list.querySelectorAll('.staff-team-select').forEach((select) => {
+          select.addEventListener('change', () => updateStaffUser(select.dataset.userId, { team: select.value || null }));
         });
         list.querySelectorAll('.staff-delete-btn').forEach((button) => {
           button.addEventListener('click', async () => {
@@ -7196,12 +7215,12 @@ ${mark}${percent}`;
         const can_view_tickets = document.getElementById('staff-can-view-tickets').checked;
         const can_view_calls = document.getElementById('staff-can-view-calls').checked;
         const can_assign_calls = document.getElementById('staff-can-assign-calls').checked;
-        const is_science_team = document.getElementById('staff-is-science-team')?.checked || false;
+        const team = document.getElementById('staff-team')?.value || null;
         if (!name || !email || !password) return showToast('املأ بيانات الحساب كاملة');
         try {
           await api('/api/admin/users', {
             method: 'POST',
-            body: JSON.stringify({ name, email, password, role, can_view_tickets, can_view_calls, can_assign_calls, is_science_team }),
+            body: JSON.stringify({ name, email, password, role, can_view_tickets, can_view_calls, can_assign_calls, team }),
           });
           document.getElementById('staff-name').value = '';
           document.getElementById('staff-email').value = '';
