@@ -352,6 +352,12 @@ async function listStudentsForAssignment(req, res) {
     const buildSms = await buildSmsFactory();
     const students = await decorateWithSms(result.rows, buildSms);
     const total = countResult.rows[0].count;
+    // الموظف اللي عنده صلاحية إسناد لازم يشوف القايمة عشان يوزّع، لكن الإجمالي بيدّيه حجم
+    // الطلاب على المنصة كلها وده مش لازم لشغله. الأرقام مش بتتبعت أصلًا مش بتتخبّى بس،
+    // والوصول للقايمة نفسها ما اتغيّرش
+    if (req.session.userRole !== 'admin') {
+      return res.json({ students, meta: { page, limit, has_more: students.length === limit } });
+    }
     res.json({ students, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
   } catch (error) {
     console.error('❌ Failed to list students for call assignment:', error.message);

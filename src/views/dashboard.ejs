@@ -3583,11 +3583,18 @@
       try {
         const endpoint = (currentUserRole === 'admin' || canAssignCalls) ? '/api/calls/students?' : '/api/calls/my-list?';
         const data = await api(endpoint + callsQuery());
-        callsPages = data.meta.pages;
-        document.getElementById('calls-count').textContent = `الطلاب (${data.meta.total})`;
-        document.getElementById('calls-page-label').textContent = `صفحة ${data.meta.page} من ${data.meta.pages}`;
+        // نفس القاعدة: الإجمالي بيتعرض لما السيرفر يبعته بس. قايمة الموظف الشخصية
+        // (my-list) بترجّع الإجمالي عادي — ده عدد طلابه هو مش حجم المنصة
+        const hasTotal = data.meta.total !== undefined;
+        callsPages = hasTotal ? data.meta.pages : (data.meta.has_more ? data.meta.page + 1 : data.meta.page);
+        document.getElementById('calls-count').textContent = hasTotal ? `الطلاب (${data.meta.total})` : 'الطلاب';
+        document.getElementById('calls-page-label').textContent = hasTotal
+          ? `صفحة ${data.meta.page} من ${data.meta.pages}`
+          : (data.meta.page > 1 ? `صفحة ${data.meta.page}` : '');
         document.getElementById('calls-prev').disabled = data.meta.page <= 1;
-        document.getElementById('calls-next').disabled = data.meta.page >= data.meta.pages;
+        document.getElementById('calls-next').disabled = hasTotal
+          ? data.meta.page >= data.meta.pages
+          : !data.meta.has_more;
         list.innerHTML = buildCallsListHtml(data.students);
         list.querySelectorAll('[data-student-id]').forEach((row) => {
           row.addEventListener('click', (event) => {
@@ -4791,10 +4798,21 @@ ${mark}${percent}`;
       try {
         const data = await api('/api/tickets?' + ticketQueryString());
         ticketsTotalPages = data.pages;
-        document.getElementById('ticket-count').textContent = `التذاكر (${data.total})`;
-        document.getElementById('ticket-page-label').textContent = `صفحة ${data.page} من ${data.pages}`;
+        // الأدمن بيشوف الإجمالي وعدد الصفحات؛ الموظف بيشوف عدد اللي محتاج تدخّل بس.
+        // السيرفر أصلًا مش بيبعتله total ولا pages، فالتفريع هنا على وجود الرقم مش على الدور —
+        // ولو اتغيّرت القاعدة على السيرفر الواجهة بتمشي وراها من غير تعديل
+        const countEl = document.getElementById('ticket-count');
+        const pageEl = document.getElementById('ticket-page-label');
+        if (data.total === undefined) {
+          countEl.textContent = data.actionable ? `محتاجة تدخّلك: ${data.actionable}` : 'مفيش حاجة محتاجة تدخّلك';
+          pageEl.textContent = data.page > 1 ? `صفحة ${data.page}` : '';
+          document.getElementById('tickets-next').disabled = !data.has_more;
+        } else {
+          countEl.textContent = `التذاكر (${data.total})`;
+          pageEl.textContent = `صفحة ${data.page} من ${data.pages}`;
+          document.getElementById('tickets-next').disabled = data.page >= data.pages;
+        }
         document.getElementById('tickets-prev').disabled = data.page <= 1;
-        document.getElementById('tickets-next').disabled = data.page >= data.pages;
 
         if (!data.tickets.length) {
           list.innerHTML = '<div class="empty-state">لا توجد تذاكر مطابقة</div>';
