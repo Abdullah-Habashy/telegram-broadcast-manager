@@ -1072,7 +1072,15 @@ th.perf-sorted { color: var(--primary); }
 
 /* شريط الردود الجاهزة فوق مربع الرد. بيتمرّر أفقيًا بدل ما يلف على أكتر من سطر وياكل من
    مساحة المحادثة — عدد الردود بيكبر مع الوقت والارتفاع لازم يفضل ثابت */
-.quick-replies-bar { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 6px; }
+/* `width: 100%` مش تجميل — الحاوية `.ticket-reply-box` فيها `flex-wrap`، ومن غير العرض
+   الكامل الشريط بيقعد **جنب** مربع الكتابة ويضغطه لنص عرضه. نفس الحيلة المستخدمة في
+   `.ticket-reply-context` فوقه. و`scrollbar-width: none` عشان السطر يفضل رفيع: الردود
+   الزيادة بتتشاف بالسحب، ومكانها الأصلي قايمة / مش الشريط */
+.quick-replies-bar {
+  width: 100%; display: flex; gap: 6px; overflow-x: auto; padding: 0; margin-bottom: -2px;
+  scrollbar-width: none;
+}
+.quick-replies-bar::-webkit-scrollbar { display: none; }
 .quick-replies-bar:empty { display: none; }
 .quick-reply-chip {
   flex: none; padding: 3px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap;
