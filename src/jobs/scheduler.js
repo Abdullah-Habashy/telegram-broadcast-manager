@@ -9,9 +9,13 @@ let followUpJobRunning = false;
 // استبدال "الاسم" و"رقم الفكرة" في نص رسالة المتابعة التلقائية ببيانات الطالب الفعلية
 function personalizeFollowUpMessage(template, student) {
   let result = template.replaceAll('الاسم', getFirstName(student));
+  // الطالب اللي مالوش رقم فكرة محدد كان بياخد "الفكرة المتفق عليها" — والعبارة دي بتفترض اتفاق
+  // مسبق مش موجود دايمًا. في طلاب ماشيين قدام الخطة وفي طلاب اتفقنا معاهم فعلًا، ونفس الجملة
+  // بتوصل للاتنين فتبان غلط عند نص الطلاب. الصيغة الجديدة بتوصف مكانه من غير ما تدّعي اتفاق.
+  // القالب نفسه بيتغيّر من الإعدادات، لكن دي متحطوطة في الكود فمكانش ينفع تتعدّل من غير نشر.
   const ideaPhrase = student.current_idea_number
     ? `فكرة رقم ${student.current_idea_number}`
-    : 'الفكرة المتفق عليها';
+    : 'الفكرة اللي انت فيها';
   result = result.replaceAll('رقم الفكرة', ideaPhrase);
   return result;
 }
