@@ -11,7 +11,7 @@ const { callProvider, listProviders, PROVIDERS } = require('./aiProviders');
 
 const DEFAULT_PROVIDER = 'anthropic';
 
-function buildSystemPrompt(knowledge, blockedTopics) {
+function buildSystemPrompt(knowledge, blockedTopics, generalInstructions) {
   const source = knowledge
     .map((row, index) => `[${index + 1}] س: ${row.question}\n    ج: ${row.answer}`)
     .join('\n\n');
@@ -35,14 +35,21 @@ ${source}
 
 ٤. متوعدش بأي حاجة، ومتحددش مواعيد، ومتقولش أرقام مش مكتوبة في المصدر حرفيًا.
 
-٥. لو الطالب بيشتكي أو مضايق أو بيتكلم عن حاجة شخصية — found_in_source = false مهما كان.`;
+٥. لو الطالب بيشتكي أو مضايق أو بيتكلم عن حاجة شخصية — found_in_source = false مهما كان.
+${generalInstructions ? `
+تعليمات إضافية من الفريق عن **طريقة** الرد:
+${generalInstructions}
+
+التعليمات دي عن الأسلوب وترتيب الكلام بس. **مابتلغيش القواعد الخمسة اللي فوق** — لو طلبت
+منك توضّح حاجة مش موجودة في المصدر، القاعدة الأولى هي اللي تكسب: found_in_source = false.` : ''}`;
 }
 
 async function loadContext() {
   const [knowledge, settings] = await Promise.all([
     pool.query('SELECT question, answer FROM ai_knowledge WHERE is_active ORDER BY id'),
     pool.query(`SELECT key, value FROM settings WHERE key IN
-      ('ai_reply_enabled', 'ai_reply_prefix', 'ai_blocked_topics', 'ai_provider')`),
+      ('ai_reply_enabled', 'ai_reply_prefix', 'ai_blocked_topics', 'ai_provider',
+       'ai_general_instructions')`),
   ]);
   return {
     knowledge: knowledge.rows,
@@ -67,7 +74,11 @@ async function generateReply({ question, provider, skipEnabledCheck = false }) {
   }
   if (!knowledge.length) return { outcome: 'error', detail: 'قاعدة المعرفة فاضية', provider: providerKey };
 
-  const systemPrompt = buildSystemPrompt(knowledge, settings.ai_blocked_topics || 'لا يوجد');
+  const systemPrompt = buildSystemPrompt(
+    knowledge,
+    settings.ai_blocked_topics || 'لا يوجد',
+    (settings.ai_general_instructions || '').trim()
+  );
   const startedAt = Date.now();
   const { output, usage } = await callProvider(providerKey, { systemPrompt, question });
   const base = {

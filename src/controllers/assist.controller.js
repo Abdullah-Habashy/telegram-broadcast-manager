@@ -162,7 +162,8 @@ async function testKnowledge(req, res) {
 
 // إعدادات الرد الآلي. مفاتيح محددة بالاسم مش أي مفتاح بيتبعت — فتح جدول الإعدادات كله
 // للكتابة كان هيخلّي أي خطأ في الواجهة يقدر يكتب فوق توكن البوت أو مواعيد العمل
-const AI_SETTING_KEYS = ['ai_reply_enabled', 'ai_provider', 'ai_reply_prefix', 'ai_blocked_topics'];
+const AI_SETTING_KEYS = ['ai_reply_enabled', 'ai_provider', 'ai_reply_prefix',
+  'ai_blocked_topics', 'ai_general_instructions'];
 
 async function updateAiSettings(req, res) {
   const entries = Object.entries(req.body || {}).filter(([key]) => AI_SETTING_KEYS.includes(key));

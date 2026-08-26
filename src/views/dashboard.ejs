@@ -966,6 +966,20 @@
         </div>
 
         <div class="card">
+          <h2>التعليمات العامة</h2>
+          <p class="card-desc">
+            قواعد عن <b>طريقة</b> الرد مش عن المعلومات — النبرة، ترتيب الكلام، وإمتى يسأل الطالب
+            سؤال توضيحي قبل ما يجاوب. مثال: «لو الطالب سأل عن الاشتراك، اسأله هو في سنة كام الأول».
+            <br>
+            <b>مابتلغيش القيود:</b> لو طلبت منه يوضّح حاجة مش موجودة في المصدر، هيفضل يقول «مش لاقي»
+            — التعليمات دي بتغيّر الأسلوب مش المسموح.
+          </p>
+          <textarea id="ai-instructions" class="compact-input" rows="6" style="width:100%; margin-bottom:8px"
+            placeholder="اكتب تعليماتك، كل تعليمة في سطر:&#10;لو الطالب سأل عن الاشتراك، اسأله في سنة كام الأول وبعدين وضّحله طرق الاشتراك.&#10;لو الطالب مستعجل، ابدأ بالإجابة على طول من غير مقدمات."></textarea>
+          <button type="button" class="btn btn-primary btn-sm" id="ai-instructions-save" style="width:auto">احفظ التعليمات</button>
+        </div>
+
+        <div class="card">
           <h2>المساحة التجريبية</h2>
           <p class="card-desc">
             كلّمه زي ما الطالب هيكلّمه. لو قال «مش لاقي الإجابة» — ده معناه إن المصدر ناقص:
@@ -5131,6 +5145,18 @@ ${reply.content}` : reply.content;
         renderSuggestions();
       });
 
+      document.getElementById('ai-instructions-save').addEventListener('click', async (event) => {
+        event.currentTarget.disabled = true;
+        try {
+          await api('/api/assist/ai-settings', {
+            method: 'PUT',
+            body: JSON.stringify({ ai_general_instructions: document.getElementById('ai-instructions').value }),
+          });
+          showToast('التعليمات اتحفظت — بتطبّق على الرد الجاي على طول');
+        } catch (error) { showToast(error.message); }
+        finally { event.currentTarget.disabled = false; }
+      });
+
       renderAiChat();
       loadKnowledge();
     }
@@ -6942,6 +6968,8 @@ ${reply.content}` : reply.content;
         if (aiToggle) aiToggle.checked = s.ai_reply_enabled === 'true';
         const providerSelect = document.getElementById('ai-provider');
         if (providerSelect && s.ai_provider) providerSelect.value = s.ai_provider;
+        const instructions = document.getElementById('ai-instructions');
+        if (instructions) instructions.value = s.ai_general_instructions || '';
         const statusEl = document.getElementById('token-status');
         const activeBot = (s.bot_profiles || []).find((profile) => profile.is_active);
         if (activeBot) {
