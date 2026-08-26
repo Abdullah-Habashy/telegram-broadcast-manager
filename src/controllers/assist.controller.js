@@ -12,11 +12,18 @@ const aiMining = require('../utils/aiMining');
 
 async function listQuickReplies(req, res) {
   try {
-    // الموظف بيشوف المفعّل بس؛ الأدمن بيشوف الكل عشان يقدر يرجّع المعطّل
+    // الأدمن بيشوف الكل (بما فيه المعطّل عشان يقدر يرجّعه)؛ الموظف بيشوف العام + بتاعه هو.
+    // is_mine بيترجع عشان الواجهة تعرف تعرض زراير التعديل والحذف على بتوعه بس
     const { rows } = await pool.query(
       req.session.userRole === 'admin'
-        ? 'SELECT * FROM quick_replies ORDER BY sort_order, id'
-        : 'SELECT * FROM quick_replies WHERE is_active ORDER BY sort_order, id'
+        ? `SELECT q.*, (q.user_id IS NOT NULL) AS is_mine, u.name AS owner_name
+           FROM quick_replies q LEFT JOIN users u ON u.id = q.user_id
+           ORDER BY q.user_id NULLS FIRST, q.sort_order, q.id`
+        : `SELECT q.*, (q.user_id = $1) AS is_mine, NULL::text AS owner_name
+           FROM quick_replies q
+           WHERE q.is_active AND (q.user_id IS NULL OR q.user_id = $1)
+           ORDER BY q.user_id NULLS FIRST, q.sort_order, q.id`,
+      req.session.userRole === 'admin' ? [] : [req.session.userId]
     );
     res.json({ quick_replies: rows });
   } catch (error) {
@@ -31,11 +38,13 @@ async function createQuickReply(req, res) {
   if (!title || !content) return res.status(400).json({ error: 'العنوان والنص مطلوبين' });
   if (content.length > 4096) return res.status(400).json({ error: 'النص أطول من حد تليجرام' });
   try {
+    // الأدمن بيضيف رد عام للفريق كله، والموظف بيضيف رد شخصي ليه هو
+    const ownerId = req.session.userRole === 'admin' ? null : req.session.userId;
     const { rows } = await pool.query(
-      `INSERT INTO quick_replies (title, content, sort_order)
-       VALUES ($1, $2, COALESCE((SELECT MAX(sort_order) + 1 FROM quick_replies), 0))
+      `INSERT INTO quick_replies (title, content, user_id, sort_order)
+       VALUES ($1, $2, $3, COALESCE((SELECT MAX(sort_order) + 1 FROM quick_replies), 0))
        RETURNING *`,
-      [title, content]
+      [title, content, ownerId]
     );
     res.json(rows[0]);
   } catch (error) {
@@ -56,11 +65,19 @@ async function updateQuickReply(req, res) {
   if (req.body.sort_order !== undefined) add('sort_order', Number(req.body.sort_order) || 0);
   if (!updates.length) return res.status(400).json({ error: 'لا توجد تعديلات' });
   params.push(id);
+  // الموظف بيعدّل في ردوده الشخصية بس — الشرط في الاستعلام نفسه مش فحص قبله، عشان
+  // مايبقاش فيه فجوة بين التحقق والتنفيذ
+  let ownerGuard = '';
+  if (req.session.userRole !== 'admin') {
+    params.push(req.session.userId);
+    ownerGuard = ` AND user_id = $${params.length}`;
+  }
   try {
     const { rows } = await pool.query(
-      `UPDATE quick_replies SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING *`, params
+      `UPDATE quick_replies SET ${updates.join(', ')}
+       WHERE id = $${params.length - (ownerGuard ? 1 : 0)}${ownerGuard} RETURNING *`, params
     );
-    if (!rows[0]) return res.status(404).json({ error: 'الرد غير موجود' });
+    if (!rows[0]) return res.status(404).json({ error: 'الرد مش موجود أو مش بتاعك' });
     res.json(rows[0]);
   } catch (error) {
     console.error('❌ Failed to update a quick reply:', error.message);
@@ -72,7 +89,11 @@ async function deleteQuickReply(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'الرد غير صالح' });
   try {
-    await pool.query('DELETE FROM quick_replies WHERE id = $1', [id]);
+    const result = req.session.userRole === 'admin'
+      ? await pool.query('DELETE FROM quick_replies WHERE id = $1 RETURNING id', [id])
+      : await pool.query('DELETE FROM quick_replies WHERE id = $1 AND user_id = $2 RETURNING id',
+        [id, req.session.userId]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'الرد مش موجود أو مش بتاعك' });
     res.json({ ok: true });
   } catch (error) {
     console.error('❌ Failed to delete a quick reply:', error.message);

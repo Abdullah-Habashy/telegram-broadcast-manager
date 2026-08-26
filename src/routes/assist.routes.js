@@ -7,9 +7,11 @@ router.use(requireAuthApi);
 
 // الموظف بيقرا الردود الجاهزة بس — الإضافة والتعديل للأدمن
 router.get('/quick-replies', requireTicketsAccessApi, assistController.listQuickReplies);
-router.post('/quick-replies', requireAdminApi, assistController.createQuickReply);
-router.patch('/quick-replies/:id', requireAdminApi, assistController.updateQuickReply);
-router.delete('/quick-replies/:id', requireAdminApi, assistController.deleteQuickReply);
+// الموظف بيضيف ويعدّل ويحذف **ردوده الشخصية بس** — الملكية بتتحقق في المتحكّم نفسه.
+// الأدمن بيعمل ردود عامة للفريق وبيقدر يلمس أي رد
+router.post('/quick-replies', requireTicketsAccessApi, assistController.createQuickReply);
+router.patch('/quick-replies/:id', requireTicketsAccessApi, assistController.updateQuickReply);
+router.delete('/quick-replies/:id', requireTicketsAccessApi, assistController.deleteQuickReply);
 
 // قاعدة المعرفة وسجل الردود الآلية — أدمن بس. دي اللي بتحدد الطلاب هيسمعوا إيه وإحنا مش
 // موجودين، فمش مكان لصلاحية أوسع

@@ -4917,9 +4917,11 @@ ${mark}${percent}`;
         }
         const active = quickRepliesCache.filter((row) => row.is_active);
         if (!active.length) { bar.innerHTML = ''; return; }
-        bar.innerHTML = active.map((row) => `
+        // الرقم على كل شريحة هو نفسه اللي بيشتغل مع /: الموظف بيشوفه وهو بيستخدم الشرايح
+        // فبيحفظه من غير ما يحفظ حاجة، وبعد كام يوم بيكتب /3 على طول
+        bar.innerHTML = active.map((row, i) => `
           <button type="button" class="quick-reply-chip" data-quick-reply="${row.id}"
-            title="${escapeHtml(row.content.slice(0, 160))}">${escapeHtml(row.title)}</button>`).join('');
+            title="${escapeHtml(row.content.slice(0, 160))}"><span class="quick-reply-num">${i + 1}</span>${escapeHtml(row.title)}</button>`).join('');
         bar.querySelectorAll('[data-quick-reply]').forEach((button) => {
           button.addEventListener('click', () => {
             const reply = active.find((row) => String(row.id) === button.dataset.quickReply);
@@ -5309,6 +5311,102 @@ ${reply.content}` : reply.content;
       loadKnowledge();
     }
 
+    // ---------- قائمة الردود الجاهزة بـ / ----------
+    //
+    // الاختصار `/` مش رقم مجرّد عن قصد: الموظف بيرد على الطالب بأرقام فعلًا (عدد محاضرات،
+    // رقم فكرة)، فرقم لوحده كان هيتحول لرد جاهز بالغلط. `/` مستحيل يبقى بداية رد حقيقي.
+    //
+    // بعد `/` بتترشّح بالعنوان أو بالرقم: `/2` بيوصل للتاني على طول، و`/مذكرة` بيفلتر بالاسم.
+    // الاتنين شغالين مع بعض فالمستخدم الجديد بيتصفّح والقديم بيكتب الرقم من غير ما يبص.
+    let slashIndex = 0;
+    let slashMatches = [];
+
+    function closeSlashMenu() {
+      const menu = document.getElementById('quick-reply-menu');
+      if (menu) menu.style.display = 'none';
+      slashMatches = [];
+    }
+
+    function insertQuickReply(reply) {
+      const box = document.getElementById('ticket-reply-content');
+      // بيستبدل الـ / وكلمة الترشيح اللي بعدها بس — أي كلام كتبه الموظف قبلها بيفضل مكانه
+      box.value = box.value.replace(/\/\S*$/, reply.content);
+      closeSlashMenu();
+      box.focus();
+      box.dispatchEvent(new Event('input'));
+    }
+
+    function renderSlashMenu(query) {
+      const menu = document.getElementById('quick-reply-menu');
+      if (!menu) return;
+      const all = (quickRepliesCache || []).filter((r) => r.is_active);
+      const term = query.trim().toLowerCase();
+      slashMatches = !term
+        ? all
+        : all.filter((r, i) => String(i + 1) === term || r.title.toLowerCase().includes(term));
+      if (!slashMatches.length) { closeSlashMenu(); return; }
+      slashIndex = Math.min(slashIndex, slashMatches.length - 1);
+      menu.innerHTML = slashMatches.map((r, i) => `
+        <button type="button" class="quick-reply-option ${i === slashIndex ? 'active' : ''}" data-slash="${i}">
+          <span class="quick-reply-num">${all.indexOf(r) + 1}</span>
+          <span class="quick-reply-name">${escapeHtml(r.title)}</span>
+          <span class="quick-reply-peek">${escapeHtml(r.content.slice(0, 70))}</span>
+        </button>`).join('');
+      menu.style.display = 'block';
+      menu.querySelectorAll('[data-slash]').forEach((button) => {
+        button.addEventListener('mousedown', (event) => {
+          // mousedown مش click: الـ blur بيقفل القايمة قبل ما الـ click يوصل
+          event.preventDefault();
+          insertQuickReply(slashMatches[Number(button.dataset.slash)]);
+        });
+      });
+    }
+
+    function bindSlashMenu() {
+      const box = document.getElementById('ticket-reply-content');
+      if (!box || box.dataset.slashBound === '1') return;
+      box.dataset.slashBound = '1';
+
+      box.addEventListener('input', () => {
+        const match = box.value.match(/\/(\S*)$/);
+        if (match) { slashIndex = 0; renderSlashMenu(match[1]); } else closeSlashMenu();
+      });
+
+      box.addEventListener('keydown', (event) => {
+        if (!slashMatches.length) return;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          slashIndex = (slashIndex + (event.key === 'ArrowDown' ? 1 : -1) + slashMatches.length) % slashMatches.length;
+          renderSlashMenu(box.value.match(/\/(\S*)$/)?.[1] || '');
+        } else if (event.key === 'Enter' || event.key === 'Tab') {
+          event.preventDefault();
+          insertQuickReply(slashMatches[slashIndex]);
+        } else if (event.key === 'Escape') {
+          closeSlashMenu();
+        }
+      });
+
+      box.addEventListener('blur', () => setTimeout(closeSlashMenu, 150));
+    }
+
+    // حفظ اللي الموظف كاتبه دلوقتي كرد جاهز — أقل احتكاك ممكن لبناء المكتبة: هو لسه كاتب
+    // إجابة كويسة، فبدل ما يعيد كتابتها في شاشة تانية بيحفظها من مكانه
+    async function saveDraftAsQuickReply() {
+      const box = document.getElementById('ticket-reply-content');
+      const content = box.value.trim();
+      if (!content) return showToast('اكتب الرد الأول وبعدين احفظه');
+      const title = window.prompt('اسم مختصر للرد ده (هيظهر في القايمة):');
+      if (!title?.trim()) return;
+      try {
+        await api('/api/assist/quick-replies', {
+          method: 'POST', body: JSON.stringify({ title: title.trim(), content }),
+        });
+        quickRepliesCache = null;
+        await renderQuickReplies();
+        showToast('اتحفظ — اكتب / في أي وقت عشان تستخدمه');
+      } catch (error) { showToast(error.message); }
+    }
+
     function ticketQueryString() {
       const query = new URLSearchParams({ page: String(ticketsPage) });
       const values = {
@@ -5623,8 +5721,9 @@ ${reply.content}` : reply.content;
               <button type="button" class="btn btn-ghost btn-sm icon-only-mobile" id="cancel-ticket-reply-context" title="إلغاء الرد" aria-label="إلغاء الرد">✕</button>
             </div>
             <div id="quick-replies-bar" class="quick-replies-bar"></div>
-            <div class="ticket-reply-main">
-              <textarea id="ticket-reply-content" placeholder="اكتب ردك للطالب..."></textarea>
+            <div class="ticket-reply-main" style="position:relative">
+              <div id="quick-reply-menu" class="quick-reply-menu" style="display:none"></div>
+              <textarea id="ticket-reply-content" placeholder="اكتب ردك للطالب... (اكتب / للردود الجاهزة)"></textarea>
             </div>
             <div class="ticket-reply-actions">
               <label class="btn btn-ghost icon-action-btn" title="إرفاق صورة" aria-label="إرفاق صورة">
@@ -5656,6 +5755,8 @@ ${reply.content}` : reply.content;
                   <button type="button" class="btn btn-ghost btn-sm" style="width:100%" id="exam-marks-course-btn" title="اختبارات أونلاين بس — المنصة مش بترجع كورس الاختبارات الورقية">كل اختبارات كورساتي المشترك فيها</button>
                 </div>
               </div>
+              <button type="button" class="btn btn-ghost ticket-send-button" id="save-quick-reply-btn" style="width:auto"
+                title="احفظ اللي كاتبه دلوقتي كرد جاهز" aria-label="احفظ كرد جاهز">💾</button>
               <button type="button" class="btn btn-ghost ticket-send-button" id="ticket-voice-btn" style="width:auto"
                 title="تسجيل رسالة صوتية للطالب" aria-label="تسجيل رسالة صوتية">🎙️</button>
               <button class="btn btn-primary ticket-send-button" id="send-ticket-reply" style="width:auto" title="إرسال الرد">
@@ -5785,6 +5886,8 @@ ${reply.content}` : reply.content;
         document.getElementById('send-ticket-reply').addEventListener('click', sendTicketReply);
         bindVoiceButton(ticketId);
         renderQuickReplies();
+        bindSlashMenu();
+        document.getElementById('save-quick-reply-btn')?.addEventListener('click', saveDraftAsQuickReply);
         document.getElementById('cancel-ticket-reply-context').addEventListener('click', clearReplyContext);
         document.getElementById('mobile-ticket-back').addEventListener('click', closeMobileTicket);
 

@@ -510,6 +510,11 @@ CREATE TABLE IF NOT EXISTS quick_replies (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_quick_replies_order ON quick_replies (sort_order, id) WHERE is_active;
+-- صاحب الرد: NULL معناها رد عام يشوفه كل الفريق (الأدمن بيضيفه)، والرقم معناه رد شخصي
+-- للموظف ده وحده. الموظف بيشوف بتوعه + العامة، وبيعدّل في بتوعه بس — عشان حد مايمسحش
+-- ردود زميله، والأدمن مايتحملش إدارة اختصارات كل واحد
+ALTER TABLE quick_replies ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_quick_replies_user ON quick_replies (user_id) WHERE user_id IS NOT NULL;
 
 -- ---------- قاعدة معرفة الرد الآلي ----------
 -- المصدر الوحيد اللي النموذج مسموح له يجاوب منه. مش "تدريب": المحتوى بيتبعت مع كل سؤال
