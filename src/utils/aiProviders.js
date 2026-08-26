@@ -16,8 +16,17 @@ const anthropicClient = env.anthropicApiKey ? new Anthropic({ apiKey: env.anthro
 const PROVIDERS = {
   anthropic: {
     key: 'anthropic',
-    label: 'Claude (مدفوع)',
+    label: 'Claude Opus 5 — الأدق',
     model: 'claude-opus-5',
+    available: () => Boolean(anthropicClient),
+  },
+  // نفس المزوّد بنموذج أخف. اتقاس على نفس التمن أسئلة: ٨/٨ زي Opus، وضعف السرعة (٢.٤ث
+  // مقابل ٥ث) وخُمس التكلفة. الفرق بيبان لما قاعدة المعرفة تكبر والتمييز بين المعلومات
+  // المتشابهة يصعب — فالاتنين متاحين والمقارنة في اللوحة هي اللي بتحكم
+  anthropic_haiku: {
+    key: 'anthropic_haiku',
+    label: 'Claude Haiku 4.5 — أسرع وأرخص',
+    model: 'claude-haiku-4-5',
     available: () => Boolean(anthropicClient),
   },
   groq: {
@@ -37,7 +46,10 @@ const PROVIDERS = {
 const OUTPUT_FIELDS = {
   found_in_source: 'true لو الإجابة موجودة صراحةً في المصدر المرفق. false لو مش موجودة أو مش أكيدة.',
   blocked_topic: 'true لو السؤال بيمس أي موضوع من المواضيع الممنوعة.',
-  answer: 'الرد للطالب بالعامية المصرية، جملتين على الأكثر. فاضي لو found_in_source = false أو blocked_topic = true.',
+  // من غير المخرج ده مفيش طريقة النموذج يسأل بيها. تعليمة زي "اسأله في سنة كام الأول" كانت
+  // مستحيلة التنفيذ لأن كل المخرجات كانت إما إجابة أو سكوت
+  asks_question: 'true لو التعليمات العامة طالبة منك تسأل الطالب سؤال توضيحي قبل ما تجاوب.',
+  answer: 'الرد للطالب بالعامية المصرية، جملتين على الأكثر. لو asks_question = true حط السؤال التوضيحي هنا. فاضي لو مفيش رد.',
 };
 
 const ANSWER_TOOL = {
@@ -50,29 +62,33 @@ const ANSWER_TOOL = {
     properties: {
       found_in_source: { type: 'boolean', description: OUTPUT_FIELDS.found_in_source },
       blocked_topic: { type: 'boolean', description: OUTPUT_FIELDS.blocked_topic },
+      asks_question: { type: 'boolean', description: OUTPUT_FIELDS.asks_question },
       answer: { type: 'string', description: OUTPUT_FIELDS.answer },
     },
-    required: ['found_in_source', 'blocked_topic', 'answer'],
+    required: ['found_in_source', 'blocked_topic', 'asks_question', 'answer'],
   },
 };
 
 // أي مخرج مش مطابق بيتعامل على إنه "مش لاقي" — الافتراض الآمن. نموذج رجّع حاجة غريبة
 // أخطر من نموذج قال مش عارف، فالغموض بيروح للموظف مش للطالب
 function normalizeOutput(raw) {
-  if (!raw || typeof raw !== 'object') return { found_in_source: false, blocked_topic: false, answer: '' };
+  if (!raw || typeof raw !== 'object') {
+    return { found_in_source: false, blocked_topic: false, asks_question: false, answer: '' };
+  }
   return {
     found_in_source: raw.found_in_source === true,
     blocked_topic: raw.blocked_topic === true,
+    asks_question: raw.asks_question === true,
     answer: typeof raw.answer === 'string' ? raw.answer : '',
   };
 }
 
 // tool اختيارية: لو مبعوتة بتستخدم بدل أداة الرد الافتراضية. ده اللي بيخلّي نفس المزوّدين
 // يخدموا الرد على الطالب والحصاد من المحادثات والملفات — نفس الطريق ونفس التحقق
-async function callAnthropic({ systemPrompt, question, tool, maxTokens }) {
+async function callAnthropic({ systemPrompt, question, tool, maxTokens, model }) {
   const activeTool = tool || ANSWER_TOOL;
   const response = await anthropicClient.messages.create({
-    model: PROVIDERS.anthropic.model,
+    model: model || PROVIDERS.anthropic.model,
     max_tokens: maxTokens || 1024,
     output_config: { effort: 'low' },
     // الكاش على المصدر: بيتبعت كامل مع كل سؤال وهو نفسه بالحرف، فالكتابة مرة والقراءة بعُشر
@@ -90,7 +106,7 @@ async function callAnthropic({ systemPrompt, question, tool, maxTokens }) {
     cache_write_tokens: response.usage?.cache_creation_input_tokens ?? null,
   };
   if (response.stop_reason === 'refusal') {
-    return { output: { found_in_source: false, blocked_topic: true, answer: '' }, usage };
+    return { output: { found_in_source: false, blocked_topic: true, asks_question: false, answer: '' }, usage };
   }
   const toolUse = response.content.find((block) => block.type === 'tool_use');
   if (!toolUse) throw new Error('النموذج مانداش بالأداة');
@@ -118,7 +134,7 @@ async function callGroq({ systemPrompt, question, tool, jsonShape, maxTokens }) 
           content: `${systemPrompt}
 
 رد بـ JSON بالشكل ده بالظبط، من غير أي كلام قبله أو بعده:
-${jsonShape || '{"found_in_source": true/false, "blocked_topic": true/false, "answer": "..."}'}`,
+${jsonShape || '{"found_in_source": true/false, "blocked_topic": true/false, "asks_question": true/false, "answer": "..."}'}`,
         },
         { role: 'user', content: question },
       ],
@@ -148,7 +164,9 @@ async function callProvider(providerKey, args) {
   const provider = PROVIDERS[providerKey];
   if (!provider) throw new Error(`مزوّد غير معروف: ${providerKey}`);
   if (!provider.available()) throw new Error(`مفتاح ${provider.label} مش مضبوط على السيرفر`);
-  return providerKey === 'groq' ? callGroq(args) : callAnthropic(args);
+  return providerKey === 'groq'
+    ? callGroq(args)
+    : callAnthropic({ ...args, model: provider.model });
 }
 
 function listProviders() {

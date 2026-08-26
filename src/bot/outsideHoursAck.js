@@ -55,7 +55,8 @@ async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
       const result = await aiReply.generateReply({ question });
       await aiReply.logAttempt({ ticketId, incomingMessageId: null, question, result })
         .catch((err) => console.error('❌ Failed to log the AI reply attempt:', err.message));
-      if (result.outcome === 'sent') {
+      // 'asked' بيتبعت زي 'sent' — الاتنين رسالة رايحة للطالب
+      if (result.outcome === 'sent' || result.outcome === 'asked') {
         const aiMessage = await ctx.reply(result.answer);
         await pool.query(
           `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id, is_ai)

@@ -36,6 +36,11 @@ ${source}
 ٤. متوعدش بأي حاجة، ومتحددش مواعيد، ومتقولش أرقام مش مكتوبة في المصدر حرفيًا.
 
 ٥. لو الطالب بيشتكي أو مضايق أو بيتكلم عن حاجة شخصية — found_in_source = false مهما كان.
+
+٦. **لو التعليمات العامة تحت طالبة منك تسأل الطالب سؤال توضيحي قبل ما تجاوب**، حط
+   asks_question = true واكتب السؤال في answer. ده الاستثناء الوحيد على القاعدة الأولى:
+   السؤال مش إجابة، فمش محتاج يكون في المصدر. بس **متسألش وبعدين تخترع الإجابة** — لما
+   الطالب يرد، لو إجابته مش في المصدر ساعتها found_in_source = false زي أي سؤال تاني.
 ${generalInstructions ? `
 تعليمات إضافية من الفريق عن **طريقة** الرد:
 ${generalInstructions}
@@ -89,6 +94,14 @@ async function generateReply({ question, provider, skipEnabledCheck = false }) {
   };
 
   if (output.blocked_topic) return { outcome: 'blocked', detail: 'موضوع ممنوع', ...base };
+  // السؤال التوضيحي بيتبعت زي أي رد — الفرق إنه متسجّل بنتيجة مختلفة عشان يبان في السجل
+  // إن ده سؤال مش إجابة، والموظف يعرف إن المحادثة لسه مفتوحة
+  if (output.asks_question && output.answer.trim()) {
+    const prefix = settings.ai_reply_prefix ? `${settings.ai_reply_prefix}
+
+` : '';
+    return { outcome: 'asked', answer: `${prefix}${output.answer.trim()}`, ...base };
+  }
   if (!output.found_in_source || !output.answer.trim()) return { outcome: 'no_answer', ...base };
 
   const prefix = settings.ai_reply_prefix ? `${settings.ai_reply_prefix}\n\n` : '';
