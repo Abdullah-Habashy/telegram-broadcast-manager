@@ -57,13 +57,14 @@ Telegram Broadcast Manager هو نظام لإدارة التواصل مع مست
 - استقبال تحديثات Telegram باستخدام Webhook آمن.
 - حماية Webhook باستخدام `X-Telegram-Bot-Api-Secret-Token`.
 - دعم رابط HTTPS عام من خلال `PUBLIC_URL`.
-- الرابط العام ثابت عبر Cloudflare Named Tunnel: `https://support.arabiccoders.com`.
+- الرابط العام ثابت عبر Cloudflare Named Tunnel: `https://habashy-follow-up.com`.
+- `support.arabiccoders.com` دومين قديم متسيّب شغّال على نفس التانل عشان الروابط المحفوظة القديمة ما تقعش.
 
 ### متطلبات عمل Webhook
 
 - يجب أن يكون السيرفر قيد التشغيل على الـ VPS (خدمة `telegram-broadcast-manager`).
 - يجب أن تكون خدمة `cloudflared-tunnel` شغّالة حتى يبقى الدومين متاحًا.
-- `PUBLIC_URL` في `.env` على السيرفر يساوي `https://support.arabiccoders.com` ولا يُغيَّر.
+- `PUBLIC_URL` في `.env` على السيرفر يساوي `https://habashy-follow-up.com` ولا يُغيَّر — كل الروابط المتولّدة (تقارير الطلاب، الويبهوك) بتتبني منه.
 - الرابط ثابت ولا يتغيّر عند إعادة التشغيل، فلا حاجة لإعادة تسجيل Webhook بعد كل Restart.
 
 ---
@@ -613,7 +614,7 @@ chat_id,username,first_name,last_name,phone
 التطبيق منشور ويعمل بشكل دائم على VPS، والرابط العام ثابت:
 
 ```text
-https://support.arabiccoders.com
+https://habashy-follow-up.com
 ```
 
 الرابط مربوط بالسيرفر عن طريق Cloudflare Named Tunnel، فلا يحتاج فتح أي منفذ على السيرفر ولا يتغيّر عند إعادة التشغيل.
@@ -675,7 +676,7 @@ npm run dev
 
 ### المرحلة الأولى: الاستقرار والأمان
 
-1. ~~نشر التطبيق على استضافة دائمة برابط HTTPS وWebhook ثابت بدل Cloudflare Quick Tunnel.~~ **تم** — الآن على VPS برابط ثابت `https://support.arabiccoders.com` (راجع القسم 21).
+1. ~~نشر التطبيق على استضافة دائمة برابط HTTPS وWebhook ثابت بدل Cloudflare Quick Tunnel.~~ **تم** — الآن على VPS برابط ثابت `https://habashy-follow-up.com` (راجع القسم 21).
 2. استخدام Redis وBullMQ أو Queue مماثلة لمعالجة الإرسال الجماعي.
 3. التحكم في سرعة الإرسال واحترام `retry_after` وإعادة المحاولة عند أخطاء Telegram و`429`.
 4. إضافة إيقاف واستكمال الحملات ومنع التعارض بين حملتين متزامنتين.

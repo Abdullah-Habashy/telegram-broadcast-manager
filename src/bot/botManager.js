@@ -75,13 +75,21 @@ async function activateToken(token) {
   const webhookUrl = `${env.publicUrl}${WEBHOOK_PATH}`;
   await bot.telegram.setWebhook(webhookUrl, { secret_token: getSecretToken() });
 
-  // زرار القايمة الأزرق جوه تيليجرام. اخترناه بدل كيبورد ثابت تحت مربع الكتابة لأن الكيبورد
-  // بيبعت كلامه كرسالة عادية للموظفين، والقايمة بتبعت أمر بيتوقف عند الهاندلر
+  // ---------- قايمة أوامر البوت ----------
+  // **فاضية مؤقتًا بطلب صاحب المشروع.** ده بيخفي الزرار الأزرق من تيليجرام بس — الأمر
+  // `/report` وكلمة "تقريري" **لسه شغالين بالكامل** في handlers/studentReport.js، فأي طالب
+  // معاه الأمر بيشتغل معاه عادي.
+  //
+  // القايمة الفاضية بتتبعت في كل تشغيل مش مرة واحدة، لأن تيليجرام بيحتفظ بآخر قايمة اتسجّلت
+  // على السيرفر بتاعه — فمجرد إن الكود ما ينداهش مش كفاية يشيلها، لازم تتمسح صراحةً.
+  //
+  // **للرجوع:** حط بدل [] السطر ده:
+  //   [{ command: 'report', description: '📊 تقريري ومستواي' }]
   try {
-    await bot.telegram.setMyCommands([{ command: 'report', description: '📊 تقريري ومستواي' }]);
+    await bot.telegram.setMyCommands([]);
   } catch (error) {
-    // فشل القايمة مايمنعش البوت يشتغل — الأمر نفسه شغّال سواء ظهر في القايمة أو لأ
-    console.error('⚠️ Failed to publish the bot command menu:', error.message);
+    // فشل القايمة مايمنعش البوت يشتغل — الأوامر نفسها شغالة سواء ظهرت في القايمة أو لأ
+    console.error('⚠️ Failed to update the bot command menu:', error.message);
   }
 
   const previousBot = botInstance;
