@@ -150,10 +150,13 @@
         // الكتالوج جايي بترتيب الكورس على المنصة، فأول درس مافتحهوش = الدرس اللي بعده فعلًا،
         // مش أقدم درس بالتاريخ
         var next = views.filter(function (v) { return v.never_opened; })[0];
+        // **العتبة ٥٪ مش صفر.** درس اتفتح ٠.٤٪ يعني اتفتح وقفل، مش "وقف في نصّه" — وكان
+        // بيتعرض على إنه "كمّل من حيث وقفت (0%)"، وهي جملة متناقضة مع نفسها
         var partial = views.filter(function (v) {
-          return !v.never_opened && !v.is_completed && Number(v.progress_percentage) > 0;
-        });
-        // الدرس اللي وقف في نصّه أهم من درس ما بدأش: الرجوع ليه أسهل والمكسب أسرع
+          return !v.never_opened && !v.is_completed && Number(v.progress_percentage) >= 5;
+        // **الأقرب للخلاص الأول**، مش الأول بترتيب الكورس. طالبة عندها درس واقف عند ٨٦٪
+        // ودرس عند ٥٪ لازم تشوف الـ٨٦ — ده أسرع إنجاز تكسبه، وده كل الهدف من الزرار
+        }).sort(function (a, b) { return Number(b.progress_percentage) - Number(a.progress_percentage); });
         var cta = partial[0] || next;
         var ctaEl = document.getElementById('me-next');
 

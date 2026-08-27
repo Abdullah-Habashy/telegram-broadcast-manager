@@ -25,7 +25,13 @@ function isAwaiting(chatId) {
 // آخر ١٠ أرقام بس: نفس التليفون متخزّن بأشكال مختلفة (+٢٠، ٠٠٢٠، من غير صفر) في المنصة وفي
 // اللي الطالب بيكتبه، والمقارنة الحرفية كانت هتفشل مع أغلبهم
 function normalizePhone(raw) {
-  const digits = String(raw || '').replace(/[^0-9]/g, '');
+  // الطالب بيكتب من كيبورد عربي غالبًا فبيبعت ٠١٠... مش 010... والتحويل لازم يحصل على
+  // الاتنين: اللي هو كتبه، واللي متخزّن في المنصة — وإلا المطابقة بتفشل رغم إن الرقمين واحد
+  const ascii = String(raw || '').replace(/[٠-٩۰-۹]/g, (char) => {
+    const code = char.charCodeAt(0);
+    return String(code >= 0x06F0 ? code - 0x06F0 : code - 0x0660);
+  });
+  const digits = ascii.replace(/[^0-9]/g, '');
   return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
@@ -103,7 +109,7 @@ module.exports = function registerStudentReportHandler(bot) {
       const { rows } = await pool.query(
         `SELECT tafra_student_id, name, report_token, telegram_chat_id
          FROM tafra_students
-         WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $1`, [phone]);
+         WHERE RIGHT(REGEXP_REPLACE(translate(phone, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'), '[^0-9]', '', 'g'), 10) = $1`, [phone]);
 
       if (!rows.length) {
         // الانتظار بيفضل شغّال عشان يقدر يجرّب رقم تاني من غير ما يبدأ من الأول

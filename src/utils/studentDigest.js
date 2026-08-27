@@ -92,7 +92,11 @@ function badgeFor({ average, taken, available, watchedPercent }) {
   if (!taken) return { emoji: '🌱', label: 'البداية', hint: 'أول اختبار بيفتح الباب' };
   if (average >= 90 && coverage >= 0.9) return { emoji: '🏆', label: 'متمكّن', hint: 'درجات عالية والتزام كامل' };
   if (average >= 85 && coverage >= 0.6) return { emoji: '⭐', label: 'متفوّق', hint: 'مستواك عالي ومستمر' };
-  if (coverage >= 0.8) return { emoji: '🎯', label: 'ملتزم', hint: 'بتدخل كل اختبار متاح' };
+  // **الترتيب هنا مقصود:** شرط الدرجات قبل شرط الالتزام. لما كان الالتزام فوق، طالبة متوسطها
+  // ٧٨ وطالبة متوسطها ٥٩ كانوا بياخدوا نفس الشارة لأن الاتنين بيدخلوا كل الاختبارات —
+  // والشارة بتبقى بتوصف سلوك واحد وبتضيّع الفرق الحقيقي بينهم
+  if (average >= 70 && coverage >= 0.6) return { emoji: '💪', label: 'مجتهد', hint: 'درجاتك كويسة والتزامك عالي' };
+  if (coverage >= 0.8) return { emoji: '🎯', label: 'ملتزم', hint: 'بتدخل كل اختبار متاح — والدرجات جاية' };
   if (watch !== null && watch >= 60) return { emoji: '📺', label: 'متابع', hint: 'بتشوف المحتوى أولًا بأول' };
   if (average >= 70) return { emoji: '💪', label: 'في الطريق', hint: 'درجاتك كويسة، كمّل' };
   return { emoji: '🚀', label: 'بتبني نفسك', hint: 'كل خطوة بتتحسب' };
