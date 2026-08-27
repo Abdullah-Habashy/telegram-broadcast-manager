@@ -16,6 +16,10 @@ function formatArabicTime(hhmm) {
   const hour24 = Number(rawHour);
   if (!Number.isInteger(hour24)) return hhmm || '';
   const minute = String(rawMinute ?? '00').padStart(2, '0');
+  // الساعة ١٢ هي الوحيدة اللي "صباحًا/مساءً" مابتفرّقش فيها: منتصف الليل والظهر الاتنين
+  // بيتكتبوا 12:00. الطالب اللي يقرا "من ١٠ صباحًا لـ ١٢ صباحًا" مش هيفهم ده يوم كامل
+  if (hour24 === 0 && minute === '00') return '١٢ بالليل';
+  if (hour24 === 12 && minute === '00') return '١٢ الظهر';
   const period = hour24 < 12 ? 'صباحًا' : 'مساءً';
   const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
   return `${hour12}:${minute} ${period}`;

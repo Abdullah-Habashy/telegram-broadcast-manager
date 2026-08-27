@@ -4,7 +4,7 @@ const path = require('path');
 const pool = require('../../config/db');
 const push = require('../../utils/push');
 const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
-const { isWithinWorkingHours, currentCairoTime } = require('../../utils/workingHours');
+const { isWithinWorkingHours, currentCairoTime, formatArabicTime } = require('../../utils/workingHours');
 
 const incomingUploadDir = path.join(__dirname, '..', '..', '..', 'public', 'uploads', 'incoming');
 fs.mkdirSync(incomingUploadDir, { recursive: true });
@@ -209,9 +209,11 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
       // رسالة الترحيب هي اللي هتوصله، فمفيش رد عادي هنا
     } else if (isOutsideWorkingHours(settings) && settings.outside_hours_reply_message) {
       try {
+        // بصيغة عربية زي {when} في رسالة الأك — الرسالة دي بيقراها طالب، و"00:00" خام
+        // مالهاش معنى عنده
         const message = settings.outside_hours_reply_message
-          .replaceAll('{start}', settings.working_hours_start || '')
-          .replaceAll('{end}', settings.working_hours_end || '');
+          .replaceAll('{start}', formatArabicTime(settings.working_hours_start))
+          .replaceAll('{end}', formatArabicTime(settings.working_hours_end));
         await ctx.reply(message);
       } catch (replyError) {
         console.error('❌ Failed to send outside-hours reply:', replyError.message);

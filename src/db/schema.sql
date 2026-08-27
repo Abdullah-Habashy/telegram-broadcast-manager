@@ -632,8 +632,12 @@ INSERT INTO settings (key, value) VALUES
     -- تحديث بيانات الطلاب الخفيف
     ('tafra_exam_auto_sync_interval_hours', '12'),
     ('working_hours_enabled', 'false'),
-    ('working_hours_start', '09:00'),
-    ('working_hours_end', '22:00'),
+    -- **النهاية '00:00' مش خطأ.** التحقق بيقبل 00:00 لحد 23:59 بس، و'24:00' مرفوضة. لما
+    -- البداية أكبر من النهاية، isWithinWorkingHours بيتعامل معاها كنطاق بيعدّي منتصف الليل:
+    -- (now >= '10:00' OR now < '00:00') — والشق التاني مستحيل يتحقق، فالنتيجة ١٠ صباحًا لحد
+    -- ١١:٥٩ بالليل بالظبط، وهو المقصود بـ"لحد ١٢ بالليل"
+    ('working_hours_start', '10:00'),
+    ('working_hours_end', '00:00'),
     ('outside_hours_reply_message', 'شكرًا لتواصلك معنا. مواعيد العمل من {start} إلى {end}، وهنرد عليك أول ما نرجع.'),
     -- آخر موظف اتاخدله دور في توزيع التذاكر الجديدة بالتبادل (دور بالتبادل حسب رقم الحساب)
     ('ticket_distribution_last_assigned_user_id', NULL)
