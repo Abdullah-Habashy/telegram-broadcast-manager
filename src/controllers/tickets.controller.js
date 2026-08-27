@@ -258,8 +258,29 @@ async function listTickets(req, res) {
       params
     );
     const listParams = [...params, limit, offset];
+    // **بنقتص الـ٥٠ الأول، وبعدين نجيب تفاصيلهم** — مش العكس.
+    //
+    // قبل كده كل الجوينات الثقيلة (آخر رسالة، اسم الطالب، أبوابه) كانت بتتنفّذ على **كل**
+    // التذاكر المطابقة للفلتر قبل الترتيب والاقتصاص. يعني موظفة عندها ٦٥٠ تذكرة كان بيتحسبلها
+    // "آخر رسالة" ٦٥٠ مرة عشان تظهر ٥٠ — و٦٠٠ حسبة بترمي. القياس على الإنتاج: ٣٤ مللي → ١٤.
+    //
+    // **جوينات الفلاتر (s / sca / last_call) لازم تفضل جوّه** لأن `where` بيشاور عليها
+    // (buildTafraStudentFilters بتولّد شروط على grade_level و outcome_id وغيرهم). اللي اتنقل
+    // بره هو جوينات **العرض** بس — اللي محدش بيفلتر بيها.
+    //
+    // والترتيب متكرر جوّه وبره: جوّه بيحدد **أنهي ٥٠**، وبره بيرتّبهم — الجوين مابيحافظش على
+    // ترتيب الـ CTE، ومن غير التكرار الصفحة بتطلع مبعترة.
     const result = await pool.query(
-      `SELECT t.*, c.chat_id, c.telegram_username, c.first_name, c.last_name, c.phone,
+      `WITH page AS (
+         SELECT t.id
+         FROM tickets t
+         JOIN contacts c ON c.id = t.contact_id
+         ${STUDENT_FILTER_JOIN_SQL}
+         ${where}
+         ${TICKET_ORDER_SQL}
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+       )
+       SELECT t.*, c.chat_id, c.telegram_username, c.first_name, c.last_name, c.phone,
         u.name AS assigned_name,
         ts.name AS subtitle_name,
         (SELECT MAX(sm.sent_at) FROM support_messages sm
@@ -273,13 +294,12 @@ async function listTickets(req, res) {
         t.transfer_team, t.transfer_agent_id, transfer_agent.name AS transfer_agent_name,
         ${NEVER_REPLIED_SQL} AS never_replied,
         ${SILENT_WEEK_SQL} AS silent_week
-       FROM tickets t
+       FROM page p
+       JOIN tickets t ON t.id = p.id
        JOIN contacts c ON c.id = t.contact_id
        LEFT JOIN LATERAL (
          SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
        ) tafra_match ON true
-       ${STUDENT_FILTER_JOIN_SQL}
-
        LEFT JOIN users u ON u.id = t.assigned_to
        LEFT JOIN users transfer_agent ON transfer_agent.id = t.transfer_agent_id
        LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
@@ -298,9 +318,7 @@ async function listTickets(req, res) {
          LIMIT 1
        ) latest ON true
        ${BOOTCAMP_MARKS_JOIN_SQL}
-       ${where}
-       ${TICKET_ORDER_SQL}
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+       ${TICKET_ORDER_SQL}`,
       listParams
     );
 
