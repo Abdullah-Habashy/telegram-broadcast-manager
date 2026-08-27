@@ -114,12 +114,32 @@ async function messageStudent(chatId, text) {
   }
 }
 
-// التحويل لتيم متخصص — موظف المتابعة بيدوسه لما السؤال يبقى بره اختصاصه
-async function transferToTeam(req, res) {
-  const ticketId = Number(req.params.id);
-  const team = getTeam(req.params.team);
-  if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'التذكرة غير صالحة' });
-  if (!team) return res.status(400).json({ error: 'التيم غير معروف' });
+// ---------- التحويل: المنطق مفصول عن الـ HTTP ----------
+//
+// **ليه مفصول:** التحويل بقى ليه مصدرين — موظف المتابعة بيدوس زرار في اللوحة، والطالب نفسه
+// بيطلبه من البوت. المنطق واحد (قفل التذكرة، اختيار موظف حاضر، رسالة الغياب، الإشعار)،
+// واللي بيختلف هو **مين مسموح له يحوّل تذكرة ماسكها تيم تاني** — وده الفرق الوحيد اللي
+// اتحط في transferGuard.
+//
+// بترجّع كائن نتيجة مش بترد على الطلب، عشان اللي بينده هو اللي يقرر يعملها HTTP ولا رسالة بوت.
+
+// **مين يقدر يحوّل تذكرة موجودة مع تيم بالفعل؟**
+//   الموظف: بس لو هو نفسه الماسك وتيمه فيه canHandOff (الواتساب) — التذكرة جتله بقاعدة
+//     تلقائية مش باختيار حد، فمحتاج مخرج.
+//   الطالب: يقدر ينط بين العلمي والفني بس. **ممنوع يسحبها من موظف الواتساب** — دي محادثة
+//     إقناع مع طالب مش مشترك، وسحبها في نصّها معناه إن اللي بيكلّمه يتغيّر فجأة.
+function transferGuard({ by, actorUserId, holderTeam, holderAgentId, targetTeam }) {
+  if (holderTeam.key === targetTeam.key) return 'التذكرة مع نفس التيم بالفعل';
+  if (by === 'student') {
+    return holderTeam.key === 'whatsapp' ? 'التذكرة مع موظف واتساب' : null;
+  }
+  const isHolder = Number(holderAgentId) === Number(actorUserId);
+  return (isHolder && holderTeam.canHandOff) ? null : 'التذكرة محوّلة لتيم بالفعل';
+}
+
+async function performTransfer({ ticketId, teamKey, by, actorUserId = null }) {
+  const team = getTeam(teamKey);
+  if (!team) return { ok: false, status: 400, error: 'التيم غير معروف' };
 
   const client = await pool.connect();
   try {
@@ -132,17 +152,20 @@ async function transferToTeam(req, res) {
     const ticket = ticketResult.rows[0];
     if (!ticket) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'التذكرة غير موجودة' });
+      return { ok: false, status: 404, error: 'التذكرة غير موجودة' };
     }
+
     if (ticket.transfer_agent_id) {
-      // التذكرة مع تيم بالفعل. الاستثناء الوحيد: الموظف الماسكها بنفسه بيسلّمها لتيم تاني،
-      // ولتيمه خاصية canHandOff (الواتساب). من غير ده التسليم كان لازم يعدّي على المتابعة —
-      // خطوة زيادة وسط محادثة الطالب، وموظف المتابعة مش شايف السؤال أصلًا عشان يوجّهه
-      const holderTeam = getTeam(ticket.transfer_team);
-      const isHolder = Number(ticket.transfer_agent_id) === Number(req.session.userId);
-      if (!isHolder || !holderTeam?.canHandOff || holderTeam.key === team.key) {
+      const blocked = transferGuard({
+        by,
+        actorUserId,
+        holderTeam: getTeam(ticket.transfer_team) || { key: ticket.transfer_team },
+        holderAgentId: ticket.transfer_agent_id,
+        targetTeam: team,
+      });
+      if (blocked) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'التذكرة محوّلة لتيم بالفعل' });
+        return { ok: false, status: 409, error: blocked };
       }
     }
 
@@ -153,10 +176,11 @@ async function transferToTeam(req, res) {
       await client.query('ROLLBACK');
       const setting = await pool.query('SELECT value FROM settings WHERE key = $1', [team.offlineSettingKey]);
       const delivered = await messageStudent(ticket.chat_id, setting.rows[0]?.value);
-      return res.status(409).json({
+      return {
+        ok: false, status: 409, offline: true, team,
         error: `مفيش حد من ${team.label} مسجّل حضور دلوقتي`,
         student_notified: delivered,
-      });
+      };
     }
 
     await client.query(
@@ -169,19 +193,37 @@ async function transferToTeam(req, res) {
     const agent = await pool.query('SELECT name FROM users WHERE id = $1', [agentId]);
     push.sendToUser(agentId, {
       title: `تذكرة محوّلة لك — ${team.label}`,
-      body: 'تذكرة اتحوّلت لك من فريق المتابعة',
+      body: by === 'student' ? 'الطالب طلب التحويل بنفسه' : 'تذكرة اتحوّلت لك من فريق المتابعة',
       tag: `ticket-${ticketId}`,
       url: `/?ticket=${ticketId}`,
     }).catch((err) => console.error('❌ Failed to notify the team agent:', err.message));
 
-    res.json({ ok: true, team: team.key, agent_id: agentId, agent_name: agent.rows[0]?.name || null });
+    return { ok: true, team, agent_id: agentId, agent_name: agent.rows[0]?.name || null };
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('❌ Failed to transfer the ticket to a team:', error.message);
-    res.status(500).json({ error: 'تعذر التحويل' });
+    return { ok: false, status: 500, error: 'تعذر التحويل' };
   } finally {
     client.release();
   }
+}
+
+// التحويل من اللوحة — موظف المتابعة بيدوسه لما السؤال يبقى بره اختصاصه
+async function transferToTeam(req, res) {
+  const ticketId = Number(req.params.id);
+  if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'التذكرة غير صالحة' });
+
+  const result = await performTransfer({
+    ticketId, teamKey: req.params.team, by: 'staff', actorUserId: req.session.userId,
+  });
+  if (!result.ok) {
+    const body = { error: result.error };
+    if (result.student_notified !== undefined) body.student_notified = result.student_notified;
+    return res.status(result.status).json(body);
+  }
+  res.json({
+    ok: true, team: result.team.key, agent_id: result.agent_id, agent_name: result.agent_name,
+  });
 }
 
 // الإرجاع — الموظف المتخصص بيدوسه لما يخلّص، وموظف المتابعة يقدر يسحبها برضه
@@ -205,5 +247,5 @@ async function returnFromTeam(req, res) {
 
 module.exports = {
   getAttendanceStatus, checkIn, checkOut, listOnDuty,
-  transferToTeam, returnFromTeam,
+  transferToTeam, returnFromTeam, performTransfer,
 };

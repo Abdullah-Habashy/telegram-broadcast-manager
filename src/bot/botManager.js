@@ -8,6 +8,7 @@ const registerForwardingHandler = require('./handlers/forwarding');
 const registerStaffLinkHandler = require('./handlers/staffLink');
 const registerMessageHandler = require('./handlers/message');
 const registerStudentReportHandler = require('./handlers/studentReport');
+const registerStudentTransferHandler = require('./handlers/studentTransfer');
 
 const WEBHOOK_PATH = '/bot/webhook';
 
@@ -41,6 +42,7 @@ function createBot(token) {
   // **قبل message.js عن قصد.** لو بعده، كل ضغطة على زرار التقرير كانت هتتسجّل كرسالة واردة
   // وتولّع التذكرة أزرق عند الموظف. الهاندلر بيوقفها عنده إلا لما تحتاج بني آدم فعلًا
   registerStudentReportHandler(bot);
+  registerStudentTransferHandler(bot);
   registerMessageHandler(bot);
   bot.catch((err, ctx) => {
     console.error(`❌ Telegraf failed while processing update [${ctx.updateType}]:`, err.message);
