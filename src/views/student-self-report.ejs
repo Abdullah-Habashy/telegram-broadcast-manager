@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <%- include('partials/layout-head') %>
+  <link rel="stylesheet" href="/student-self.css" />
+  <title>تقريري — <%= report.student.name %></title>
+</head>
+<body class="me-body">
+<div class="me-shell">
+
+  <%# ===================== الهيرو =====================
+      أول حاجة الطالب يشوفها لازم تكون عنه هو، مش عن الأرقام. الجملة والشارة بيتحسبوا في
+      studentDigest.js على مستواه ونسبة اللي خلّصه — فطالب متوسطه ٩٥ وداخل ٢ اختبار بس
+      بيشوف جملة مختلفة عن طالب متوسطه ٩٥ وخلّص كل حاجة %>
+  <section class="me-hero tone-<%= digest.tone %>">
+    <span class="me-badge">
+      <span class="me-badge-emoji"><%= digest.badge.emoji %></span><%= digest.badge.label %>
+    </span>
+    <h1><%= digest.headline %></h1>
+    <p><%= digest.subline %></p>
+    <span class="me-badge-hint"><%= digest.badge.hint %></span>
+    <% if (digest.rank) { %>
+      <%# الترتيب بيظهر بس لو مشرّف (أعلى ٢٥٪). الوسيط الفعلي ٨٦٪، فعرضه للكل كان معناه إن
+          أغلب الطلاب يشوفوا إنهم تحت المتوسط — عكس هدف الصفحة %>
+      <div><span class="me-rank <%= digest.rank.tone === 'silver' ? 'silver' : '' %>">🏅 <%= digest.rank.label %></span></div>
+    <% } %>
+  </section>
+
+  <% if (report.bootcamps.length > 1) { %>
+    <div class="me-courses">
+      <a class="me-course <%= report.bootcamp ? '' : 'active' %>" href="?">كل الكورسات</a>
+      <% report.bootcamps.forEach((bootcamp) => { %>
+        <a class="me-course <%= report.bootcamp && report.bootcamp.id === bootcamp.id ? 'active' : '' %>"
+           href="?bootcamp=<%= bootcamp.id %>"><%= bootcamp.name %></a>
+      <% }) %>
+    </div>
+  <% } %>
+
+  <%# ثلاث أرقام بس. أي رقم زيادة بياخد من انتباه الطالب لواحد أهم منه %>
+  <div class="me-stats">
+    <div class="me-stat">
+      <div class="me-stat-label">اختبارات دخلتها</div>
+      <div class="me-stat-value"><%= report.exams.total %><span style="font-size:15px;color:var(--me-muted)"> / <%= report.exams.available %></span></div>
+      <div class="me-stat-note"><%= report.exams.available > report.exams.total ? 'فاضلك ' + (report.exams.available - report.exams.total) : 'خلّصت كل المتاح 🎉' %></div>
+      <span class="me-track"><span class="me-fill <%= report.exams.available && report.exams.total / report.exams.available >= 0.8 ? 'good' : 'warn' %>"
+        style="width:<%= report.exams.available ? Math.min(100, Math.round((report.exams.total / report.exams.available) * 100)) : 0 %>%"></span></span>
+    </div>
+    <div class="me-stat">
+      <div class="me-stat-label">متوسط درجاتك</div>
+      <div class="me-stat-value"><%= report.exams.average === null ? '—' : Math.round(report.exams.average) + '%' %></div>
+      <div class="me-stat-note"><%= report.exams.best === null ? 'لسه مافيش درجات' : 'أعلى درجة ' + Math.round(report.exams.best) + '%' %></div>
+      <span class="me-track"><span class="me-fill <%= (report.exams.average || 0) >= 75 ? 'good' : 'warn' %>"
+        style="width:<%= Math.min(100, Math.round(report.exams.average || 0)) %>%"></span></span>
+    </div>
+    <div class="me-stat" id="me-watch">
+      <div class="me-stat-label">من محتوى الكورس</div>
+      <div class="me-stat-value">…</div>
+      <div class="me-stat-note">بيتحمّل</div>
+      <span class="me-track"><span class="me-fill" style="width:0%"></span></span>
+    </div>
+  </div>
+
+  <%# الخطوة القادمة: أهم كارت في الصفحة. بيتملى من دروس الكورس بعد ما تحمّل %>
+  <section class="me-cta" id="me-next">
+    <div class="me-cta-label">الخطوة الجاية</div>
+    <div class="me-cta-title">بندوّر على الدرس اللي بعده…</div>
+  </section>
+
+  <% if (digest.strengths.length) { %>
+    <section class="me-block">
+      <h2>💪 نقاط قوتك</h2>
+      <p class="me-block-sub">الاختبارات اللي أنت متمكّن فيها — دي اللي بتبني عليها.</p>
+      <div class="me-items">
+        <% digest.strengths.forEach((item) => { %>
+          <div class="me-item">
+            <div class="me-item-body">
+              <div class="me-item-title"><%= item.title %></div>
+              <div class="me-item-note"><%= item.note %></div>
+            </div>
+            <div class="me-item-value"><%= item.value %></div>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <% if (digest.focus.length) { %>
+    <%# **مافيش كلمة "ضعف" في الصفحة كلها.** "محتاجة مراجعة" بتخلي الطالب يفتحها،
+        و"نقاط ضعفك" بتخليه يقفل الصفحة. نفس البيانات، نتيجة عكسية %>
+    <section class="me-block warn">
+      <h2>🎯 محتاجة مراجعة</h2>
+      <p class="me-block-sub">الاختبارات دي أسرع مكان ترفع فيه متوسطك — راجع أسئلتها الغلط.</p>
+      <div class="me-items">
+        <% digest.focus.forEach((item) => { %>
+          <div class="me-item">
+            <div class="me-item-body">
+              <div class="me-item-title"><%= item.title %></div>
+              <div class="me-item-note"><%= item.note %></div>
+            </div>
+            <div class="me-item-value"><%= item.value %></div>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <section class="me-block warn" id="me-lessons" style="display:none">
+    <h2>📺 دروس مستنياك</h2>
+    <p class="me-block-sub">أقرب دروس لسه ما اتفرجتش عليها أو ما خلّصتهاش.</p>
+    <div class="me-items"></div>
+  </section>
+
+  <p class="me-foot">التقرير بيتحدّث لوحده — افتح الرابط في أي وقت.</p>
+</div>
+
+<script>
+  (function () {
+    var PLATFORM_URL = <%- JSON.stringify(platformUrl) %>;
+
+    function esc(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function setStat(el, value, note, tone, percent) {
+      el.querySelector('.me-stat-value').textContent = value;
+      el.querySelector('.me-stat-note').textContent = note;
+      var fill = el.querySelector('.me-fill');
+      fill.className = 'me-fill' + (tone ? ' ' + tone : '');
+      fill.style.width = Math.max(0, Math.min(100, percent || 0)) + '%';
+    }
+
+    // مسار الفيديوهات هو مسار الصفحة + /videos — فالتوكن مش محتاج يتحقن في السكريبت
+    fetch(window.location.pathname.replace(/\/+$/, '') + '/videos' + window.location.search)
+      .then(function (response) { if (!response.ok) throw new Error('load'); return response.json(); })
+      .then(function (data) {
+        var summary = data.summary || {};
+        var views = data.views || [];
+        var watchPercent = Number(summary.time_percentage);
+        var watchEl = document.getElementById('me-watch');
+
+        if (Number.isFinite(watchPercent)) {
+          setStat(watchEl, Math.round(watchPercent) + '%',
+            (summary.completed_count || 0) + ' درس خلّصته من ' + (summary.video_count || 0),
+            watchPercent >= 60 ? 'good' : 'warn', watchPercent);
+        } else {
+          setStat(watchEl, '—', 'مش متاح دلوقتي', '', 0);
+        }
+
+        // الكتالوج جايي بترتيب الكورس على المنصة، فأول درس مافتحهوش = الدرس اللي بعده فعلًا،
+        // مش أقدم درس بالتاريخ
+        var next = views.filter(function (v) { return v.never_opened; })[0];
+        var partial = views.filter(function (v) {
+          return !v.never_opened && !v.is_completed && Number(v.progress_percentage) > 0;
+        });
+        // الدرس اللي وقف في نصّه أهم من درس ما بدأش: الرجوع ليه أسهل والمكسب أسرع
+        var cta = partial[0] || next;
+        var ctaEl = document.getElementById('me-next');
+
+        if (cta) {
+          var resuming = cta === partial[0];
+          ctaEl.innerHTML = '<div class="me-cta-label">' + (resuming ? 'كمّل من حيث وقفت' : 'الدرس الجاي') + '</div>'
+            + '<div class="me-cta-title">' + esc(cta.lesson_name)
+            + (resuming ? ' <span style="font-size:13px;color:var(--me-muted)">(' + Math.round(cta.progress_percentage) + '%)</span>' : '')
+            + '</div>'
+            + (PLATFORM_URL
+              ? '<a class="me-btn" href="' + esc(PLATFORM_URL) + '" target="_blank" rel="noopener">' + (resuming ? 'كمّل الدرس' : 'ابدأ الدرس') + ' ←</a>'
+              : '<span class="me-btn ghost">افتحه من المنصة</span>');
+        } else if (views.length) {
+          ctaEl.innerHTML = '<div class="me-cta-label">الخطوة الجاية</div>'
+            + '<div class="me-cta-title">🎉 خلّصت كل دروس الكورس — راجع اللي فوق واثبت مستواك.</div>';
+        } else {
+          ctaEl.style.display = 'none';
+        }
+
+        // **أقصى ٤ دروس.** الليستة الطويلة بتتقري كعبء مش كخطة، والطالب بيقفل الصفحة
+        var pending = partial.concat(views.filter(function (v) { return v.never_opened; })).slice(0, 4);
+        if (pending.length) {
+          var block = document.getElementById('me-lessons');
+          block.querySelector('.me-items').innerHTML = pending.map(function (v) {
+            var pct = Math.round(Number(v.progress_percentage) || 0);
+            return '<div class="me-item"><div class="me-item-body">'
+              + '<div class="me-item-title">' + esc(v.lesson_name) + '</div>'
+              + '<div class="me-item-note">' + (pct > 0 ? 'وقفت عند ' + pct + '%' : 'لسه ما اتفتحش') + ' · ' + esc(v.duration_text) + '</div>'
+              + '</div><div class="me-item-value">' + (pct > 0 ? pct + '%' : '▶') + '</div></div>';
+          }).join('');
+          block.style.display = '';
+        }
+      })
+      .catch(function () {
+        setStat(document.getElementById('me-watch'), '—', 'مش متاح دلوقتي', '', 0);
+        document.getElementById('me-next').style.display = 'none';
+      });
+  }());
+</script>
+</body>
+</html>

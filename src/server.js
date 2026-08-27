@@ -113,6 +113,9 @@ app.post(newBotManager.WEBHOOK_PATH, (req, res) => {
 // المصادقة عشان مايتمش تحويلها للوجين، وبرّه /api عن قصد: ده رابط بيتبعت لولي الأمر بالإيد
 app.get('/r/:token', studentReportController.renderPublicReport);
 app.get('/r/:token/videos', studentReportController.getPublicReportVideos);
+// نفس التوكن بمسار تاني: /r/ لولي الأمر، /me/ للطالب نفسه. الفرق في العرض مش في الصلاحية
+app.get('/me/:token', studentReportController.renderSelfReport);
+app.get('/me/:token/videos', studentReportController.getSelfReportVideos);
 
 // نفس التقرير للموظف المسجّل دخول بمعرّف الطالب — من غير ما يحتاج يعمل رابط عام
 app.get('/student-report/:id', requireAuth, studentReportController.renderStaffReport);

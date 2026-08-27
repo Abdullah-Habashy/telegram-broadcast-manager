@@ -7,6 +7,7 @@ const registerStartHandler = require('./handlers/start');
 const registerForwardingHandler = require('./handlers/forwarding');
 const registerStaffLinkHandler = require('./handlers/staffLink');
 const registerMessageHandler = require('./handlers/message');
+const registerStudentReportHandler = require('./handlers/studentReport');
 
 const WEBHOOK_PATH = '/bot/webhook';
 
@@ -37,6 +38,9 @@ function createBot(token) {
   registerStartHandler(bot);
   registerForwardingHandler(bot);
   registerStaffLinkHandler(bot);
+  // **قبل message.js عن قصد.** لو بعده، كل ضغطة على زرار التقرير كانت هتتسجّل كرسالة واردة
+  // وتولّع التذكرة أزرق عند الموظف. الهاندلر بيوقفها عنده إلا لما تحتاج بني آدم فعلًا
+  registerStudentReportHandler(bot);
   registerMessageHandler(bot);
   bot.catch((err, ctx) => {
     console.error(`❌ Telegraf failed while processing update [${ctx.updateType}]:`, err.message);
@@ -70,6 +74,15 @@ async function activateToken(token) {
 
   const webhookUrl = `${env.publicUrl}${WEBHOOK_PATH}`;
   await bot.telegram.setWebhook(webhookUrl, { secret_token: getSecretToken() });
+
+  // زرار القايمة الأزرق جوه تيليجرام. اخترناه بدل كيبورد ثابت تحت مربع الكتابة لأن الكيبورد
+  // بيبعت كلامه كرسالة عادية للموظفين، والقايمة بتبعت أمر بيتوقف عند الهاندلر
+  try {
+    await bot.telegram.setMyCommands([{ command: 'report', description: '📊 تقريري ومستواي' }]);
+  } catch (error) {
+    // فشل القايمة مايمنعش البوت يشتغل — الأمر نفسه شغّال سواء ظهر في القايمة أو لأ
+    console.error('⚠️ Failed to publish the bot command menu:', error.message);
+  }
 
   const previousBot = botInstance;
   botInstance = bot;

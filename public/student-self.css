@@ -1,0 +1,115 @@
+/* ===================== تقرير الطالب لنفسه =====================
+   الصفحة دي بيفتحها الطالب على موبايله غالبًا، ومرة كل كام يوم — فالتصميم كروت مش جداول:
+   الجدول بيطلب منه يقرا ويقارن، والكارت بيقوله النتيجة على طول.
+
+   **الألوان بتوجّه مش بتزيّن:** الأخضر = إنجاز خلص، البرتقالي = خطوة مستنياك. مفيش أحمر
+   في الصفحة كلها عن قصد — الأحمر بيقول "فشل"، والبرتقالي بيقول "تعالى هنا". */
+
+:root {
+  --me-bg: #f6f7fb;
+  --me-card: #ffffff;
+  --me-text: #171b2b;
+  --me-muted: #6b7280;
+  --me-line: #e6e8ef;
+  --me-good: #17915f;
+  --me-good-soft: #e8f6ef;
+  --me-warn: #c26a12;
+  --me-warn-soft: #fdf1e3;
+  --me-accent: #4f46e5;
+  --me-accent-soft: #eef0fe;
+  --me-radius: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --me-bg: #12141c; --me-card: #1b1e28; --me-text: #eceef5; --me-muted: #9aa1b1;
+    --me-line: #2b2f3d; --me-good-soft: #14302a; --me-warn-soft: #33260f; --me-accent-soft: #1f2140;
+    --me-good: #3ec98d; --me-warn: #e4a24f; --me-accent: #8b86f5;
+  }
+}
+
+body.me-body {
+  margin: 0; background: var(--me-bg); color: var(--me-text);
+  font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif; line-height: 1.7;
+}
+.me-shell { max-width: 720px; margin: 0 auto; padding: 18px 14px 48px; }
+
+/* ---------- الهيرو ---------- */
+.me-hero {
+  background: var(--me-card); border: 1px solid var(--me-line); border-radius: var(--me-radius);
+  padding: 22px 20px; text-align: center; margin-bottom: 14px;
+  /* الشريط العلوي بيغيّر لونه مع حالة الطالب — أول إشارة بصرية قبل ما يقرا كلمة */
+  border-top: 4px solid var(--me-accent);
+}
+.me-hero.tone-great { border-top-color: var(--me-good); }
+.me-hero.tone-good { border-top-color: var(--me-accent); }
+.me-hero.tone-push, .me-hero.tone-start { border-top-color: var(--me-warn); }
+.me-badge {
+  display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
+  background: var(--me-accent-soft); color: var(--me-accent); font-weight: 600; font-size: 14px;
+}
+.me-badge .me-badge-emoji { font-size: 19px; }
+.me-hero h1 { font-size: 22px; margin: 14px 0 6px; font-weight: 700; }
+.me-hero p { margin: 0; color: var(--me-muted); font-size: 15px; }
+.me-badge-hint { display: block; margin-top: 10px; font-size: 12.5px; color: var(--me-muted); }
+.me-rank {
+  display: inline-block; margin-top: 12px; padding: 6px 14px; border-radius: 999px;
+  background: linear-gradient(135deg, #f7d774, #e8a33d); color: #3d2a06; font-weight: 600; font-size: 13px;
+}
+.me-rank.silver { background: linear-gradient(135deg, #dfe3ec, #b9c0d0); color: #2b3040; }
+
+/* ---------- بطاقات الأرقام ---------- */
+.me-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+@media (max-width: 560px) { .me-stats { grid-template-columns: 1fr; } }
+.me-stat {
+  background: var(--me-card); border: 1px solid var(--me-line); border-radius: var(--me-radius);
+  padding: 15px 14px; text-align: center;
+}
+.me-stat-label { font-size: 12.5px; color: var(--me-muted); }
+.me-stat-value { font-size: 26px; font-weight: 700; margin: 3px 0 2px; }
+.me-stat-note { font-size: 12px; color: var(--me-muted); }
+.me-track { height: 6px; border-radius: 999px; background: var(--me-line); margin-top: 10px; overflow: hidden; }
+.me-fill { display: block; height: 100%; border-radius: 999px; background: var(--me-accent); }
+.me-fill.good { background: var(--me-good); }
+.me-fill.warn { background: var(--me-warn); }
+
+/* ---------- زرار الخطوة القادمة ---------- */
+.me-cta {
+  background: var(--me-card); border: 1px solid var(--me-line); border-inline-start: 4px solid var(--me-accent);
+  border-radius: var(--me-radius); padding: 16px 18px; margin-bottom: 14px;
+}
+.me-cta-label { font-size: 12.5px; color: var(--me-muted); }
+.me-cta-title { font-size: 17px; font-weight: 600; margin: 4px 0 12px; }
+.me-btn {
+  display: inline-block; padding: 11px 22px; border-radius: 10px; background: var(--me-accent);
+  color: #fff; text-decoration: none; font-weight: 600; font-size: 15px;
+}
+.me-btn.ghost { background: transparent; color: var(--me-accent); border: 1.5px solid var(--me-accent); }
+
+/* ---------- بلوكات القوة والمراجعة ---------- */
+.me-block {
+  background: var(--me-card); border: 1px solid var(--me-line);
+  border-radius: var(--me-radius); padding: 16px 18px; margin-bottom: 14px;
+}
+.me-block h2 { font-size: 16px; margin: 0 0 4px; font-weight: 700; }
+.me-block .me-block-sub { font-size: 12.5px; color: var(--me-muted); margin: 0 0 12px; }
+.me-items { display: flex; flex-direction: column; gap: 8px; }
+.me-item {
+  display: flex; align-items: center; gap: 12px; padding: 11px 13px; border-radius: 11px;
+  background: var(--me-good-soft);
+}
+.me-block.warn .me-item { background: var(--me-warn-soft); }
+.me-item-body { flex: 1; min-width: 0; }
+.me-item-title { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere; }
+.me-item-note { font-size: 12px; color: var(--me-muted); }
+.me-item-value { font-weight: 700; font-size: 16px; color: var(--me-good); white-space: nowrap; }
+.me-block.warn .me-item-value { color: var(--me-warn); }
+
+/* ---------- المتنوّع ---------- */
+.me-courses { display: flex; gap: 7px; flex-wrap: wrap; justify-content: center; margin-bottom: 14px; }
+.me-course {
+  padding: 6px 14px; border-radius: 999px; border: 1px solid var(--me-line); background: var(--me-card);
+  color: var(--me-muted); text-decoration: none; font-size: 13px;
+}
+.me-course.active { border-color: var(--me-accent); color: var(--me-accent); background: var(--me-accent-soft); font-weight: 600; }
+.me-skeleton { color: var(--me-muted); font-size: 13.5px; text-align: center; padding: 14px; }
+.me-foot { text-align: center; color: var(--me-muted); font-size: 12px; margin-top: 22px; }

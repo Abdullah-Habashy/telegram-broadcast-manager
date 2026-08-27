@@ -5,6 +5,7 @@ const { fetchStudentLessonViews, summariseLessonViews, isCompletedByProgress } =
 const { UNREACHED_NAMES_SQL, INVALID_NUMBER_SQL, REACHED_CONDITION_SQL } = require('../utils/callOutcomes');
 const botManager = require('../bot/botManager');
 const { getCatalogueTotals, getCatalogueLessons } = require('../utils/bootcampLessons');
+const { buildDigest } = require('../utils/studentDigest');
 
 // ===================== تقرير الطالب المشترَك =====================
 // صفحة عامة يفتحها ولي الأمر أو الطالب برابط فيه توكن، من غير تسجيل دخول.
@@ -636,7 +637,43 @@ async function resolveStudentIdFromTicket(req, res) {
   }
 }
 
+
+// ---------- الصفحة الموجّهة للطالب نفسه ----------
+//
+// **نفس التوكن، عرض مختلف.** تقرير ولي الأمر (/r/) بيجاوب على "ابني بيعمل إيه؟" بأرقام
+// ومتابعة؛ الصفحة دي بتجاوب على "أعمل إيه دلوقتي؟". فالبيانات واحدة والانتقاء مختلف:
+//   • **اتشال:** سجل المكالمات، إحصائيات الرسايل، تواريخ المتابعة الإدارية — كلها بتقول
+//     للطالب "إحنا بنراقبك" مش "إنت وصلت لفين"، وبتشتّت من غير فايدة
+//   • **اتزوّد:** جملة على مستواه، شارة، أقوى ٣ اختبارات وأضعف ٣، والدرس اللي بعده
+//
+// توكن واحد للاتنين عن قصد: تجديده أو إلغاؤه من اللوحة بيقفل الرابطين مع بعض، فمافيش
+// رابط منسي بيفضل شغّال
+async function renderSelfReport(req, res) {
+  try {
+    const student = await findStudentByToken(req.params.token);
+    if (!student) return res.status(404).render('report-not-found');
+    const bootcamp = await resolveBootcamp(Number(student.tafra_student_id), req.query.bootcamp);
+    const report = await buildStudentReport(student, bootcamp);
+    const digest = await buildDigest({ report });
+    // رابط المنصة بيتحط من الإعدادات. لو مش متحطّ، زرار "ابدأ الدرس القادم" بيتحوّل لاسم
+    // الدرس من غير رابط — معلومة مفيدة بدل زرار مكسور
+    const platform = await pool.query("SELECT value FROM settings WHERE key = 'platform_url'");
+    res.render('student-self-report', {
+      report, digest, platformUrl: (platform.rows[0] || {}).value || null,
+    });
+  } catch (error) {
+    console.error('❌ Failed to render the student self report:', error.message);
+    res.status(500).send('تعذر تحميل التقرير، حاول تاني بعد شوية.');
+  }
+}
+
+// نفس بيانات الفيديوهات بالظبط — الصفحة هي اللي بتقرر تعرض منها إيه
+async function getSelfReportVideos(req, res) {
+  return getPublicReportVideos(req, res);
+}
+
 module.exports = {
   renderPublicReport, getPublicReportVideos, renderStaffReport, getStaffReportVideos,
   getReportLink, createReportLink, revokeReportLink, resolveStudentIdFromTicket, sendReportToStudent,
+  renderSelfReport, getSelfReportVideos,
 };
