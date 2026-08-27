@@ -2,7 +2,6 @@ const path = require('path');
 const fs = require('fs');
 const pool = require('../config/db');
 const botManager = require('../bot/botManager');
-const events = require('../utils/events');
 const { prepareVoiceForTelegram } = require('../utils/voiceNote');
 
 // ---------- رسالة صوتية من الموظف للطالب ----------
@@ -25,6 +24,10 @@ async function sendVoiceNote(req, res) {
   if (!bot) { cleanup(); return res.status(503).json({ error: 'البوت غير متصل حاليًا' }); }
 
   let preparedPath = null;
+  // **الحارس ده هو بيت القصيد.** التسجيل أول ما يوصل الطالب بيبقى نسخة الموظف من رسالة
+  // اتبعتت فعلًا — فأي فشل بعد كده (تسجيل في القاعدة، تحديث تذكرة) مايصحش يمسحه، وإلا
+  // بيفضل في المحادثة صف بيشاور على ملف مش موجود. نفس المنطق في مسار الصور بالظبط
+  let telegramSent = false;
   try {
     const ticketResult = await pool.query(
       `SELECT t.id, c.chat_id FROM tickets t
@@ -42,6 +45,7 @@ async function sendVoiceNote(req, res) {
       ticketResult.rows[0].chat_id,
       { source: preparedPath }
     );
+    telegramSent = true;
 
     const storedPath = `uploads/support/${path.basename(preparedPath)}`;
     const result = await pool.query(
@@ -60,13 +64,14 @@ async function sendVoiceNote(req, res) {
     await pool.query('UPDATE contacts SET last_contacted_at = NOW() WHERE chat_id = $1',
       [ticketResult.rows[0].chat_id]);
 
-    events.emit('ticket-updated', { ticketId });
     res.json(result.rows[0]);
   } catch (error) {
-    // الملف بيتشال في كل الحالات: الفشل قبل الإرسال يعني تسجيل مالوش لازمة، والفشل بعده
-    // نادر ومابيستاهلش نسيب ملفات يتيمة على القرص
-    if (preparedPath && preparedPath !== req.file?.path) fs.unlink(preparedPath, () => {});
-    cleanup();
+    // قبل الإرسال: تسجيل مالوش لازمة، يتمسح. بعد الإرسال: الطالب سمعه، فبيفضل على القرص
+    // عشان الموظف يلاقيه في المحادثة
+    if (!telegramSent) {
+      if (preparedPath && preparedPath !== req.file?.path) fs.unlink(preparedPath, () => {});
+      cleanup();
+    }
     console.error('❌ Failed to send a voice note:', error.message);
     res.status(500).json({ error: error.message || 'تعذر إرسال التسجيل الصوتي' });
   }
