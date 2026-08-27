@@ -1360,6 +1360,12 @@
     let currentTicketAssignedTo = null;
     let ticketsPage = 1;
     let ticketsTotalPages = 1;
+    // **مش زيادة على ticketsTotalPages — بديل عنه في القرار.** السيرفر بيبعت شكلين مختلفين:
+    // الأدمن بياخد pages، والموظف بياخد has_more (عشان مايقدرش يقدّر عدد الطلاب من الإجمالي).
+    // حارس زرار "التالي" كان بيقارن بـ pages وبس، وهي undefined عند الموظف — و`1 < undefined`
+    // بترجّع false دايمًا، فالزرار كان **مفعّل ومابيعملش حاجة**، والموظف محبوس في أول ٥٠ تذكرة
+    // من ٦٥٠. العلم ده بيتحسب من الشكلين، فأي تغيير في رد السيرفر مايكسرش التنقّل تاني
+    let ticketsHasMore = false;
     let ticketSearchTimer = null;
     let tafraStudentsPage = 1;
     let tafraStudentsPages = 1;
@@ -5475,11 +5481,13 @@ ${reply.content}` : reply.content;
         if (data.total === undefined) {
           countEl.textContent = data.actionable ? `محتاجة تدخّلك: ${data.actionable}` : 'مفيش حاجة محتاجة تدخّلك';
           pageEl.textContent = data.page > 1 ? `صفحة ${data.page}` : '';
-          document.getElementById('tickets-next').disabled = !data.has_more;
+          ticketsHasMore = Boolean(data.has_more);
+          document.getElementById('tickets-next').disabled = !ticketsHasMore;
         } else {
           countEl.textContent = `التذاكر (${data.total})`;
           pageEl.textContent = `صفحة ${data.page} من ${data.pages}`;
-          document.getElementById('tickets-next').disabled = data.page >= data.pages;
+          ticketsHasMore = data.page < data.pages;
+          document.getElementById('tickets-next').disabled = !ticketsHasMore;
         }
         document.getElementById('tickets-prev').disabled = data.page <= 1;
 
@@ -6322,7 +6330,7 @@ ${reply.content}` : reply.content;
     });
     document.getElementById('refresh-tickets-btn').addEventListener('click', loadTickets);
     document.getElementById('tickets-prev').addEventListener('click', () => { if (ticketsPage > 1) { ticketsPage--; loadTickets(); } });
-    document.getElementById('tickets-next').addEventListener('click', () => { if (ticketsPage < ticketsTotalPages) { ticketsPage++; loadTickets(); } });
+    document.getElementById('tickets-next').addEventListener('click', () => { if (ticketsHasMore) { ticketsPage++; loadTickets(); } });
 
     // ---------- جهات الاتصال ----------
     async function initContactsAndBroadcasts() {
