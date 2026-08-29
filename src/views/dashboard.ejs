@@ -673,7 +673,10 @@
           <div class="card">
             <div class="row-between" style="margin-bottom:12px; gap:12px; flex-wrap:wrap">
               <b id="quiz-results-title">النتايج</b>
-              <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
+              <div class="row" style="gap:8px; flex-wrap:wrap">
+                <button type="button" class="btn btn-ghost btn-sm" id="quiz-regrade-all-btn" style="width:auto">أعد تصحيح كل المحاولات</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
+              </div>
             </div>
             <div id="quiz-attempts-table"><div class="empty-state">بيتحمّل...</div></div>
           </div>
@@ -8241,6 +8244,7 @@ ${reply.content}` : reply.content;
     let quizEditorQuestions = [];
     let quizEditorHasAttempts = false;
     let quizResultsId = null;
+    let quizRegradeTimer = null;
 
     function initQuizzes() {
       showQuizView('list');
@@ -8558,9 +8562,11 @@ ${reply.content}` : reply.content;
           const name = attempt.platform_name || attempt.student_name || '—';
           const status = !attempt.submitted_at
             ? '<span class="badge badge-warning">لسه بيحل</span>'
-            : attempt.grading_status === 'partial'
-              ? '<span class="badge badge-danger">محتاجة مراجعتك</span>'
-              : '<span class="badge badge-success">اتصحّح</span>';
+            : attempt.grading_status === 'regrading'
+              ? '<span class="badge badge-muted">بيتصحّح تاني...</span>'
+              : attempt.grading_status === 'partial'
+                ? '<span class="badge badge-danger">محتاجة مراجعتك</span>'
+                : '<span class="badge badge-success">اتصحّح</span>';
           const score = attempt.score === null ? '—' : `${Math.round(attempt.score * 100) / 100} / ${attempt.max_score}`;
           return `<tr>
             <td>${escapeHtml(name)}${attempt.matched ? '' : ' <span class="badge badge-muted">مش مطابق للمنصة</span>'}</td>
@@ -8572,6 +8578,17 @@ ${reply.content}` : reply.content;
           </tr>`;
         }).join('');
         box.innerHTML = `<table><thead><tr><th>الطالب</th><th>التليفون</th><th>الحالة</th><th>الدرجة</th><th>الوقت</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        // طول ما فيه محاولة في الطابور بنعيد التحميل لوحدنا — التصحيح ماشي في الخلفية
+        // والموظف مالوش دعوة يفضل يضغط تحديث عشان يعرف خلص ولا لأ
+        clearTimeout(quizRegradeTimer);
+        const stillRegrading = attempts.filter((attempt) => attempt.grading_status === 'regrading').length;
+        if (stillRegrading) {
+          document.getElementById('quiz-results-title').dataset.pending = stillRegrading;
+          quizRegradeTimer = setTimeout(() => {
+            // الشاشة اتقفلت وهو مستني؟ نبطّل — التصحيح بيكمّل على السيرفر من غيرنا
+            if (document.getElementById('quiz-results-view').style.display !== 'none') loadQuizAttempts();
+          }, 5000);
+        }
       } catch (error) {
         box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
       }
@@ -8660,6 +8677,24 @@ ${reply.content}` : reply.content;
       } catch (error) { showToast(error.message); }
     }
 
+    // إعادة تصحيح الاختبار كله بالإجابة المرجعية الجديدة. التحذير صريح لأن العملية بتكلّف
+    // نداء نموذج لكل سؤال مقالي في كل محاولة — مش زرار بيتضغط بالغلط
+    async function regradeWholeQuiz() {
+      if (!confirm(`هيعيد تصحيح كل المحاولات المسلّمة بالإجابات المرجعية الحالية.
+
+الدرجات اللي عدّلتها بإيدك هتفضل زي ما هي، والتصحيح هيمشي في الخلفية.
+
+تمام؟`)) return;
+      try {
+        const result = await api(`/api/quizzes/${quizResultsId}/regrade`, { method: 'POST', body: JSON.stringify({}) });
+        showToast(result.attempts
+          ? `${result.attempts} محاولة دخلت طابور إعادة التصحيح`
+          : 'مفيش محاولات مسلّمة تتصحّح');
+        document.getElementById('quiz-attempt-detail').style.display = 'none';
+        loadQuizAttempts();
+      } catch (error) { showToast(error.message); }
+    }
+
     async function regradeQuizAttempt(attemptId) {
       try {
         showToast('بنعيد التصحيح الآلي...');
@@ -8672,7 +8707,12 @@ ${reply.content}` : reply.content;
 
     document.getElementById('new-quiz-btn').addEventListener('click', newQuizEditor);
     document.getElementById('quiz-editor-back').addEventListener('click', () => { loadQuizzes(); showQuizView('list'); });
-    document.getElementById('quiz-results-back').addEventListener('click', () => { loadQuizzes(); showQuizView('list'); });
+    document.getElementById('quiz-results-back').addEventListener('click', () => {
+      clearTimeout(quizRegradeTimer);
+      loadQuizzes();
+      showQuizView('list');
+    });
+    document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);
     document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));
     document.getElementById('add-essay-btn').addEventListener('click', () => addQuizQuestion('essay'));
     document.getElementById('save-quiz-btn').addEventListener('click', saveQuiz);

@@ -15,6 +15,7 @@ router.get('/:id', controller.getQuiz);
 router.put('/:id', controller.updateQuiz);
 router.delete('/:id', controller.deleteQuiz);
 router.put('/:id/questions', controller.saveQuestions);
+router.post('/:id/regrade', controller.regradeQuiz);
 router.get('/:id/attempts', controller.listAttempts);
 router.get('/attempts/:attemptId', controller.getAttempt);
 router.put('/attempts/:attemptId/answers/:questionId', controller.gradeAnswer);

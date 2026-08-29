@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
-const { finalizeAttempt, recalculateAttempt } = require('../utils/quizScoring');
+const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue } = require('../utils/quizScoring');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -39,7 +39,8 @@ async function listQuizzes(req, res) {
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NOT NULL) AS submitted_count,
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NULL) AS in_progress_count,
             -- محتاج تدخّل: تصحيح آلي فشل أو سؤال مقالي لسه من غير درجة
-            (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.grading_status = 'partial') AS needs_review_count
+            (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.grading_status = 'partial') AS needs_review_count,
+            (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.grading_status = 'regrading') AS regrading_count
      FROM quizzes q ORDER BY q.created_at DESC`);
   res.json(rows.map((row) => ({ ...row, url: quizUrl(req, row) })));
 }
@@ -318,7 +319,25 @@ async function regradeAttempt(req, res) {
   res.json(result);
 }
 
+// إعادة تصحيح **كل** محاولات الاختبار — بعد ما الموظف يعدّل إجابة مرجعية أو تعليمات تصحيح
+// أو الإجابة الصح في سؤال اختياري. بيرد فورًا بعدد اللي دخل الطابور، والتصحيح بيمشي ورا.
+async function regradeQuiz(req, res) {
+  const quizId = Number(req.params.id);
+  const exists = await pool.query('SELECT id FROM quizzes WHERE id = $1', [quizId]);
+  if (!exists.rows.length) return res.status(404).json({ error: 'الاختبار مش موجود' });
+
+  const queued = await queueQuizRegrade(quizId);
+  if (!queued.attempts) return res.json({ ...queued, started: false });
+
+  // بيشتغل بعد ما الرد يروح — الموظف مايستناش، والكرون كل دقيقتين بيكمّل الباقي وبيلقط
+  // الطابور من أوله لو السيرفر اتقفل دلوقتي
+  processRegradeQueue(10).catch((error) =>
+    console.error('❌ Failed to start the quiz regrade queue:', error.message));
+
+  res.json({ ...queued, started: true });
+}
+
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
-  listAttempts, getAttempt, gradeAnswer, regradeAttempt,
+  listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz,
 };

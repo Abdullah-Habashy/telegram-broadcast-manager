@@ -1011,6 +1011,7 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
     score NUMERIC(8,2),
     max_score NUMERIC(8,2),
     -- pending = لسه بيحل · graded = اتصحّح كامل · partial = المقالي فشل تصحيحه آليًا
+    -- · regrading = في طابور إعادة التصحيح بعد ما الموظف عدّل إجابة مرجعية
     grading_status VARCHAR(20) NOT NULL DEFAULT 'pending',
     grading_error TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -46,14 +46,15 @@ async function gradeEssays(answers, questions) {
 }
 
 // بتشتغل على محاولة واحدة وبترجع { score, max_score, grading_status }. آمنة للنداء أكتر من
-// مرة: لو المحاولة اتسلّمت خلاص بترجع نتيجتها من غير ما تصحّح تاني ولا تنادي النموذج
-async function finalizeAttempt(attemptId, { late = false } = {}) {
+// مرة: لو المحاولة اتسلّمت خلاص بترجع نتيجتها من غير ما تصحّح تاني ولا تنادي النموذج.
+// force بيكسر الحماية دي — بتتستخدم في إعادة تصحيح اختبار كامل بعد تعديل إجابة مرجعية
+async function finalizeAttempt(attemptId, { late = false, force = false } = {}) {
   const attemptResult = await pool.query(
     `SELECT a.id, a.quiz_id, a.submitted_at, a.score, a.max_score, a.grading_status
      FROM quiz_attempts a WHERE a.id = $1`, [attemptId]);
   const attempt = attemptResult.rows[0];
   if (!attempt) throw new Error('المحاولة مش موجودة');
-  if (attempt.submitted_at && attempt.grading_status !== 'partial') {
+  if (!force && attempt.submitted_at && attempt.grading_status !== 'partial') {
     return { score: Number(attempt.score), max_score: Number(attempt.max_score), grading_status: attempt.grading_status };
   }
 
@@ -130,9 +131,72 @@ async function recalculateAttempt(attemptId) {
   const ungraded = await pool.query(
     'SELECT COUNT(*)::int AS count FROM quiz_answers WHERE attempt_id = $1 AND awarded_points IS NULL', [attemptId]);
   const status = ungraded.rows[0].count > 0 ? 'partial' : 'graded';
-  await pool.query('UPDATE quiz_attempts SET score = $1, grading_status = $2 WHERE id = $3',
+  // الموظف عدّل درجة وسط طابور إعادة تصحيح؟ الحالة تفضل regrading عشان الوظيفة ماتفوّتهاش
+  await pool.query(
+    `UPDATE quiz_attempts SET score = $1,
+            grading_status = CASE WHEN grading_status = 'regrading' THEN 'regrading' ELSE $2 END
+     WHERE id = $3`,
     [Number(totalResult.rows[0].total), status, attemptId]);
   return { score: Number(totalResult.rows[0].total), grading_status: status };
 }
 
-module.exports = { finalizeAttempt, recalculateAttempt };
+// ---------- إعادة تصحيح اختبار كامل ----------
+//
+// **ليه طابور مش تصحيح فوري:** اختبار فيه ١٠٠ طالب × ٥ أسئلة مقالية = ٥٠٠ نداء للنموذج،
+// يعني الطلب هيفضل مفتوح أكتر من عشرين دقيقة ويقع على أول timeout. فالمسار بيعلّم المحاولات
+// وبيرجع فورًا، والتصحيح بيمشي في الخلفية وبيكمّل من مكانه لو السيرفر اتقفل في النص.
+//
+// **درجات الموظف مابتتلمسش.** أي سؤال حطّ فيه درجة بإيده بيفضل زي ما هو — إعادة التصحيح
+// بتصلّح شغل النموذج، مش بتلغي حكم بني آدم.
+async function queueQuizRegrade(quizId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // تصفير درجات النموذج للمقالي بس: الاختياري بيتحسب من الفهرس على طول جوه finalizeAttempt
+    // ومش محتاج نداء، فتصفيره كان هيخسّرنا حاجة من غير فايدة
+    const reset = await client.query(
+      `UPDATE quiz_answers an
+       SET awarded_points = NULL, is_correct = NULL, ai_verdict = NULL, ai_reason = NULL, ai_provider = NULL
+       FROM quiz_attempts a, quiz_questions q
+       WHERE an.attempt_id = a.id AND an.question_id = q.id
+         AND a.quiz_id = $1 AND a.submitted_at IS NOT NULL
+         AND q.kind = 'essay' AND an.graded_by <> 'staff'`, [quizId]);
+    // المحاولات اللي لسه بتتحل مابتدخلش الطابور — هتتصحّح بالمرجع الجديد وقت التسليم عادي
+    const queued = await client.query(
+      `UPDATE quiz_attempts SET grading_status = 'regrading', grading_error = NULL
+       WHERE quiz_id = $1 AND submitted_at IS NOT NULL RETURNING id`, [quizId]);
+    await client.query('COMMIT');
+    return { attempts: queued.rowCount, answers_reset: reset.rowCount };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// بتاخد دفعة من الطابور وتصحّحها. بيتنداها المسار نفسه بعد ما يرد (عشان يبدأ فورًا) وكمان
+// الكرون كل دقيقتين (عشان يكمّل لو السيرفر اتقفل أو الدفعة الأولى ما كفّتش)
+async function processRegradeQueue(limit = 10) {
+  const { rows } = await pool.query(
+    `SELECT id FROM quiz_attempts WHERE grading_status = 'regrading' ORDER BY id LIMIT $1`, [limit]);
+  let done = 0;
+  for (const row of rows) {
+    try {
+      await finalizeAttempt(row.id, { force: true });
+      done += 1;
+    } catch (error) {
+      // بتطلع من الطابور بحالة "محتاجة مراجعتك" مش بتفضل فيه — لو سيبناها كانت هتفشل كل
+      // دقيقتين للأبد. الموظف بيشوفها في اللوحة ومعاها زرار "أعد التصحيح الآلي"
+      console.error(`❌ Failed to regrade quiz attempt #${row.id}:`, error.message);
+      await pool.query(
+        `UPDATE quiz_attempts SET grading_status = 'partial', grading_error = $1 WHERE id = $2`,
+        [error.message, row.id]).catch(() => {});
+    }
+  }
+  const left = await pool.query(
+    "SELECT COUNT(*)::int AS count FROM quiz_attempts WHERE grading_status = 'regrading'");
+  return { processed: done, remaining: left.rows[0].count };
+}
+
+module.exports = { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue };

@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const pool = require('../config/db');
-const { finalizeAttempt } = require('../utils/quizScoring');
+const { finalizeAttempt, processRegradeQueue } = require('../utils/quizScoring');
 
 // ---------- إقفال المحاولات اللي وقتها خلص ----------
 //
@@ -35,6 +35,13 @@ async function finalizeExpiredAttempts() {
         // فشل التصحيح الآلي مابيوقفش باقي المحاولات — كل واحدة مستقلة عن التانية
         console.error(`❌ Failed to close expired quiz attempt #${row.id}:`, error.message);
       }
+    }
+
+    // طابور إعادة التصحيح: الموظف بيبدأه من اللوحة والدفعة الأولى بتمشي هناك، وده بيكمّل
+    // الباقي على دفعات وبيلقط الطابور من أوله لو السيرفر اتقفل وهو في نصه
+    const regraded = await processRegradeQueue(BATCH_SIZE);
+    if (regraded.processed) {
+      console.log(`🔁 Regraded ${regraded.processed} quiz attempt(s); ${regraded.remaining} left in the queue.`);
     }
   } catch (error) {
     console.error('❌ Failed to run the quiz finalizer:', error.message);
