@@ -1,0 +1,113 @@
+/* ===================== صفحة الاختبار للطالب =====================
+   الطالب بيفتحها على موبايله وبيحل عليها فعلًا — مش بيقراها زي التقرير. فالتصميم بيخدم
+   الكتابة: خانة إجابة واسعة، سؤال واحد واضح في كل كارت، وزرار تسليم مالوش منافس في الصفحة.
+
+   **مفيش أحمر إلا في المؤقت لما يقرّب يخلص.** الأحمر في الامتحان بيوتّر، والتوتر بيقلّل
+   الدرجة — فاللون الوحيد اللي بيتحول أحمر هو اللي المفروض ياخد انتباهه فعلًا. */
+
+:root {
+  --qz-bg: #f6f7fb;
+  --qz-card: #ffffff;
+  --qz-text: #171b2b;
+  --qz-muted: #6b7280;
+  --qz-line: #e6e8ef;
+  --qz-accent: #4f46e5;
+  --qz-accent-soft: #eef0fe;
+  --qz-good: #17915f;
+  --qz-good-soft: #e8f6ef;
+  --qz-warn: #c26a12;
+  --qz-danger: #c53434;
+  --qz-radius: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --qz-bg: #12141c; --qz-card: #1b1e28; --qz-text: #eceef5; --qz-muted: #9aa1b1;
+    --qz-line: #2b2f3d; --qz-accent: #8b86f5; --qz-accent-soft: #1f2140;
+    --qz-good: #3ec98d; --qz-good-soft: #14302a; --qz-warn: #e4a24f; --qz-danger: #ef6b6b;
+  }
+}
+
+body.qz-body {
+  margin: 0; background: var(--qz-bg); color: var(--qz-text);
+  font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif; line-height: 1.8;
+}
+.qz-shell { max-width: 760px; margin: 0 auto; padding: 18px 14px 64px; }
+
+.qz-card {
+  background: var(--qz-card); border: 1px solid var(--qz-line);
+  border-radius: var(--qz-radius); padding: 20px; margin-bottom: 14px;
+}
+.qz-head { text-align: center; border-top: 4px solid var(--qz-accent); }
+.qz-head h1 { font-size: 21px; margin: 0 0 8px; font-weight: 700; }
+.qz-head p { margin: 0; color: var(--qz-muted); font-size: 15px; }
+.qz-meta {
+  display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 14px;
+}
+.qz-chip {
+  padding: 5px 13px; border-radius: 999px; background: var(--qz-accent-soft);
+  color: var(--qz-accent); font-size: 13px; font-weight: 600;
+}
+
+/* ---------- بوابة الدخول ---------- */
+.qz-field { margin-bottom: 14px; }
+.qz-field label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.qz-field .qz-hint { display: block; color: var(--qz-muted); font-size: 13px; font-weight: 400; margin-top: 2px; }
+.qz-input, .qz-textarea {
+  width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--qz-line); background: var(--qz-bg); color: var(--qz-text);
+  font-family: inherit; font-size: 16px; /* ١٦ بكسل بالظبط: أقل من كده سفاري بيزوّم لوحده */
+}
+.qz-textarea { min-height: 130px; resize: vertical; line-height: 1.9; }
+.qz-input:focus, .qz-textarea:focus { outline: 2px solid var(--qz-accent); border-color: transparent; }
+
+.qz-btn {
+  display: inline-block; width: 100%; box-sizing: border-box; padding: 14px 20px;
+  border: none; border-radius: 12px; background: var(--qz-accent); color: #fff;
+  font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;
+}
+.qz-btn:disabled { opacity: .55; cursor: default; }
+.qz-btn.ghost { background: transparent; color: var(--qz-accent); border: 1px solid var(--qz-line); }
+.qz-error {
+  margin-top: 12px; padding: 11px 14px; border-radius: 12px; font-size: 14px;
+  background: color-mix(in srgb, var(--qz-danger) 12%, transparent); color: var(--qz-danger);
+}
+
+/* ---------- المؤقت ---------- */
+/* لاصق فوق: الطالب بيسكرول جوه الأسئلة، والوقت لازم يفضل في وشه من غير ما يدوّر عليه */
+.qz-timer {
+  position: sticky; top: 0; z-index: 5; margin: -18px -14px 14px; padding: 11px 14px;
+  background: var(--qz-card); border-bottom: 1px solid var(--qz-line);
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  font-weight: 600; font-size: 15px;
+}
+.qz-timer .qz-clock { font-variant-numeric: tabular-nums; }
+.qz-timer.warn { color: var(--qz-warn); }
+.qz-timer.danger { color: var(--qz-danger); }
+.qz-save-state { font-size: 13px; font-weight: 400; color: var(--qz-muted); }
+
+/* ---------- الأسئلة ---------- */
+.qz-q-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  margin-bottom: 10px;
+}
+.qz-q-num { font-size: 13px; font-weight: 600; color: var(--qz-accent); }
+.qz-q-points { font-size: 13px; color: var(--qz-muted); }
+.qz-q-text { font-size: 16.5px; font-weight: 600; margin-bottom: 14px; white-space: pre-wrap; }
+
+.qz-option {
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; margin-bottom: 8px;
+  border: 1px solid var(--qz-line); border-radius: 12px; cursor: pointer; font-size: 15.5px;
+}
+.qz-option:hover { border-color: var(--qz-accent); }
+.qz-option input { margin-top: 6px; accent-color: var(--qz-accent); width: 18px; height: 18px; }
+.qz-option.picked { border-color: var(--qz-accent); background: var(--qz-accent-soft); }
+
+/* ---------- النتيجة ---------- */
+.qz-result { text-align: center; border-top: 4px solid var(--qz-good); }
+.qz-result h2 { font-size: 20px; margin: 0 0 6px; }
+.qz-score { font-size: 44px; font-weight: 700; color: var(--qz-good); line-height: 1.3; }
+.qz-score small { font-size: 18px; color: var(--qz-muted); font-weight: 500; }
+.qz-result p { color: var(--qz-muted); margin: 6px 0 0; font-size: 15px; }
+
+.qz-pick-list { display: grid; gap: 8px; }
+.qz-foot { text-align: center; color: var(--qz-muted); font-size: 13px; margin-top: 18px; }

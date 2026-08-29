@@ -15,6 +15,7 @@ const { startCallAutoAssign } = require('./jobs/callAutoAssign');
 const { startUnansweredAlert } = require('./jobs/unansweredAlert');
 const { startTeamAutoReturn } = require('./jobs/teamAutoReturn');
 const { startWhatsappRouting } = require('./jobs/whatsappRouting');
+const { startQuizFinalizer } = require('./jobs/quizFinalizer');
 const { requireAuth } = require('./middleware/requireAuth');
 
 const authRoutes = require('./routes/auth.routes');
@@ -27,12 +28,14 @@ const statsRoutes = require('./routes/stats.routes');
 const performanceRoutes = require('./routes/performance.routes');
 const studentReportRoutes = require('./routes/studentReport.routes');
 const studentReportController = require('./controllers/studentReport.controller');
+const quizPublicController = require('./controllers/quizPublic.controller');
 const ticketsRoutes = require('./routes/tickets.routes');
 const assistRoutes = require('./routes/assist.routes');
 const adminRoutes = require('./routes/admin.routes');
 const tafraRoutes = require('./routes/tafra.routes');
 const pushRoutes = require('./routes/push.routes');
 const callsRoutes = require('./routes/calls.routes');
+const quizzesRoutes = require('./routes/quizzes.routes');
 const publicRoutes = require('./routes/public.routes');
 
 const PgSession = pgSessionFactory(session);
@@ -117,6 +120,15 @@ app.get('/r/:token/videos', studentReportController.getPublicReportVideos);
 app.get('/me/:token', studentReportController.renderSelfReport);
 app.get('/me/:token/videos', studentReportController.getSelfReportVideos);
 
+// ===== صفحة الاختبار للطالب =====
+// نفس فكرة /r/ و /me/: توكن عشوائي بدل تسجيل دخول، ومتسجّلة قبل مسارات المصادقة عشان
+// مايتمش تحويلها للوجين. الهوية بتتحدد جوه الصفحة برقم التليفون، والأسئلة بتيجي في نداء
+// منفصل بعد الدخول — مش محقونة في الـ HTML
+app.get('/q/:token', quizPublicController.renderQuiz);
+app.post('/q/:token/start', quizPublicController.startAttempt);
+app.post('/q/:token/save', quizPublicController.saveProgress);
+app.post('/q/:token/submit', quizPublicController.submitAttempt);
+
 // نفس التقرير للموظف المسجّل دخول بمعرّف الطالب — من غير ما يحتاج يعمل رابط عام
 app.get('/student-report/:id', requireAuth, studentReportController.renderStaffReport);
 app.get('/student-report/:id/videos', requireAuth, studentReportController.getStaffReportVideos);
@@ -167,6 +179,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/tafra', tafraRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/calls', callsRoutes);
+app.use('/api/quizzes', quizzesRoutes);
 // بدون تسجيل دخول أو مفتاح API — بناءً على طلب صريح من المستخدم، مفتوحة لأي نظام خارجي
 app.use('/api/public', publicRoutes);
 
@@ -234,6 +247,7 @@ async function start() {
     startUnansweredAlert();
     startTeamAutoReturn();
     startWhatsappRouting();
+    startQuizFinalizer();
   });
 }
 

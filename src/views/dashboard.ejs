@@ -33,6 +33,7 @@
         <div class="nav-item" data-tab="new-bot"><span class="ind"></span> بوت طفرة</div>
         <div class="nav-item" data-tab="performance"><span class="ind"></span> متابعة الأداء</div>
         <div class="nav-item" data-tab="reports"><span class="ind"></span> التقارير</div>
+        <div class="nav-item" data-tab="quizzes"><span class="ind"></span> الاختبارات</div>
         <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
         <div class="nav-item" data-tab="ai"><span class="ind"></span> الذكاء الصناعي</div>
         <div class="nav-item" data-tab="settings"><span class="ind"></span> الإعدادات</div>
@@ -610,6 +611,70 @@
         <div class="card">
           <h2>القوالب الحالية</h2>
           <div id="templates-list"><div class="empty-state">بيتحمّل...</div></div>
+        </div>
+      </section>
+
+      <!-- ===== الاختبارات ===== -->
+      <section class="tab-panel" id="tab-quizzes" style="display:none">
+        <div class="page-header">
+          <h1>الاختبارات</h1>
+          <p>اختيار من متعدد ومقالي — رابط واحد بيتبعت للطلبة، والمقالي بيتصحّح بالذكاء الصناعي مقارنةً بإجابة مرجعية</p>
+        </div>
+
+        <!-- ثلاث شاشات جوه تبويب واحد: القايمة، المحرر، النتايج. الانتقال بينهم بإظهار
+             وإخفاء، مش بتحميل جديد — كل واحدة بتبني نفسها لما تتفتح -->
+        <div id="quiz-list-view">
+          <div class="card">
+            <div class="row-between" style="margin-bottom:12px">
+              <b>الاختبارات</b>
+              <button type="button" class="btn btn-primary btn-sm" id="new-quiz-btn" style="width:auto">+ اختبار جديد</button>
+            </div>
+            <div id="quizzes-list"><div class="empty-state">بيتحمّل...</div></div>
+          </div>
+        </div>
+
+        <div id="quiz-editor-view" style="display:none">
+          <div class="card">
+            <div class="row-between" style="margin-bottom:12px">
+              <b id="quiz-editor-title">اختبار جديد</b>
+              <button type="button" class="btn btn-ghost btn-sm" id="quiz-editor-back" style="width:auto">رجوع للقايمة</button>
+            </div>
+            <div class="row" style="gap:16px; flex-wrap:wrap">
+              <div class="field" style="flex:2; min-width:240px"><label>عنوان الاختبار</label><input type="text" id="quiz-title" /></div>
+              <div class="field" style="flex:1; min-width:160px"><label>المدة بالدقايق</label><input type="number" min="1" id="quiz-time-limit" placeholder="فاضية = من غير مؤقت" /></div>
+            </div>
+            <div class="field"><label>وصف مختصر (اختياري)</label><textarea id="quiz-description" rows="2"></textarea></div>
+            <label class="row" style="gap:8px; cursor:pointer; margin-top:4px">
+              <input type="checkbox" id="quiz-show-score" checked />
+              <span>الطالب يشوف درجته بعد التسليم <span class="card-desc">(الأسئلة الصح والغلط مابتظهرلوش في الحالتين)</span></span>
+            </label>
+          </div>
+
+          <div class="card">
+            <div class="row-between" style="margin-bottom:12px">
+              <b>الأسئلة</b>
+              <div class="row" style="gap:8px">
+                <button type="button" class="btn btn-ghost btn-sm" id="add-mcq-btn" style="width:auto">+ سؤال اختياري</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="add-essay-btn" style="width:auto">+ سؤال مقالي</button>
+              </div>
+            </div>
+            <div id="quiz-questions-editor"><div class="empty-state">ضيف أول سؤال</div></div>
+            <div class="row-between" style="margin-top:14px; gap:12px; flex-wrap:wrap">
+              <span class="card-desc" id="quiz-editor-note"></span>
+              <button type="button" class="btn btn-primary btn-sm" id="save-quiz-btn" style="width:auto">حفظ الاختبار</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="quiz-results-view" style="display:none">
+          <div class="card">
+            <div class="row-between" style="margin-bottom:12px; gap:12px; flex-wrap:wrap">
+              <b id="quiz-results-title">النتايج</b>
+              <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
+            </div>
+            <div id="quiz-attempts-table"><div class="empty-state">بيتحمّل...</div></div>
+          </div>
+          <div class="card" id="quiz-attempt-detail" style="display:none"></div>
         </div>
       </section>
 
@@ -3378,6 +3443,7 @@
       if (tab === 'reports') initReports();
       if (tab === 'performance') initPerformance();
       if (tab === 'templates') loadTemplates();
+      if (tab === 'quizzes') initQuizzes();
       if (tab === 'settings') { loadSettings(); initAssistPanel(); }
       if (tab === 'ai') { loadSettings(); initAssistPanel(); initAiTab(); }
     }
@@ -8161,6 +8227,448 @@ ${reply.content}` : reply.content;
 
     if (pushToggleBtn) pushToggleBtn.addEventListener('click', togglePushSubscription);
     initPushUi();
+
+    // ---------- الاختبارات ----------
+    //
+    // تلات شاشات في تبويب واحد: القايمة، محرر الأسئلة، والنتايج. الحالة في المتغيرات دي،
+    // ما عدا محتوى المحرر — ده بيفضل في الـ DOM ويتقري منه عند الحفظ (readQuizEditor).
+    // السبب: إعادة رسم المحرر مع كل حرف كانت بتضيّع مكان المؤشر جوه الإجابة المرجعية.
+    let quizList = [];
+    let editingQuizId = null;
+    let quizEditorQuestions = [];
+    let quizEditorHasAttempts = false;
+    let quizResultsId = null;
+
+    function initQuizzes() {
+      showQuizView('list');
+      loadQuizzes();
+    }
+
+    function showQuizView(view) {
+      document.getElementById('quiz-list-view').style.display = view === 'list' ? '' : 'none';
+      document.getElementById('quiz-editor-view').style.display = view === 'editor' ? '' : 'none';
+      document.getElementById('quiz-results-view').style.display = view === 'results' ? '' : 'none';
+    }
+
+    async function loadQuizzes() {
+      const list = document.getElementById('quizzes-list');
+      try {
+        quizList = await api('/api/quizzes');
+        if (!quizList.length) {
+          list.innerHTML = '<div class="empty-state">لسه مفيش اختبارات — ابدأ بواحد جديد</div>';
+          return;
+        }
+        list.innerHTML = quizList.map(renderQuizRow).join('');
+      } catch (error) {
+        list.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderQuizRow(quiz) {
+      const badges = [
+        `<span class="badge badge-muted">${quiz.question_count} سؤال</span>`,
+        `<span class="badge badge-muted">${quiz.submitted_count} سلّموا</span>`,
+        quiz.in_progress_count ? `<span class="badge badge-warning">${quiz.in_progress_count} لسه بيحلّوا</span>` : '',
+        quiz.needs_review_count ? `<span class="badge badge-danger">${quiz.needs_review_count} محتاجة مراجعتك</span>` : '',
+        quiz.is_open ? '<span class="badge badge-success">مفتوح</span>' : '<span class="badge badge-muted">مقفول</span>',
+        quiz.time_limit_minutes ? `<span class="badge badge-muted">⏱️ ${quiz.time_limit_minutes} دقيقة</span>` : '',
+      ].filter(Boolean).join(' ');
+
+      return `
+        <div style="padding:14px 0; border-bottom:1px solid var(--border)">
+          <div class="row-between" style="gap:12px; flex-wrap:wrap">
+            <div>
+              <b>${escapeHtml(quiz.title)}</b>
+              <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap">${badges}</div>
+            </div>
+            <div class="row" style="gap:8px; flex-wrap:wrap">
+              <button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="openQuizResults(${quiz.id})">النتايج</button>
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="openQuizEditor(${quiz.id})">تعديل</button>
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="toggleQuizOpen(${quiz.id})">${quiz.is_open ? 'اقفل' : 'افتح'}</button>
+              <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="deleteQuiz(${quiz.id})">حذف</button>
+            </div>
+          </div>
+          <div class="row" style="gap:8px; margin-top:10px">
+            <input type="text" class="compact-input" style="flex:1" readonly value="${escapeHtml(quiz.url)}" onclick="this.select()" />
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="copyQuizLink(${quiz.id})">نسخ الرابط</button>
+          </div>
+        </div>`;
+    }
+
+    async function copyQuizLink(id) {
+      const quiz = quizList.find((item) => item.id === id);
+      if (!quiz) return;
+      try {
+        await navigator.clipboard.writeText(quiz.url);
+        showToast('الرابط اتنسخ — ابعته للطلبة');
+      } catch (error) {
+        showToast('مقدرناش ننسخ — حدّد الرابط من الخانة وانسخه بإيدك');
+      }
+    }
+
+    // ---------- محرر الاختبار ----------
+    function newQuizEditor() {
+      editingQuizId = null;
+      quizEditorQuestions = [];
+      quizEditorHasAttempts = false;
+      document.getElementById('quiz-editor-title').textContent = 'اختبار جديد';
+      document.getElementById('quiz-title').value = '';
+      document.getElementById('quiz-description').value = '';
+      document.getElementById('quiz-time-limit').value = '';
+      document.getElementById('quiz-show-score').checked = true;
+      document.getElementById('quiz-editor-note').textContent = '';
+      renderQuizQuestions();
+      showQuizView('editor');
+    }
+
+    async function openQuizEditor(id) {
+      try {
+        const quiz = await api(`/api/quizzes/${id}`);
+        editingQuizId = quiz.id;
+        quizEditorHasAttempts = quiz.attempt_count > 0;
+        quizEditorQuestions = quiz.questions.map((question) => ({
+          id: question.id,
+          kind: question.kind,
+          text: question.text,
+          points: Number(question.points),
+          options: question.kind === 'mcq' ? (question.options || []) : [],
+          correct_option: question.correct_option,
+          reference_answer: question.reference_answer || '',
+          grading_notes: question.grading_notes || '',
+        }));
+        document.getElementById('quiz-editor-title').textContent = `تعديل: ${quiz.title}`;
+        document.getElementById('quiz-title').value = quiz.title;
+        document.getElementById('quiz-description').value = quiz.description || '';
+        document.getElementById('quiz-time-limit').value = quiz.time_limit_minutes || '';
+        document.getElementById('quiz-show-score').checked = quiz.show_score_to_student;
+        // الحذف بيمسح إجابات الطلاب معاه، فبيتقفل خالص أول ما حد يحل — والموظف لازم يعرف
+        // ليه الزرار مش موجود قبل ما يدوّر عليه
+        document.getElementById('quiz-editor-note').textContent = quizEditorHasAttempts
+          ? `فيه ${quiz.attempt_count} طالب دخلوا الاختبار ده — تقدر تعدّل النصوص والدرجات والإجابة المرجعية، لكن حذف سؤال مقفول عشان مايمسحش إجاباتهم.`
+          : '';
+        renderQuizQuestions();
+        showQuizView('editor');
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    function renderQuizQuestions() {
+      const box = document.getElementById('quiz-questions-editor');
+      if (!quizEditorQuestions.length) {
+        box.innerHTML = '<div class="empty-state">ضيف أول سؤال</div>';
+        return;
+      }
+      box.innerHTML = quizEditorQuestions.map((question, index) => {
+        const isMcq = question.kind === 'mcq';
+        const options = question.options.length ? question.options : ['', ''];
+        const body = isMcq
+          ? `<div class="quiz-options">${options.map((option, optionIndex) => `
+              <label class="row" style="gap:8px; align-items:center; margin-bottom:6px">
+                <input type="radio" name="quiz-correct-${index}" value="${optionIndex}" ${Number(question.correct_option) === optionIndex ? 'checked' : ''} title="الإجابة الصح" />
+                <input type="text" class="compact-input quiz-option-text" style="flex:1" value="${escapeHtml(option)}" placeholder="اختيار ${optionIndex + 1}" />
+                <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="removeQuizOption(${index}, ${optionIndex})">×</button>
+              </label>`).join('')}
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="addQuizOption(${index})">+ اختيار</button>
+            </div>`
+          : `<div class="field"><label>الإجابة المرجعية <span class="card-desc">(المعيار اللي الذكاء الصناعي بيقارن بيه — اكتبها كاملة بالمعنى المطلوب)</span></label>
+               <textarea class="quiz-reference" rows="3">${escapeHtml(question.reference_answer)}</textarea></div>
+             <div class="field"><label>تعليمات إضافية للتصحيح (اختياري)</label>
+               <input type="text" class="compact-input quiz-notes" style="width:100%" value="${escapeHtml(question.grading_notes)}" placeholder="مثال: لازم يذكر القانون بالاسم" /></div>`;
+
+        return `
+          <div class="card quiz-question" data-index="${index}" data-kind="${question.kind}" style="background:var(--surface-sunken); margin-bottom:12px">
+            <div class="row-between" style="margin-bottom:10px; gap:8px; flex-wrap:wrap">
+              <b>${index + 1}. ${isMcq ? 'اختيار من متعدد' : 'مقالي — بيتصحّح بالذكاء الصناعي'}</b>
+              <div class="row" style="gap:6px">
+                <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizQuestion(${index}, -1)" ${index === 0 ? 'disabled' : ''}>↑</button>
+                <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizQuestion(${index}, 1)" ${index === quizEditorQuestions.length - 1 ? 'disabled' : ''}>↓</button>
+                ${quizEditorHasAttempts ? '' : `<button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="removeQuizQuestion(${index})">حذف</button>`}
+              </div>
+            </div>
+            <div class="field"><label>نص السؤال</label><textarea class="quiz-question-text" rows="2">${escapeHtml(question.text)}</textarea></div>
+            <div class="field" style="max-width:150px"><label>الدرجة</label>
+              <input type="number" class="compact-input quiz-points" min="0.5" step="0.5" value="${question.points}" /></div>
+            ${body}
+          </div>`;
+      }).join('');
+    }
+
+    // بتقري المحرر من الـ DOM جوه المتغير قبل أي إعادة رسم — من غيرها أي إضافة سؤال كانت
+    // بتمسح اللي الموظف كتبه في الأسئلة اللي فوقه
+    function readQuizEditor() {
+      document.querySelectorAll('#quiz-questions-editor .quiz-question').forEach((card) => {
+        const index = Number(card.dataset.index);
+        const question = quizEditorQuestions[index];
+        if (!question) return;
+        question.text = card.querySelector('.quiz-question-text').value;
+        question.points = Number(card.querySelector('.quiz-points').value) || 1;
+        if (question.kind === 'mcq') {
+          question.options = Array.from(card.querySelectorAll('.quiz-option-text')).map((input) => input.value);
+          const picked = card.querySelector(`input[name="quiz-correct-${index}"]:checked`);
+          question.correct_option = picked ? Number(picked.value) : null;
+        } else {
+          question.reference_answer = card.querySelector('.quiz-reference').value;
+          question.grading_notes = card.querySelector('.quiz-notes').value;
+        }
+      });
+    }
+
+    function addQuizQuestion(kind) {
+      readQuizEditor();
+      quizEditorQuestions.push(kind === 'mcq'
+        ? { kind: 'mcq', text: '', points: 1, options: ['', ''], correct_option: 0, reference_answer: '', grading_notes: '' }
+        : { kind: 'essay', text: '', points: 1, options: [], correct_option: null, reference_answer: '', grading_notes: '' });
+      renderQuizQuestions();
+    }
+
+    function removeQuizQuestion(index) {
+      readQuizEditor();
+      quizEditorQuestions.splice(index, 1);
+      renderQuizQuestions();
+    }
+
+    function moveQuizQuestion(index, direction) {
+      readQuizEditor();
+      const target = index + direction;
+      if (target < 0 || target >= quizEditorQuestions.length) return;
+      const [moved] = quizEditorQuestions.splice(index, 1);
+      quizEditorQuestions.splice(target, 0, moved);
+      renderQuizQuestions();
+    }
+
+    function addQuizOption(index) {
+      readQuizEditor();
+      quizEditorQuestions[index].options.push('');
+      renderQuizQuestions();
+    }
+
+    function removeQuizOption(index, optionIndex) {
+      readQuizEditor();
+      const question = quizEditorQuestions[index];
+      if (question.options.length <= 2) return showToast('السؤال محتاج اختيارين على الأقل');
+      question.options.splice(optionIndex, 1);
+      // الإجابة الصح كانت بتفضل على نفس الرقم بعد الحذف فتشاور على اختيار تاني خالص
+      if (question.correct_option === optionIndex) question.correct_option = 0;
+      else if (question.correct_option > optionIndex) question.correct_option -= 1;
+      renderQuizQuestions();
+    }
+
+    async function saveQuiz() {
+      readQuizEditor();
+      const title = document.getElementById('quiz-title').value.trim();
+      if (!title) return showToast('اكتب عنوان الاختبار');
+      if (!quizEditorQuestions.length) return showToast('ضيف سؤال واحد على الأقل');
+
+      const payload = {
+        title,
+        description: document.getElementById('quiz-description').value.trim(),
+        time_limit_minutes: document.getElementById('quiz-time-limit').value || null,
+        show_score_to_student: document.getElementById('quiz-show-score').checked,
+        is_open: true,
+      };
+
+      try {
+        if (editingQuizId) {
+          // التعديل مابيفتحش اختبار مقفول من ورا الموظف — القفل قرار منفصل بزراره
+          const current = quizList.find((quiz) => quiz.id === editingQuizId);
+          payload.is_open = current ? current.is_open : true;
+          await api(`/api/quizzes/${editingQuizId}`, { method: 'PUT', body: JSON.stringify(payload) });
+        } else {
+          const created = await api('/api/quizzes', { method: 'POST', body: JSON.stringify(payload) });
+          editingQuizId = created.id;
+        }
+        await api(`/api/quizzes/${editingQuizId}/questions`, {
+          method: 'PUT',
+          body: JSON.stringify({ questions: quizEditorQuestions }),
+        });
+        showToast('الاختبار اتحفظ');
+        await loadQuizzes();
+        showQuizView('list');
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    async function toggleQuizOpen(id) {
+      const quiz = quizList.find((item) => item.id === id);
+      if (!quiz) return;
+      try {
+        await api(`/api/quizzes/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            title: quiz.title,
+            description: quiz.description,
+            time_limit_minutes: quiz.time_limit_minutes,
+            show_score_to_student: quiz.show_score_to_student,
+            is_open: !quiz.is_open,
+          }),
+        });
+        showToast(quiz.is_open ? 'الاختبار اتقفل — الرابط بقى مايفتحش' : 'الاختبار اتفتح');
+        loadQuizzes();
+      } catch (error) { showToast(error.message); }
+    }
+
+    async function deleteQuiz(id) {
+      if (!confirm('متأكد من حذف الاختبار؟')) return;
+      try {
+        await api(`/api/quizzes/${id}`, { method: 'DELETE', body: JSON.stringify({}) });
+        showToast('الاختبار اتحذف');
+        loadQuizzes();
+        return;
+      } catch (error) {
+        // السيرفر بيرفض حذف اختبار فيه محاولات من غير تأكيد تاني — إجابات الطلاب بتروح معاه
+        if (!error.data || !error.data.needs_confirmation) return showToast(error.message);
+        if (!confirm(`${error.message}\n\nتأكيد الحذف؟`)) return;
+      }
+      try {
+        await api(`/api/quizzes/${id}`, { method: 'DELETE', body: JSON.stringify({ confirm: true }) });
+        showToast('الاختبار وإجاباته اتحذفوا');
+        loadQuizzes();
+      } catch (error) { showToast(error.message); }
+    }
+
+    // ---------- النتايج ----------
+    async function openQuizResults(id) {
+      quizResultsId = id;
+      const quiz = quizList.find((item) => item.id === id);
+      document.getElementById('quiz-results-title').textContent = quiz ? `نتايج: ${quiz.title}` : 'النتايج';
+      document.getElementById('quiz-attempt-detail').style.display = 'none';
+      showQuizView('results');
+      loadQuizAttempts();
+    }
+
+    async function loadQuizAttempts() {
+      const box = document.getElementById('quiz-attempts-table');
+      box.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const attempts = await api(`/api/quizzes/${quizResultsId}/attempts`);
+        if (!attempts.length) {
+          box.innerHTML = '<div class="empty-state">لسه محدش دخل الاختبار</div>';
+          return;
+        }
+        const rows = attempts.map((attempt) => {
+          const name = attempt.platform_name || attempt.student_name || '—';
+          const status = !attempt.submitted_at
+            ? '<span class="badge badge-warning">لسه بيحل</span>'
+            : attempt.grading_status === 'partial'
+              ? '<span class="badge badge-danger">محتاجة مراجعتك</span>'
+              : '<span class="badge badge-success">اتصحّح</span>';
+          const score = attempt.score === null ? '—' : `${Math.round(attempt.score * 100) / 100} / ${attempt.max_score}`;
+          return `<tr>
+            <td>${escapeHtml(name)}${attempt.matched ? '' : ' <span class="badge badge-muted">مش مطابق للمنصة</span>'}</td>
+            <td>${escapeHtml(attempt.phone)}</td>
+            <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}</td>
+            <td>${score}</td>
+            <td>${attempt.submitted_at ? fmtDate(attempt.submitted_at) : fmtDate(attempt.started_at)}</td>
+            <td><button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="openQuizAttempt(${attempt.id})">الإجابات</button></td>
+          </tr>`;
+        }).join('');
+        box.innerHTML = `<table><thead><tr><th>الطالب</th><th>التليفون</th><th>الحالة</th><th>الدرجة</th><th>الوقت</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function openQuizAttempt(attemptId) {
+      const box = document.getElementById('quiz-attempt-detail');
+      box.style.display = '';
+      box.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const data = await api(`/api/quizzes/attempts/${attemptId}`);
+        const name = data.attempt.platform_name || data.attempt.student_name || '—';
+        const verdictLabels = { correct: 'صح', partial: 'جزئي', incorrect: 'غلط' };
+
+        const answers = data.answers.map((answer, index) => {
+          const isMcq = answer.kind === 'mcq';
+          const options = Array.isArray(answer.options) ? answer.options : [];
+          const studentText = isMcq
+            ? (answer.selected_option === null || answer.selected_option === undefined
+              ? '<i>ماختارش</i>' : escapeHtml(options[answer.selected_option]))
+            : (answer.essay_text ? escapeHtml(answer.essay_text) : '<i>ساب السؤال فاضي</i>');
+          const reference = isMcq
+            ? escapeHtml(options[answer.correct_option])
+            : escapeHtml(answer.reference_answer);
+          // حكم النموذج وسببه بيتعرضوا للموظف مش للطالب — ده اللي بيخليه يقدر يخالفه بثقة
+          const verdict = answer.ai_verdict
+            ? `<div class="card-desc" style="margin-top:6px">🤖 ${verdictLabels[answer.ai_verdict] || answer.ai_verdict}: ${escapeHtml(answer.ai_reason)}</div>`
+            : '';
+          const staffMark = answer.graded_by === 'staff'
+            ? `<span class="badge badge-muted">عدّلها ${escapeHtml(answer.graded_by_name || 'موظف')}</span>`
+            : '';
+
+          return `
+            <div class="card" style="background:var(--surface-sunken); margin-bottom:10px">
+              <div class="row-between" style="gap:8px; flex-wrap:wrap">
+                <b>${index + 1}. ${escapeHtml(answer.text)}</b>
+                <span class="badge badge-muted">${answer.points} درجة</span>
+              </div>
+              <div style="margin-top:10px"><span class="card-desc">إجابة الطالب:</span>
+                <div style="white-space:pre-wrap">${studentText}</div></div>
+              <div style="margin-top:8px"><span class="card-desc">${isMcq ? 'الإجابة الصح:' : 'الإجابة المرجعية:'}</span>
+                <div style="white-space:pre-wrap">${reference}</div></div>
+              ${verdict}
+              <div class="row" style="gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap">
+                <span class="card-desc">الدرجة:</span>
+                <input type="number" class="compact-input" style="width:90px" min="0" max="${answer.points}" step="0.5"
+                       id="quiz-grade-${answer.question_id}" value="${answer.awarded_points === null ? '' : answer.awarded_points}" />
+                <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                        onclick="saveQuizGrade(${attemptId}, ${answer.question_id})">اعتمد الدرجة</button>
+                ${staffMark}
+              </div>
+            </div>`;
+        }).join('');
+
+        const needsReview = data.attempt.grading_status === 'partial';
+        box.innerHTML = `
+          <div class="row-between" style="margin-bottom:12px; gap:12px; flex-wrap:wrap">
+            <b>${escapeHtml(name)} — ${data.attempt.score === null ? '—' : Math.round(data.attempt.score * 100) / 100} / ${data.attempt.max_score === null ? '—' : data.attempt.max_score}</b>
+            <div class="row" style="gap:8px">
+              ${needsReview ? `<button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="regradeQuizAttempt(${attemptId})">أعد التصحيح الآلي</button>` : ''}
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="hideQuizAttempt()">إخفاء</button>
+            </div>
+          </div>
+          ${data.attempt.grading_error ? `<div class="card-desc" style="margin-bottom:10px">⚠️ التصحيح الآلي فشل: ${escapeHtml(data.attempt.grading_error)}</div>` : ''}
+          ${answers}`;
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function hideQuizAttempt() {
+      document.getElementById('quiz-attempt-detail').style.display = 'none';
+    }
+
+    async function saveQuizGrade(attemptId, questionId) {
+      const input = document.getElementById(`quiz-grade-${questionId}`);
+      if (!input || input.value === '') return showToast('اكتب الدرجة الأول');
+      try {
+        await api(`/api/quizzes/attempts/${attemptId}/answers/${questionId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ awarded_points: Number(input.value) }),
+        });
+        showToast('الدرجة اتعدّلت');
+        await loadQuizAttempts();
+        await openQuizAttempt(attemptId);
+      } catch (error) { showToast(error.message); }
+    }
+
+    async function regradeQuizAttempt(attemptId) {
+      try {
+        showToast('بنعيد التصحيح الآلي...');
+        await api(`/api/quizzes/attempts/${attemptId}/regrade`, { method: 'POST', body: JSON.stringify({}) });
+        showToast('اتصحّح');
+        await loadQuizAttempts();
+        await openQuizAttempt(attemptId);
+      } catch (error) { showToast(error.message); }
+    }
+
+    document.getElementById('new-quiz-btn').addEventListener('click', newQuizEditor);
+    document.getElementById('quiz-editor-back').addEventListener('click', () => { loadQuizzes(); showQuizView('list'); });
+    document.getElementById('quiz-results-back').addEventListener('click', () => { loadQuizzes(); showQuizView('list'); });
+    document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));
+    document.getElementById('add-essay-btn').addEventListener('click', () => addQuizQuestion('essay'));
+    document.getElementById('save-quiz-btn').addEventListener('click', saveQuiz);
 
     // ---------- تشغيل أولي ----------
     const hasTicketsAccess = Boolean(document.querySelector('.nav-item[data-tab="tickets"]'));

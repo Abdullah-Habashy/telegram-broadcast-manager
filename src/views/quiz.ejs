@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <%- include('partials/layout-head') %>
+  <link rel="stylesheet" href="/quiz.css" />
+  <title><%= quiz.title %></title>
+</head>
+<body class="qz-body">
+<div class="qz-shell">
+
+  <div class="qz-card qz-head">
+    <h1><%= quiz.title %></h1>
+    <% if (quiz.description) { %><p><%= quiz.description %></p><% } %>
+    <div class="qz-meta">
+      <span class="qz-chip"><%= quiz.question_count %> سؤال</span>
+      <% if (quiz.time_limit_minutes) { %><span class="qz-chip">⏱️ <%= quiz.time_limit_minutes %> دقيقة</span><% } %>
+      <span class="qz-chip">محاولة واحدة</span>
+    </div>
+  </div>
+
+  <%# ===== بوابة الدخول =====
+      الأسئلة مش في الصفحة دي — بتيجي من /start بعد ما الرقم يتطابق. لولا كده كان أي حد
+      يفتح مصدر الصفحة يقرا الأسئلة والإجابات الصح من غير ما المؤقت يبدأ %>
+  <div class="qz-card" id="qz-gate" <%= quiz.is_open ? '' : 'style="display:none"' %>>
+    <div class="qz-field">
+      <label for="qz-phone">رقم الموبايل
+        <span class="qz-hint">اللي مسجّل بيه على منصة طفرة — عشان الدرجة تتحسبلك إنت.</span>
+      </label>
+      <input class="qz-input" type="tel" inputmode="numeric" id="qz-phone" placeholder="01xxxxxxxxx" autocomplete="tel" />
+    </div>
+
+    <%# بيظهروا حسب رد السيرفر بس: قايمة الاختيار لما الرقم مسجّل لأكتر من طالب (إخوات على
+        تليفون الأب)، وخانة الاسم لما الرقم مش على المنصة أصلًا %>
+    <div class="qz-field" id="qz-pick-field" style="display:none">
+      <label>الرقم ده مسجّل لأكتر من طالب — إنت مين فيهم؟</label>
+      <div class="qz-pick-list" id="qz-pick-list"></div>
+    </div>
+
+    <div class="qz-field" id="qz-name-field" style="display:none">
+      <label for="qz-name">اسمك بالكامل
+        <span class="qz-hint">رقمك مش لاقينه على المنصة، فمحتاجين اسمك عشان نعرف الورقة بتاعت مين.</span>
+      </label>
+      <input class="qz-input" type="text" id="qz-name" autocomplete="name" />
+    </div>
+
+    <button class="qz-btn" id="qz-start-btn" type="button">ابدأ الاختبار</button>
+    <div class="qz-error" id="qz-gate-error" style="display:none"></div>
+  </div>
+
+  <% if (!quiz.is_open) { %>
+    <div class="qz-card" style="text-align:center">
+      <h2 style="margin:0 0 6px">الاختبار ده اتقفل</h2>
+      <p style="color:var(--qz-muted); margin:0">لو عندك سؤال، كلّم فريق الدعم على البوت.</p>
+    </div>
+  <% } %>
+
+  <%# ===== الاختبار نفسه ===== %>
+  <div id="qz-exam" style="display:none">
+    <div class="qz-timer" id="qz-timer" style="display:none">
+      <span>الوقت المتبقي: <span class="qz-clock" id="qz-clock">--:--</span></span>
+      <span class="qz-save-state" id="qz-save-state"></span>
+    </div>
+    <div id="qz-questions"></div>
+    <button class="qz-btn" id="qz-submit-btn" type="button">سلّم الإجابات</button>
+    <div class="qz-error" id="qz-exam-error" style="display:none"></div>
+    <p class="qz-foot">إجاباتك بتتحفظ لوحدها وإنت بتكتب — لو الصفحة قفلت، ارجع بنفس الرقم وكمّل.</p>
+  </div>
+
+  <%# ===== النتيجة ===== %>
+  <div class="qz-card qz-result" id="qz-result" style="display:none">
+    <h2 id="qz-result-title">تم استلام إجاباتك ✅</h2>
+    <div class="qz-score" id="qz-result-score" style="display:none"></div>
+    <p id="qz-result-note"></p>
+  </div>
+
+</div>
+
+<script>
+  (function () {
+    var base = window.location.pathname.replace(/\/+$/, '');
+
+    var state = { key: null, questions: [], deadline: null, timer: null, dirty: false, submitting: false };
+
+    function el(id) { return document.getElementById(id); }
+    function esc(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function showError(box, message) {
+      var node = el(box);
+      node.textContent = message;
+      node.style.display = message ? 'block' : 'none';
+    }
+
+    function post(path, body) {
+      return fetch(base + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) throw new Error(data.error || 'حصلت مشكلة، جرّب تاني');
+          return data;
+        });
+      });
+    }
+
+    // ---------- الدخول ----------
+    var pickedStudentId = null;
+
+    el('qz-start-btn').addEventListener('click', function () {
+      var button = el('qz-start-btn');
+      showError('qz-gate-error', '');
+      button.disabled = true;
+      button.textContent = 'بنجهّز الاختبار...';
+
+      post('/start', {
+        phone: el('qz-phone').value,
+        student_id: pickedStudentId,
+        name: el('qz-name').value,
+      }).then(function (data) {
+        // الرقم مسجّل لأكتر من طالب: بنعرض الأسامي والطالب يختار، وبعدها بيدوس ابدأ تاني
+        if (data.needs_pick) {
+          el('qz-pick-field').style.display = '';
+          el('qz-pick-list').innerHTML = data.students.map(function (student) {
+            return '<label class="qz-option"><input type="radio" name="qz-pick" value="' + student.id + '" />'
+              + '<span>' + esc(student.name) + '</span></label>';
+          }).join('');
+          bindPick();
+          throw new Error('اختار اسمك من القايمة وبعدين ابدأ');
+        }
+        if (data.needs_name) {
+          el('qz-name-field').style.display = '';
+          el('qz-name').focus();
+          throw new Error('اكتب اسمك بالكامل وبعدين ابدأ');
+        }
+        if (data.state === 'submitted') return renderResult(data);
+        startExam(data);
+      }).catch(function (error) {
+        showError('qz-gate-error', error.message);
+      }).finally(function () {
+        button.disabled = false;
+        button.textContent = 'ابدأ الاختبار';
+      });
+    });
+
+    function bindPick() {
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="qz-pick"]'), function (input) {
+        input.addEventListener('change', function () {
+          pickedStudentId = Number(input.value);
+          Array.prototype.forEach.call(document.querySelectorAll('#qz-pick-list .qz-option'), function (option) {
+            option.classList.remove('picked');
+          });
+          input.closest('.qz-option').classList.add('picked');
+        });
+      });
+    }
+
+    // ---------- الأسئلة ----------
+    function startExam(data) {
+      state.key = data.attempt_key;
+      state.questions = data.questions || [];
+      state.deadline = data.deadline_at ? new Date(data.deadline_at).getTime() : null;
+
+      el('qz-gate').style.display = 'none';
+      el('qz-exam').style.display = '';
+
+      el('qz-questions').innerHTML = state.questions.map(function (question, index) {
+        var body = question.kind === 'mcq'
+          ? question.options.map(function (option, optionIndex) {
+              return '<label class="qz-option" data-q="' + question.id + '">'
+                + '<input type="radio" name="q' + question.id + '" value="' + optionIndex + '" />'
+                + '<span>' + esc(option) + '</span></label>';
+            }).join('')
+          : '<textarea class="qz-textarea" data-q="' + question.id + '" placeholder="اكتب إجابتك هنا..."></textarea>';
+
+        return '<div class="qz-card">'
+          + '<div class="qz-q-head"><span class="qz-q-num">سؤال ' + (index + 1) + ' من ' + state.questions.length + '</span>'
+          + '<span class="qz-q-points">' + question.points + ' درجة</span></div>'
+          + '<div class="qz-q-text">' + esc(question.text) + '</div>'
+          + body + '</div>';
+      }).join('');
+
+      restoreSaved(data.saved || {});
+      bindAnswerInputs();
+      if (state.deadline) startTimer();
+    }
+
+    // استكمال محاولة مفتوحة: الإجابات المحفوظة بترجع في مكانها زي ما سابها بالظبط
+    function restoreSaved(saved) {
+      Object.keys(saved).forEach(function (questionId) {
+        var answer = saved[questionId];
+        if (answer.selected_option !== null && answer.selected_option !== undefined) {
+          var radio = document.querySelector('input[name="q' + questionId + '"][value="' + answer.selected_option + '"]');
+          if (radio) { radio.checked = true; radio.closest('.qz-option').classList.add('picked'); }
+        }
+        if (answer.essay_text) {
+          var textarea = document.querySelector('textarea[data-q="' + questionId + '"]');
+          if (textarea) textarea.value = answer.essay_text;
+        }
+      });
+    }
+
+    function bindAnswerInputs() {
+      Array.prototype.forEach.call(document.querySelectorAll('#qz-questions input[type="radio"]'), function (input) {
+        input.addEventListener('change', function () {
+          Array.prototype.forEach.call(document.querySelectorAll('input[name="' + input.name + '"]'), function (sibling) {
+            sibling.closest('.qz-option').classList.remove('picked');
+          });
+          input.closest('.qz-option').classList.add('picked');
+          state.dirty = true;
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#qz-questions textarea'), function (textarea) {
+        textarea.addEventListener('input', function () { state.dirty = true; });
+        // الخروج من الخانة أوضح لحظة للحفظ: الطالب خلص السؤال ده وبيروح للي بعده
+        textarea.addEventListener('blur', function () { saveProgress(); });
+      });
+      setInterval(saveProgress, 15000);
+    }
+
+    function collectAnswers() {
+      return state.questions.map(function (question) {
+        if (question.kind === 'mcq') {
+          var picked = document.querySelector('input[name="q' + question.id + '"]:checked');
+          return { question_id: question.id, selected_option: picked ? Number(picked.value) : null };
+        }
+        var textarea = document.querySelector('textarea[data-q="' + question.id + '"]');
+        return { question_id: question.id, essay_text: textarea ? textarea.value : '' };
+      });
+    }
+
+    // الحفظ التلقائي بيفشل بصمت عن قصد: رسالة خطأ كل ١٥ ثانية على نت متقطع بتوتّر الطالب
+    // من غير فايدة — التسليم نفسه هو اللي بيتكلم لو فشل
+    function saveProgress() {
+      if (!state.key || !state.dirty || state.submitting) return;
+      state.dirty = false;
+      el('qz-save-state').textContent = 'بيتحفظ...';
+      post('/save', { attempt_key: state.key, answers: collectAnswers() })
+        .then(function () { el('qz-save-state').textContent = 'اتحفظ ✓'; })
+        .catch(function () { el('qz-save-state').textContent = ''; state.dirty = true; });
+    }
+
+    // ---------- المؤقت ----------
+    function startTimer() {
+      el('qz-timer').style.display = '';
+      tick();
+      state.timer = setInterval(tick, 1000);
+    }
+
+    function tick() {
+      var remaining = Math.max(0, Math.floor((state.deadline - Date.now()) / 1000));
+      var minutes = String(Math.floor(remaining / 60)).padStart(2, '0');
+      var seconds = String(remaining % 60).padStart(2, '0');
+      el('qz-clock').textContent = minutes + ':' + seconds;
+      var timer = el('qz-timer');
+      timer.className = 'qz-timer' + (remaining <= 60 ? ' danger' : remaining <= 300 ? ' warn' : '');
+      if (remaining === 0) {
+        clearInterval(state.timer);
+        submit(true);
+      }
+    }
+
+    // ---------- التسليم ----------
+    el('qz-submit-btn').addEventListener('click', function () {
+      var unanswered = collectAnswers().filter(function (answer) {
+        return answer.selected_option === null && !String(answer.essay_text || '').trim();
+      }).length;
+      if (unanswered && !window.confirm('فيه ' + unanswered + ' سؤال من غير إجابة. تسلّم برضه؟')) return;
+      submit(false);
+    });
+
+    function submit(automatic) {
+      if (state.submitting) return;
+      state.submitting = true;
+      if (state.timer) clearInterval(state.timer);
+      var button = el('qz-submit-btn');
+      button.disabled = true;
+      button.textContent = automatic ? 'الوقت خلص — بنسلّم إجاباتك...' : 'بنصحّح إجاباتك...';
+      showError('qz-exam-error', '');
+
+      post('/submit', { attempt_key: state.key, answers: collectAnswers() })
+        .then(function (data) {
+          el('qz-exam').style.display = 'none';
+          el('qz-timer').style.display = 'none';
+          renderResult(data);
+        })
+        .catch(function (error) {
+          state.submitting = false;
+          button.disabled = false;
+          button.textContent = 'سلّم الإجابات';
+          showError('qz-exam-error', error.message + ' — إجاباتك متحفوظة، جرّب تسلّم تاني.');
+        });
+    }
+
+    function renderResult(data) {
+      el('qz-gate').style.display = 'none';
+      el('qz-exam').style.display = 'none';
+      el('qz-result').style.display = '';
+      if (data.score !== null && data.score !== undefined) {
+        el('qz-result-score').style.display = '';
+        el('qz-result-score').innerHTML = Math.round(data.score * 100) / 100
+          + '<small> / ' + data.max_score + '</small>';
+        el('qz-result-note').textContent = 'الدرجة دي مبدئية — الفريق بيراجع الأسئلة المقالية.';
+      } else {
+        el('qz-result-note').textContent = data.score_hidden
+          ? 'الدرجة هتتعلن من الفريق.'
+          : 'إجاباتك وصلت والفريق بيصحّحها.';
+      }
+    }
+  }());
+</script>
+</body>
+</html>

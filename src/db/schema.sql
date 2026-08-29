@@ -936,3 +936,98 @@ FROM settings
 WHERE key = 'bot_token_encrypted' AND value IS NOT NULL AND value <> ''
   AND NOT EXISTS (SELECT 1 FROM bot_profiles)
 ON CONFLICT DO NOTHING;
+
+-- ===================== الاختبارات (اختياري + مقالي) =====================
+--
+-- **الرابط هو الاختبار.** توكن عشوائي واحد لكل اختبار (زي report_token بالظبط)، بيتبعت
+-- للطلاب كلهم في رسالة واحدة، والهوية بتتحدد جوه الصفحة برقم التليفون — مش برابط شخصي لكل
+-- طالب. السبب: الإرسال الجماعي في اللوحة بيبعت نفس النص للمئات، فرابط لكل طالب كان معناه
+-- مسار إرسال جديد بالكامل.
+CREATE TABLE IF NOT EXISTS quizzes (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    token VARCHAR(64) NOT NULL UNIQUE,
+    -- NULL = من غير مؤقت. بالدقايق، وبيتحسب من لحظة ما الطالب يدخل مش من وقت النشر
+    time_limit_minutes INTEGER,
+    -- مقفول = الرابط بيفتح صفحة "الاختبار قفل" بدل الأسئلة. الحذف بيضيّع الإجابات، والقفل لأ
+    is_open BOOLEAN NOT NULL DEFAULT TRUE,
+    -- الطالب بيشوف رقم درجته بس. عرض الأسئلة الصح والغلط مقفول عن قصد: نفس الرابط بيتحل
+    -- على مدى أيام، وأول طالب يشوف الإجابات ينشرها للباقي
+    show_score_to_student BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_quizzes_token ON quizzes (token);
+
+-- الأسئلة نوعين في نفس الجدول: عمود kind هو الفارق، والأعمدة الخاصة بكل نوع NULL في التاني.
+-- جدولين منفصلين كان هيخلي ترتيب الأسئلة في الصفحة (position) موزّع على جدولين
+CREATE TABLE IF NOT EXISTS quiz_questions (
+    id SERIAL PRIMARY KEY,
+    quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    kind VARCHAR(10) NOT NULL,
+    text TEXT NOT NULL,
+    points NUMERIC(6,2) NOT NULL DEFAULT 1,
+    -- اختياري: مصفوفة نصوص. correct_option فهرس فيها (يبدأ من صفر)
+    options JSONB NOT NULL DEFAULT '[]'::jsonb,
+    correct_option INTEGER,
+    -- مقالي: الإجابة المرجعية هي المعيار الوحيد للتصحيح الآلي
+    reference_answer TEXT,
+    -- تعليمات إضافية للمصحّح الآلي في السؤال ده بالذات (مثال: "لازم يذكر القانون بالاسم")
+    grading_notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_questions_quiz ON quiz_questions (quiz_id, position, id);
+
+-- محاولة واحدة لكل طالب. الهوية = آخر ١٠ أرقام من التليفون (نفس تطبيع bot/handlers/studentReport.js)
+-- + معرّف الطالب على طفرة لما يتلاقي. الطالب اللي رقمه مش على المنصة بيدخل برضه ويتسجّل
+-- tafra_student_id = NULL — منعه من الامتحان أسوأ بكتير من صف محتاج ربط يدوي بعدين
+CREATE TABLE IF NOT EXISTS quiz_attempts (
+    id SERIAL PRIMARY KEY,
+    quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    tafra_student_id BIGINT REFERENCES tafra_students(tafra_student_id) ON DELETE SET NULL,
+    student_name VARCHAR(500),
+    phone VARCHAR(20) NOT NULL,
+    -- سر بيترجع للمتصفح مرة واحدة عند الدخول وبيتبعت مع كل حفظ وتسليم. من غيره كان أي حد
+    -- يعرف رقم تليفون زميله يقدر يبعت إجاباته بدله — الرقم لوحده مش سر
+    attempt_key VARCHAR(64) NOT NULL,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- بيتحسب مرة واحدة عند الدخول، فإعادة تحميل الصفحة مابتزوّدش الوقت
+    deadline_at TIMESTAMPTZ,
+    submitted_at TIMESTAMPTZ,
+    is_late BOOLEAN NOT NULL DEFAULT FALSE,
+    score NUMERIC(8,2),
+    max_score NUMERIC(8,2),
+    -- pending = لسه بيحل · graded = اتصحّح كامل · partial = المقالي فشل تصحيحه آليًا
+    grading_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    grading_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- COALESCE مش عمود عادي: NULL في Postgres مابيتعارضش مع NULL، فبدونها كان أي واحد رقمه مش
+-- على المنصة يقدر يعيد الامتحان عدد ما يحب. و٦٩ رقم على المنصة متكرر بين إخوات، فالمفتاح
+-- بيشمل معرّف الطالب عشان الأخ التاني مايتمنعش
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_attempts_one_per_student
+    ON quiz_attempts (quiz_id, phone, COALESCE(tafra_student_id, 0));
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz ON quiz_attempts (quiz_id, submitted_at DESC NULLS LAST);
+
+CREATE TABLE IF NOT EXISTS quiz_answers (
+    id SERIAL PRIMARY KEY,
+    attempt_id INTEGER NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+    question_id INTEGER NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
+    selected_option INTEGER,
+    essay_text TEXT,
+    awarded_points NUMERIC(6,2),
+    is_correct BOOLEAN,
+    -- correct | partial | incorrect — حقل منطقي صريح من النموذج، مش استنتاج من نص السبب
+    ai_verdict VARCHAR(20),
+    ai_reason TEXT,
+    ai_provider VARCHAR(50),
+    -- auto = المصحّح الآلي · staff = موظف عدّل الدرجة بإيده وقتها بتكسب دايمًا
+    graded_by VARCHAR(10) NOT NULL DEFAULT 'auto',
+    graded_by_user INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    graded_at TIMESTAMPTZ,
+    UNIQUE (attempt_id, question_id)
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_answers_attempt ON quiz_answers (attempt_id);
