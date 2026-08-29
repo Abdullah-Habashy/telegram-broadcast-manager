@@ -720,6 +720,99 @@ async function sendNewBotBroadcast(req, res) {
 // لوج زمني لكل طالب دخل بوت المتابعة فعليًا لأول مرة — tickets.created_at بيتسجّل مرة واحدة بس بالظبط
 // وقت أول /start حقيقي لأي جهة اتصال (شوف start.js: التذكرة بتتنشأ بس لو isNewContact)، فهو أدق مصدر
 // لتاريخ "الدخول" المتاح عندنا، بغض النظر هل جهة الاتصال جاية من مزامنة طفرة أو من بدء عضوي على البوت
+// ---------- الربط اليدوي بحساب المنصة ----------
+//
+// **ليه ده موجود:** الطريقة الوحيدة اللي كانت بتربط طالب بحسابه على المنصة هي إن الطالب
+// نفسه يبعت رقم تليفونه للبوت (bot/handlers/studentReport.js). اللي مابعتش رقمه بيفضل
+// معروف باسم تيليجرام بتاعه — واللي ساعات بيبقى "Zuma" أو ". ." أو اسم أبوه.
+// الموظف بيعرف الطالب ده مين من كلامه معاه، فده بيديله طريقة يسجّل المعرفة دي.
+//
+// الربط بيفيد كل حاجة مرة واحدة: الاسم في كل الشاشات، والتقرير، والدرجات، وفلاتر الأبواب.
+async function searchStudentsForLink(req, res) {
+  const term = String(req.query.q || '').trim();
+  if (term.length < 2) return res.json({ students: [] });
+  try {
+    const { rows } = await pool.query(
+      // البحث بالاسم أو التليفون أو الكود — الموظف ساعات معاه الرقم من المحادثة
+      `SELECT tafra_student_id AS id, name, phone, student_code, telegram_chat_id
+       FROM tafra_students
+       WHERE name ILIKE $1 OR phone ILIKE $1 OR student_code ILIKE $1
+       ORDER BY (telegram_chat_id IS NOT NULL), name
+       LIMIT 15`, [`%${term}%`]);
+    res.json({ students: rows.map((row) => ({ ...row, id: Number(row.id), already_linked: row.telegram_chat_id !== null })) });
+  } catch (error) {
+    console.error('Failed to search students for linking:', error.message);
+    res.status(500).json({ error: 'تعذر البحث عن الطلاب' });
+  }
+}
+
+async function linkContactToStudent(req, res) {
+  const chatId = String(req.body?.chat_id || '').trim();
+  const studentId = Number(req.body?.tafra_student_id);
+  if (!/^\d+$/.test(chatId) || !Number.isInteger(studentId)) {
+    return res.status(400).json({ error: 'بيانات الربط ناقصة' });
+  }
+  try {
+    const student = await pool.query(
+      'SELECT name, telegram_chat_id FROM tafra_students WHERE tafra_student_id = $1', [studentId]);
+    if (!student.rows.length) return res.status(404).json({ error: 'الطالب مش موجود على المنصة' });
+
+    // الحساب ده مربوط بطالب تاني؟ الربط الغلط أخطر من عدم الربط — الطالب هيشوف تقرير
+    // حد تاني ودرجاته، فبنوقف ونطلب تأكيد صريح
+    const taken = await pool.query(
+      'SELECT tafra_student_id, name FROM tafra_students WHERE telegram_chat_id = $1 AND tafra_student_id <> $2',
+      [chatId, studentId]);
+    if (taken.rows.length && req.body?.confirm !== true) {
+      return res.status(409).json({
+        error: `حساب التليجرام ده مربوط دلوقتي بـ"${taken.rows[0].name.trim()}". الربط هيشيله من عنده ويحطه على الطالب ده.`,
+        needs_confirmation: true,
+      });
+    }
+    // والطالب ده مربوط بحساب تاني؟ نفس المنطق بالعكس
+    const existing = student.rows[0].telegram_chat_id;
+    if (existing && String(existing) !== chatId && req.body?.confirm !== true) {
+      return res.status(409).json({
+        error: 'الطالب ده مربوط بحساب تليجرام تاني. الربط هيستبدله.',
+        needs_confirmation: true,
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // الحساب لطالب واحد بس — بنفكّه من أي طالب تاني الأول
+      await client.query(
+        'UPDATE tafra_students SET telegram_chat_id = NULL WHERE telegram_chat_id = $1 AND tafra_student_id <> $2',
+        [chatId, studentId]);
+      await client.query(
+        'UPDATE tafra_students SET telegram_chat_id = $1 WHERE tafra_student_id = $2', [chatId, studentId]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    res.json({ ok: true, name: student.rows[0].name.trim() });
+  } catch (error) {
+    console.error('Failed to link the contact to a platform student:', error.message);
+    res.status(500).json({ error: 'تعذر الربط' });
+  }
+}
+
+async function unlinkContactFromStudent(req, res) {
+  const chatId = String(req.body?.chat_id || '').trim();
+  if (!/^\d+$/.test(chatId)) return res.status(400).json({ error: 'حساب غير صالح' });
+  try {
+    const result = await pool.query(
+      'UPDATE tafra_students SET telegram_chat_id = NULL WHERE telegram_chat_id = $1', [chatId]);
+    res.json({ ok: true, unlinked: result.rowCount });
+  } catch (error) {
+    console.error('Failed to unlink the contact:', error.message);
+    res.status(500).json({ error: 'تعذر فك الربط' });
+  }
+}
+
 async function getFollowUpBotStartLog(req, res) {
   const page = Math.max(1, Number(req.query.page) || 1);
   const limit = 50;
@@ -1614,5 +1707,6 @@ module.exports = {
   triggerAutoSyncIfDue, triggerExamAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
   syncNewBotReachability, getNewBotReachabilitySyncStatus, getFollowUpBotStartLog,
+  searchStudentsForLink, linkContactToStudent, unlinkContactFromStudent,
   getNewBotWebhookStatus, claimNewBotWebhook, releaseNewBotWebhook,
 };

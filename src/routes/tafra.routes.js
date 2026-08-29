@@ -44,6 +44,9 @@ router.post('/new-bot-broadcast', uploadNewBotImage.single('image'), controller.
 router.post('/new-bot-reachability-sync', controller.syncNewBotReachability);
 router.get('/new-bot-reachability-sync-status', controller.getNewBotReachabilitySyncStatus);
 router.get('/follow-up-bot-log', controller.getFollowUpBotStartLog);
+router.get('/students/search', controller.searchStudentsForLink);
+router.post('/link-contact', controller.linkContactToStudent);
+router.post('/unlink-contact', controller.unlinkContactFromStudent);
 router.get('/new-bot-webhook-status', controller.getNewBotWebhookStatus);
 router.post('/new-bot-webhook-claim', controller.claimNewBotWebhook);
 router.post('/new-bot-webhook-release', controller.releaseNewBotWebhook);

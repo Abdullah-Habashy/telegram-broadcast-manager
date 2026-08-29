@@ -85,6 +85,22 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="link-student-overlay" style="display:none">
+      <div class="modal-card card">
+        <div class="row-between" style="margin-bottom:12px">
+          <b>ربط <span id="link-student-telegram-name"></span> بحساب على المنصة</b>
+          <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="closeLinkDialog()">إغلاق</button>
+        </div>
+        <p class="card-desc" style="margin-top:0">
+          دوّر على الطالب بالاسم أو رقم التليفون أو الكود. بعد الربط هيظهر باسمه الحقيقي
+          في كل الشاشات، وهيقدر يطلب تقريره من البوت.
+        </p>
+        <input type="search" id="link-student-search" class="compact-input" style="width:100%"
+               placeholder="اسم الطالب أو رقمه أو كوده" />
+        <div id="link-student-results" style="margin-top:12px; max-height:340px; overflow-y:auto"></div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="change-password-overlay" style="display:none">
       <div class="modal-card card">
         <div class="row-between" style="margin-bottom:14px">
@@ -7095,6 +7111,83 @@ ${reply.content}` : reply.content;
 
     // ---------- لوج دخول بوت المتابعة (تاب "التقارير" الفرعي جوه بوت طفرة) — تاريخ أول /start حقيقي
     // لكل طالب، مأخوذ من tickets.created_at لأنه بيتسجّل مرة واحدة بس بالظبط في هذه اللحظة ----------
+    // ---------- ربط حساب تيليجرام بحساب المنصة ----------
+    // **ليه يدوي:** الربط التلقائي بيحصل لما الطالب يبعت رقمه للبوت. اللي مابعتش بيفضل
+    // معروف باسم تيليجرام، والموظف اللي بيكلّمه هو الوحيد اللي يعرف هو مين — فده بيديله
+    // مكان يسجّل المعرفة دي، وبتفيد كل الشاشات مرة واحدة
+    let linkDialogChatId = null;
+    let linkSearchTimer = null;
+
+    function openLinkDialog(chatId, telegramName) {
+      linkDialogChatId = chatId;
+      document.getElementById('link-student-telegram-name').textContent = telegramName;
+      document.getElementById('link-student-search').value = '';
+      document.getElementById('link-student-results').innerHTML =
+        '<div class="empty-state">اكتب اسم الطالب أو رقمه أو كوده</div>';
+      document.getElementById('link-student-overlay').style.display = 'flex';
+      document.getElementById('link-student-search').focus();
+    }
+
+    function closeLinkDialog() {
+      document.getElementById('link-student-overlay').style.display = 'none';
+      linkDialogChatId = null;
+    }
+
+    async function searchStudentsToLink() {
+      const term = document.getElementById('link-student-search').value.trim();
+      const box = document.getElementById('link-student-results');
+      if (term.length < 2) {
+        box.innerHTML = '<div class="empty-state">اكتب حرفين على الأقل</div>';
+        return;
+      }
+      try {
+        const data = await api('/api/tafra/students/search?q=' + encodeURIComponent(term));
+        if (!data.students.length) {
+          box.innerHTML = '<div class="empty-state">مفيش طالب مطابق</div>';
+          return;
+        }
+        box.innerHTML = data.students.map((student) => `
+          <div class="row-between" style="padding:10px 0; border-bottom:1px solid var(--border); gap:10px">
+            <div>
+              <b>${escapeHtml(student.name || '—')}</b>
+              <div class="card-desc">📱 ${escapeHtml(student.phone || '—')}${student.student_code ? ' · كود ' + escapeHtml(student.student_code) : ''}
+                ${student.already_linked ? ' · <span class="badge badge-warning">مربوط بحساب تاني</span>' : ''}</div>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" style="width:auto"
+                    onclick="linkContactToStudent(${student.id})">اربط</button>
+          </div>`).join('');
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function linkContactToStudent(studentId, confirmed) {
+      try {
+        const result = await api('/api/tafra/link-contact', {
+          method: 'POST',
+          body: JSON.stringify({ chat_id: linkDialogChatId, tafra_student_id: studentId, confirm: confirmed === true }),
+        });
+        showToast(`اتربط بـ${result.name}`);
+        closeLinkDialog();
+        loadFollowUpBotLog();
+      } catch (error) {
+        // الربط الغلط أخطر من عدم الربط — السيرفر بيوقف ويطلب تأكيد لما الحساب مشغول
+        if (error.data?.needs_confirmation && confirm(`${error.message}\n\nتأكيد؟`)) {
+          return linkContactToStudent(studentId, true);
+        }
+        showToast(error.message);
+      }
+    }
+
+    async function unlinkContact(chatId) {
+      if (!confirm('فكّ الربط هيرجّع الاسم لاسم تيليجرام، والطالب هيحتاج يبعت رقمه تاني. تمام؟')) return;
+      try {
+        await api('/api/tafra/unlink-contact', { method: 'POST', body: JSON.stringify({ chat_id: chatId }) });
+        showToast('اتفكّ الربط');
+        loadFollowUpBotLog();
+      } catch (error) { showToast(error.message); }
+    }
+
     let followUpLogPage = 1;
     let followUpLogPages = 1;
     let followUpLogInitialized = false;
@@ -7120,15 +7213,25 @@ ${reply.content}` : reply.content;
           wrap.innerHTML = '<div class="empty-state">لا يوجد طلاب مطابقون</div>';
           return;
         }
+        // **عمود "مصدر الاسم" مش زينة.** الاسم اللي جاي من تيليجرام ممكن يكون لقب أو اسم
+        // الأب، والموظف لازم يعرف إنه بيقرا اسم غير موثوق قبل ما يبني عليه كلام مع الطالب
         wrap.innerHTML = `<div class="tafra-students-table-wrap"><table><thead><tr>
-          <th>الاسم</th><th>الهاتف</th><th>اليوزر</th><th>تاريخ الدخول</th>
-        </tr></thead><tbody>${result.entries.map((entry) => `
+          <th>الاسم</th><th>مصدر الاسم</th><th>الهاتف</th><th>اليوزر</th><th>تاريخ الدخول</th><th></th>
+        </tr></thead><tbody>${result.entries.map((entry) => {
+          const linked = Boolean((entry.tafra_name || '').trim());
+          return `
           <tr>
             <td>${escapeHtml(studentDisplayName(entry))}</td>
+            <td>${linked
+              ? '<span class="badge badge-success">المنصة</span>'
+              : '<span class="badge badge-warning">تيليجرام — مش مربوط</span>'}</td>
             <td>📱 ${escapeHtml(entry.phone || '—')}</td>
             <td>${entry.telegram_username ? '@' + escapeHtml(entry.telegram_username) : '—'}</td>
             <td>${fmtDate(entry.started_at)}</td>
-          </tr>`).join('')}</tbody></table></div>`;
+            <td>${linked
+              ? `<button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="unlinkContact('${entry.chat_id}')">فكّ الربط</button>`
+              : `<button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="openLinkDialog('${entry.chat_id}', '${escapeHtml(studentDisplayName(entry)).replace(/'/g, "\\'")}')">اربط بالمنصة</button>`}</td>
+          </tr>`; }).join('')}</tbody></table></div>`;
       } catch (error) {
         wrap.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
       }
@@ -7142,7 +7245,15 @@ ${reply.content}` : reply.content;
         clearTimeout(followUpLogSearchTimer);
         followUpLogSearchTimer = setTimeout(() => { followUpLogPage = 1; loadFollowUpBotLog(); }, 350);
       });
-      document.getElementById('refresh-followup-log-btn').addEventListener('click', () => {
+      document.getElementById('link-student-search')?.addEventListener('input', () => {
+      clearTimeout(linkSearchTimer);
+      linkSearchTimer = setTimeout(searchStudentsToLink, 300);
+    });
+    document.getElementById('link-student-overlay')?.addEventListener('click', (event) => {
+      if (event.target.id === 'link-student-overlay') closeLinkDialog();
+    });
+
+    document.getElementById('refresh-followup-log-btn').addEventListener('click', () => {
         followUpLogPage = 1; loadFollowUpBotLog();
       });
       document.getElementById('followup-log-prev').addEventListener('click', () => {
