@@ -38,15 +38,48 @@ async function loadQuizByRef(ref) {
 }
 
 // الأسئلة زي ما الطالب لازم يشوفها: من غير correct_option ولا reference_answer. الحذف هنا
-// مش في الواجهة — أي حقل بيوصل المتصفح بيتقري
+// مش في الواجهة — أي حقل بيوصل المتصفح بيتقري.
+//
+// الشكل شجرة: السؤال اللي ليه رأس بيرجع kind='group' ومعاه parts، والسؤال العادي بيرجع
+// لوحده. الأب مالوش خانة إجابة ولا درجة — هو عنوان للفروع
 async function loadQuestionsForStudent(quizId) {
   const { rows } = await pool.query(
-    `SELECT id, kind, text, points, options FROM quiz_questions
-     WHERE quiz_id = $1 ORDER BY position, id`, [quizId]);
-  return rows.map((row) => ({
-    id: row.id, kind: row.kind, text: row.text, points: Number(row.points),
-    options: row.kind === 'mcq' ? (row.options || []) : [],
-  }));
+    `SELECT q.id, q.parent_id, q.label, q.kind, q.text, q.points, q.options, q.image_path
+     FROM quiz_questions q
+     LEFT JOIN quiz_questions p ON p.id = q.parent_id
+     WHERE q.quiz_id = $1
+     ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
+    [quizId]);
+
+  const shape = (row) => ({
+    id: row.id,
+    kind: row.kind,
+    label: row.label || null,
+    text: row.text,
+    image: row.image_path || null,
+    points: Number(row.points),
+    // الاختيار بقى {text, image}. الصف القديم النص بيتحوّل هنا عشان الواجهة تشوف شكل واحد
+    options: row.kind === 'mcq'
+      ? (row.options || []).map((option) => (typeof option === 'string'
+        ? { text: option, image: null }
+        : { text: String(option?.text || ''), image: option?.image || null }))
+      : [],
+  });
+
+  const parents = [];
+  const byId = new Map();
+  for (const row of rows) {
+    const question = shape(row);
+    if (row.parent_id) {
+      const parent = byId.get(row.parent_id);
+      if (parent) parent.parts.push(question);
+      continue;
+    }
+    question.parts = [];
+    byId.set(row.id, question);
+    parents.push(question);
+  }
+  return parents;
 }
 
 async function renderQuiz(req, res) {

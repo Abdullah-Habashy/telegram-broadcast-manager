@@ -53,9 +53,7 @@ async function getQuiz(req, res) {
   const quiz = quizResult.rows[0];
   if (!quiz) return res.status(404).json({ error: 'الاختبار مش موجود' });
 
-  const questions = await pool.query(
-    `SELECT id, position, kind, text, points, options, correct_option, reference_answer, grading_notes
-     FROM quiz_questions WHERE quiz_id = $1 ORDER BY position, id`, [quizId]);
+  const questions = await pool.query(QUESTIONS_SQL, [quizId]);
   const attemptCount = await pool.query(
     'SELECT COUNT(*)::int AS count FROM quiz_attempts WHERE quiz_id = $1', [quizId]);
 
@@ -64,11 +62,75 @@ async function getQuiz(req, res) {
     url: quizUrl(req, quiz),
     // الواجهة بتقفل زرار حذف السؤال لما يبقى فيه محاولات — الحذف بيمسح إجابات طلاب معاه
     attempt_count: attemptCount.rows[0].count,
-    questions: questions.rows.map((row) => ({ ...row, points: Number(row.points) })),
+    questions: buildQuestionTree(questions.rows),
   });
 }
 
 const SLUG_HELP = 'الرابط المختصر يبقى إنجليزي وأرقام وشرطة بس، من حرفين لأربعين — زي bio-1 أو olom5';
+
+// ---------- صور الأسئلة ----------
+// بترجع المسار العام بس. الصورة بتتخزّن على القرص زي صور الإرسال الجماعي — مفيش Object
+// Storage في المشروع، وده مقيّد معروف مش قرار جديد
+async function uploadQuestionImage(req, res) {
+  if (!req.file) return res.status(400).json({ error: 'مفيش صورة مرفوعة' });
+  res.json({ path: `/uploads/${req.file.filename}` });
+}
+
+// الاختيار بقى كائن {text, image} بدل نص. بنقبل الشكلين وقت القراءة عشان أي صف قديم
+// أو أي طلب من واجهة مش متحدّثة يفضل شغّال
+function normalizeOptions(raw) {
+  return (Array.isArray(raw) ? raw : []).map((option) => (
+    typeof option === 'string'
+      ? { text: option.trim(), image: null }
+      : { text: String(option?.text || '').trim(), image: option?.image || null }));
+}
+
+// الاختيار موجود لو فيه نص أو صورة — مش لازم الاتنين
+function optionIsFilled(option) {
+  return Boolean(option.text || option.image);
+}
+
+// نفس القاعدة للسؤال: نص أو صورة يكفي. سؤال صورة بس حالة حقيقية (رسم بياني، معادلة).
+// الواجهة بتبعت الحقل باسم image والصف في القاعدة اسمه image_path — الاتنين مقبولين هنا
+// عشان نفس الدالة تشتغل على المدخل الجاي من المتصفح وعلى الصف المقروء من القاعدة
+function questionIsFilled(question) {
+  return Boolean(String(question?.text || '').trim() || question?.image || question?.image_path);
+}
+
+// الترتيب: الأب بمكانه، وبعده أبناؤه على طول. COALESCE بتخلي السؤال العادي (اللي مالوش
+// أب) يترتب بمكانه هو، والشرط التاني بيحط الأب قبل أبنائه
+const QUESTIONS_SQL = `
+  SELECT q.id, q.parent_id, q.label, q.position, q.kind, q.text, q.points, q.options,
+         q.correct_option, q.reference_answer, q.grading_notes, q.image_path
+  FROM quiz_questions q
+  LEFT JOIN quiz_questions p ON p.id = q.parent_id
+  WHERE q.quiz_id = $1
+  ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`;
+
+// بتحوّل الصفوف المسطّحة لشجرة: كل أب ومعاه parts. السؤال العادي بيفضل من غير parts
+function buildQuestionTree(rows) {
+  const parents = [];
+  const byId = new Map();
+  for (const row of rows) {
+    const question = {
+      ...row,
+      points: Number(row.points),
+      options: normalizeOptions(row.options),
+      image: row.image_path || null,
+    };
+    delete question.image_path;
+    if (row.parent_id) {
+      const parent = byId.get(row.parent_id);
+      if (parent) parent.parts.push(question);
+      continue;
+    }
+    question.parts = [];
+    byId.set(row.id, question);
+    parents.push(question);
+  }
+  // الأب اللي فروعه اتمسحت كلها بيرجع سؤال عادي — مش هيكل فاضي في الواجهة
+  return parents;
+}
 
 async function createQuiz(req, res) {
   const title = String(req.body?.title || '').trim();
@@ -152,35 +214,115 @@ async function deleteQuiz(req, res) {
 
 // ---------- الأسئلة ----------
 // بتتبعت كلها مرة واحدة (الشكل الطبيعي لمحرر أسئلة). السؤال اللي ليه id بيتحدّث، واللي
-// من غير id بيتضاف، واللي اختفى من القايمة بيتمسح — **إلا لو فيه محاولات**
+// من غير id بيتضاف، واللي اختفى من القايمة بيتمسح — **إلا لو فيه محاولات**.
+//
+// الشكل شجرة: السؤال ممكن يكون عادي، أو أب (kind='group') وتحته parts. الأب بيتكتب
+// الأول عشان الأبناء ياخدوا الـ id بتاعه
+
+// **الحروف مكتوبة صراحةً مش محسوبة من يونيكود.** الحساب بإزاحة رقمية بيطلّع "أ ؤ إ ئ" —
+// الأبجدية العربية مش متسلسلة في يونيكود زي اللاتينية
+const PART_LABELS = ['أ', 'ب', 'ج', 'د', 'هـ', 'و', 'ز', 'ح', 'ط', 'ي'];
+
+function defaultPartLabel(index) {
+  return PART_LABELS[index] || String(index + 1);
+}
+
+// بترجع رسالة الخطأ الأولى، أو null لو كله سليم. الرقم في الرسالة زي ما الموظف شايفه
+// في المحرر (١، ٢، ٣...) والفرع بحرفه — عشان يلاقيه على طول
+function validateQuestion(question, label) {
+  if (!questionIsFilled(question)) return `${label} من غير نص ولا صورة`;
+
+  if (question.kind === 'group') {
+    const parts = Array.isArray(question.parts) ? question.parts : [];
+    if (!parts.length) return `${label} فيه رأس من غير أي فرع — ضيف فرع أو خلّيه سؤال عادي`;
+    for (const [index, part] of parts.entries()) {
+      const partLabel = `${label} — الفرع ${part.label || defaultPartLabel(index)}`;
+      if (part.kind === 'group') return `${partLabel} مينفعش يكون رأس جوه رأس`;
+      const error = validateQuestion(part, partLabel);
+      if (error) return error;
+    }
+    return null;
+  }
+
+  if (question.kind === 'mcq') {
+    const options = normalizeOptions(question.options).filter(optionIsFilled);
+    if (options.length < 2) return `${label} محتاج اختيارين على الأقل`;
+    if (!Number.isInteger(Number(question.correct_option)) || Number(question.correct_option) >= options.length) {
+      return `حدّد الإجابة الصح لـ${label}`;
+    }
+    return null;
+  }
+
+  if (question.kind === 'essay') {
+    // **الإجابة المرجعية شرط.** من غيرها التصحيح الآلي مالوش معيار يقارن بيه، والسؤال
+    // كان هيتحسب غلط لكل الطلاب من غير أي إشارة إن العيب في السؤال مش في الإجابات
+    if (!String(question.reference_answer || '').trim()) {
+      return `${label} مقالي ومحتاج إجابة مرجعية — التصحيح الآلي بيقارن بيها`;
+    }
+    return null;
+  }
+
+  return `نوع ${label} غير معروف`;
+}
+
+// بتفرد الشجرة لصفوف زي ما هتتخزّن. الأب نقطة تنظيم مش سؤال يتجاوب: درجته صفر دايمًا
+// عشان مجموع الدرجات يفضل صح، والدرجة الحقيقية على الفروع
+function flattenQuestions(tree) {
+  const rows = [];
+  tree.forEach((question, position) => {
+    rows.push({
+      id: Number(question.id) || null,
+      parentIndex: null,
+      selfIndex: rows.length,
+      position,
+      label: null,
+      kind: question.kind,
+      text: String(question.text || '').trim(),
+      points: question.kind === 'group' ? 0 : (Number(question.points) > 0 ? Number(question.points) : 1),
+      options: question.kind === 'mcq' ? normalizeOptions(question.options).filter(optionIsFilled) : [],
+      correct_option: question.kind === 'mcq' ? Number(question.correct_option) : null,
+      reference_answer: question.kind === 'essay' ? String(question.reference_answer || '').trim() : null,
+      grading_notes: question.kind === 'essay' ? (String(question.grading_notes || '').trim() || null) : null,
+      image_path: question.image || null,
+    });
+    const parentIndex = rows.length - 1;
+    if (question.kind !== 'group') return;
+    (question.parts || []).forEach((part, partPosition) => {
+      rows.push({
+        id: Number(part.id) || null,
+        parentIndex,
+        selfIndex: rows.length,
+        position: partPosition,
+        // الحرف الافتراضي أ ب ج د لو الموظف ساب الخانة فاضية
+        label: String(part.label || '').trim() || defaultPartLabel(partPosition),
+        kind: part.kind,
+        text: String(part.text || '').trim(),
+        points: Number(part.points) > 0 ? Number(part.points) : 1,
+        options: part.kind === 'mcq' ? normalizeOptions(part.options).filter(optionIsFilled) : [],
+        correct_option: part.kind === 'mcq' ? Number(part.correct_option) : null,
+        reference_answer: part.kind === 'essay' ? String(part.reference_answer || '').trim() : null,
+        grading_notes: part.kind === 'essay' ? (String(part.grading_notes || '').trim() || null) : null,
+        image_path: part.image || null,
+      });
+    });
+  });
+  return rows;
+}
+
 async function saveQuestions(req, res) {
   const quizId = Number(req.params.id);
   const incoming = Array.isArray(req.body?.questions) ? req.body.questions : null;
   if (!incoming) return res.status(400).json({ error: 'الأسئلة مطلوبة' });
 
   for (const [index, question] of incoming.entries()) {
-    const text = String(question?.text || '').trim();
-    if (!text) return res.status(400).json({ error: `السؤال رقم ${index + 1} من غير نص` });
-    if (question.kind === 'mcq') {
-      const options = (question.options || []).map((option) => String(option || '').trim()).filter(Boolean);
-      if (options.length < 2) return res.status(400).json({ error: `السؤال رقم ${index + 1} محتاج اختيارين على الأقل` });
-      if (!Number.isInteger(Number(question.correct_option)) || Number(question.correct_option) >= options.length) {
-        return res.status(400).json({ error: `حدّد الإجابة الصح للسؤال رقم ${index + 1}` });
-      }
-    } else if (question.kind === 'essay') {
-      // **الإجابة المرجعية شرط.** من غيرها التصحيح الآلي مالوش معيار يقارن بيه، والسؤال
-      // كان هيتحسب غلط لكل الطلاب من غير أي إشارة إن العيب في السؤال مش في الإجابات
-      if (!String(question.reference_answer || '').trim()) {
-        return res.status(400).json({ error: `السؤال المقالي رقم ${index + 1} محتاج إجابة مرجعية — التصحيح الآلي بيقارن بيها` });
-      }
-    } else {
-      return res.status(400).json({ error: `نوع السؤال رقم ${index + 1} غير معروف` });
-    }
+    const error = validateQuestion(question, `السؤال رقم ${index + 1}`);
+    if (error) return res.status(400).json({ error });
   }
 
+  const rows = flattenQuestions(incoming);
   const existing = await pool.query('SELECT id FROM quiz_questions WHERE quiz_id = $1', [quizId]);
   const existingIds = new Set(existing.rows.map((row) => row.id));
-  const keptIds = new Set(incoming.map((question) => Number(question.id)).filter((id) => existingIds.has(id)));
+  const keptIds = new Set(rows.map((row) => row.id).filter((id) => existingIds.has(id)));
   const removedIds = [...existingIds].filter((id) => !keptIds.has(id));
 
   if (removedIds.length) {
@@ -197,25 +339,30 @@ async function saveQuestions(req, res) {
     if (removedIds.length) {
       await client.query('DELETE FROM quiz_questions WHERE quiz_id = $1 AND id = ANY($2::int[])', [quizId, removedIds]);
     }
-    for (const [index, question] of incoming.entries()) {
-      const isMcq = question.kind === 'mcq';
-      const options = isMcq ? (question.options || []).map((option) => String(option || '').trim()).filter(Boolean) : [];
-      const points = Number(question.points) > 0 ? Number(question.points) : 1;
+
+    // الأب لازم يتكتب قبل ابنه عشان الابن ياخد الـ id بتاعه. flattenQuestions بترجّعهم
+    // بالترتيب ده أصلًا، وdbIds بتربط رقم الصف في المصفوفة بالـ id الحقيقي بعد الكتابة
+    const dbIds = [];
+    for (const row of rows) {
+      const parentId = row.parentIndex === null ? null : dbIds[row.parentIndex];
       const params = [
-        quizId, index, question.kind, String(question.text).trim(), points,
-        JSON.stringify(options), isMcq ? Number(question.correct_option) : null,
-        isMcq ? null : String(question.reference_answer || '').trim(),
-        isMcq ? null : (String(question.grading_notes || '').trim() || null),
+        quizId, parentId, row.label, row.position, row.kind, row.text, row.points,
+        JSON.stringify(row.options), row.correct_option, row.reference_answer,
+        row.grading_notes, row.image_path,
       ];
-      if (keptIds.has(Number(question.id))) {
+      if (keptIds.has(row.id)) {
         await client.query(
-          `UPDATE quiz_questions SET quiz_id = $1, position = $2, kind = $3, text = $4, points = $5,
-                  options = $6::jsonb, correct_option = $7, reference_answer = $8, grading_notes = $9
-           WHERE id = $10`, [...params, Number(question.id)]);
+          `UPDATE quiz_questions SET quiz_id = $1, parent_id = $2, label = $3, position = $4,
+                  kind = $5, text = $6, points = $7, options = $8::jsonb, correct_option = $9,
+                  reference_answer = $10, grading_notes = $11, image_path = $12
+           WHERE id = $13`, [...params, row.id]);
+        dbIds.push(row.id);
       } else {
-        await client.query(
-          `INSERT INTO quiz_questions (quiz_id, position, kind, text, points, options, correct_option, reference_answer, grading_notes)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)`, params);
+        const inserted = await client.query(
+          `INSERT INTO quiz_questions (quiz_id, parent_id, label, position, kind, text, points,
+                                       options, correct_option, reference_answer, grading_notes, image_path)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12) RETURNING id`, params);
+        dbIds.push(inserted.rows[0].id);
       }
     }
     await client.query('UPDATE quizzes SET updated_at = NOW() WHERE id = $1', [quizId]);
@@ -334,15 +481,20 @@ async function getAttempt(req, res) {
   if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
 
   const { rows } = await pool.query(
-    `SELECT q.id AS question_id, q.position, q.kind, q.text, q.points, q.options,
-            q.correct_option, q.reference_answer,
+    // الأب بيرجع في النتيجة زي أي سؤال — الموظف محتاج يقرا رأس السؤال قبل الفروع عشان
+    // يحكم على إجابتها. مالوش صف في quiz_answers فحقوله بتبقى NULL وده متوقع
+    `SELECT q.id AS question_id, q.parent_id, q.label, q.position, q.kind, q.text, q.points,
+            q.options, q.correct_option, q.reference_answer, q.image_path,
             an.id AS answer_id, an.selected_option, an.essay_text, an.awarded_points,
             an.is_correct, an.ai_verdict, an.ai_reason, an.ai_provider, an.graded_by,
             u.name AS graded_by_name
      FROM quiz_questions q
+     LEFT JOIN quiz_questions p ON p.id = q.parent_id
      LEFT JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
      LEFT JOIN users u ON u.id = an.graded_by_user
-     WHERE q.quiz_id = $2 ORDER BY q.position, q.id`, [attemptId, attempt.quiz_id]);
+     WHERE q.quiz_id = $2
+     ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
+    [attemptId, attempt.quiz_id]);
 
   res.json({
     attempt: {
@@ -353,6 +505,9 @@ async function getAttempt(req, res) {
     answers: rows.map((row) => ({
       ...row,
       points: Number(row.points),
+      options: normalizeOptions(row.options),
+      image: row.image_path || null,
+      is_part: row.parent_id !== null,
       awarded_points: row.awarded_points === null ? null : Number(row.awarded_points),
     })),
   });
@@ -415,5 +570,5 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
-  getGradingProviders, setGradingProvider,
+  getGradingProviders, setGradingProvider, uploadQuestionImage,
 };

@@ -157,6 +157,36 @@
     }
 
     // ---------- الأسئلة ----------
+    // السؤال ممكن يكون صورة من غير نص (رسم بياني، معادلة) — فالصورة عنصر مستقل مش زينة
+    function questionImage(question) {
+      if (!question.image) return '';
+      return '<img class="qz-q-image" src="' + esc(question.image) + '" alt="" loading="lazy" />';
+    }
+
+    // الاختيار ممكن يكون نص أو صورة أو الاتنين
+    function answerField(question) {
+      if (question.kind !== 'mcq') {
+        return '<textarea class="qz-textarea" data-q="' + question.id + '" placeholder="اكتب إجابتك هنا..."></textarea>';
+      }
+      return question.options.map(function (option, optionIndex) {
+        return '<label class="qz-option" data-q="' + question.id + '">'
+          + '<input type="radio" name="q' + question.id + '" value="' + optionIndex + '" />'
+          + '<span>' + (option.text ? esc(option.text) : '')
+          + (option.image ? '<img class="qz-option-image" src="' + esc(option.image) + '" alt="" loading="lazy" />' : '')
+          + '</span></label>';
+      }).join('');
+    }
+
+    // بتفرد الشجرة: الأب مالوش إجابة، فاللي بيتجمع وبيترجع هو الفروع والأسئلة العادية بس
+    function answerableQuestions() {
+      var flat = [];
+      state.questions.forEach(function (question) {
+        if (question.kind === 'group') flat = flat.concat(question.parts || []);
+        else flat.push(question);
+      });
+      return flat;
+    }
+
     function startExam(data) {
       state.key = data.attempt_key;
       state.questions = data.questions || [];
@@ -166,19 +196,29 @@
       el('qz-exam').style.display = '';
 
       el('qz-questions').innerHTML = state.questions.map(function (question, index) {
-        var body = question.kind === 'mcq'
-          ? question.options.map(function (option, optionIndex) {
-              return '<label class="qz-option" data-q="' + question.id + '">'
-                + '<input type="radio" name="q' + question.id + '" value="' + optionIndex + '" />'
-                + '<span>' + esc(option) + '</span></label>';
-            }).join('')
-          : '<textarea class="qz-textarea" data-q="' + question.id + '" placeholder="اكتب إجابتك هنا..."></textarea>';
+        var header = '<div class="qz-q-head">'
+          + '<span class="qz-q-num">سؤال ' + (index + 1) + ' من ' + state.questions.length + '</span>'
+          + (question.kind === 'group' ? '' : '<span class="qz-q-points">' + question.points + ' درجة</span>')
+          + '</div>'
+          + (question.text ? '<div class="qz-q-text">' + esc(question.text) + '</div>' : '')
+          + questionImage(question);
 
-        return '<div class="qz-card">'
-          + '<div class="qz-q-head"><span class="qz-q-num">سؤال ' + (index + 1) + ' من ' + state.questions.length + '</span>'
-          + '<span class="qz-q-points">' + question.points + ' درجة</span></div>'
-          + '<div class="qz-q-text">' + esc(question.text) + '</div>'
-          + body + '</div>';
+        // رأس وتحته فروع: الرأس عنوان من غير خانة إجابة، وكل فرع جواه خانته ودرجته
+        if (question.kind === 'group') {
+          return '<div class="qz-card">' + header
+            + question.parts.map(function (part) {
+              return '<div class="qz-part">'
+                + '<div class="qz-part-head">'
+                + '<span class="qz-part-label">' + esc(part.label || '') + '</span>'
+                + '<span class="qz-q-points">' + part.points + ' درجة</span></div>'
+                + (part.text ? '<div class="qz-part-text">' + esc(part.text) + '</div>' : '')
+                + questionImage(part)
+                + answerField(part)
+                + '</div>';
+            }).join('')
+            + '</div>';
+        }
+        return '<div class="qz-card">' + header + answerField(question) + '</div>';
       }).join('');
 
       restoreSaved(data.saved || {});
@@ -223,7 +263,7 @@
     }
 
     function collectAnswers() {
-      return state.questions.map(function (question) {
+      return answerableQuestions().map(function (question) {
         if (question.kind === 'mcq') {
           var picked = document.querySelector('input[name="q' + question.id + '"]:checked');
           return { question_id: question.id, selected_option: picked ? Number(picked.value) : null };
@@ -269,6 +309,7 @@
       var unanswered = collectAnswers().filter(function (answer) {
         return answer.selected_option === null && !String(answer.essay_text || '').trim();
       }).length;
+      // العدد بيتقال بالفروع مش بالرؤوس — الطالب بيشوف "فيه ٣ من غير إجابة" ويلاقيهم فعلًا
       if (unanswered && !window.confirm('فيه ' + unanswered + ' سؤال من غير إجابة. تسلّم برضه؟')) return;
       submit(false);
     });

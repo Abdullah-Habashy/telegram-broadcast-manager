@@ -1005,6 +1005,31 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_questions_quiz ON quiz_questions (quiz_id, position, id);
 
+-- ---------- رأس السؤال وفروعه ----------
+-- السؤال اللي ليه رأس وتحته أ/ب/ج/د بيتخزّن كصف أب (kind='group') وتحته صفوف أبناء.
+-- **الفرع صف كامل مش حقل جوه JSON** عن قصد: كل فرع ليه درجته وإجابته المرجعية وبيتصحّح
+-- لوحده، وquiz_answers أصلًا مربوط بـquestion_id — فالفروع بتشتغل في التصحيح والدرجات
+-- والمراجعة من غير سطر كود جديد في أي منهم.
+-- السؤال المقالي العادي (رأس بس من غير فروع) بيفضل صف واحد زي ما هو.
+ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES quiz_questions(id) ON DELETE CASCADE;
+-- حرف الفرع زي ما الطالب بيشوفه. نص مش رقم عشان المدرّس يكتب أ أو 1 أو a زي ما يحب
+ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS label VARCHAR(20);
+-- صورة السؤال (رسم بياني، معادلة، شكل). ممكن السؤال يبقى صورة من غير أي نص
+ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS image_path VARCHAR(255);
+CREATE INDEX IF NOT EXISTS idx_quiz_questions_parent ON quiz_questions (parent_id, position)
+    WHERE parent_id IS NOT NULL;
+
+-- **الاختيارات بقت كائنات مش نصوص**: ["القاهرة"] بقت [{"text":"القاهرة","image":null}]
+-- عشان الاختيار يقدر يكون صورة. التحويل مرة واحدة، والشرط بيمنع تكراره
+UPDATE quiz_questions
+SET options = (
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('text', value #>> '{}', 'image', NULL)), '[]'::jsonb)
+  FROM jsonb_array_elements(options)
+)
+WHERE kind = 'mcq'
+  AND jsonb_array_length(options) > 0
+  AND jsonb_typeof(options -> 0) = 'string';
+
 -- محاولة واحدة لكل طالب. الهوية = آخر ١٠ أرقام من التليفون (نفس تطبيع bot/handlers/studentReport.js)
 -- + معرّف الطالب على طفرة لما يتلاقي. الطالب اللي رقمه مش على المنصة بيدخل برضه ويتسجّل
 -- tafra_student_id = NULL — منعه من الامتحان أسوأ بكتير من صف محتاج ربط يدوي بعدين

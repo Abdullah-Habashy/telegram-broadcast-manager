@@ -717,6 +717,7 @@
               <div class="row" style="gap:8px">
                 <button type="button" class="btn btn-ghost btn-sm" id="add-mcq-btn" style="width:auto">+ سؤال اختياري</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="add-essay-btn" style="width:auto">+ سؤال مقالي</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="add-group-btn" style="width:auto">+ سؤال برأس وفروع</button>
               </div>
             </div>
             <div id="quiz-questions-editor"><div class="empty-state">ضيف أول سؤال</div></div>
@@ -8538,16 +8539,20 @@ ${reply.content}` : reply.content;
         const quiz = await api(`/api/quizzes/${id}`);
         editingQuizId = quiz.id;
         quizEditorHasAttempts = quiz.attempt_count > 0;
-        quizEditorQuestions = quiz.questions.map((question) => ({
+        const shape = (question) => ({
           id: question.id,
           kind: question.kind,
-          text: question.text,
+          label: question.label || '',
+          text: question.text || '',
+          image: question.image || null,
           points: Number(question.points),
           options: question.kind === 'mcq' ? (question.options || []) : [],
           correct_option: question.correct_option,
           reference_answer: question.reference_answer || '',
           grading_notes: question.grading_notes || '',
-        }));
+          parts: (question.parts || []).map((part) => shape(part)),
+        });
+        quizEditorQuestions = quiz.questions.map(shape);
         document.getElementById('quiz-editor-title').textContent = `تعديل: ${quiz.title}`;
         document.getElementById('quiz-title').value = quiz.title;
         document.getElementById('quiz-slug').value = quiz.slug || '';
@@ -8566,6 +8571,39 @@ ${reply.content}` : reply.content;
       }
     }
 
+    // ---------- محرر الأسئلة ----------
+    //
+    // الشجرة: السؤال إما عادي (مقالي/اختياري) أو أب (kind='group') وتحته parts. الفرع
+    // نفسه سؤال كامل — نفس الحقول ونفس الرسم — عشان مايبقاش عندنا كودين لنفس الحاجة.
+    //
+    // **الـ DOM هو مصدر الحقيقة أثناء الكتابة**، وreadQuizEditor بتقراه للمتغيّر قبل أي
+    // إعادة رسم. إعادة الرسم مع كل حرف كانت بتضيّع مكان المؤشر جوه الإجابة المرجعية.
+    const PART_LABELS = ['أ', 'ب', 'ج', 'د', 'هـ', 'و', 'ز', 'ح', 'ط', 'ي'];
+
+    function blankQuestion(kind) {
+      return {
+        kind,
+        text: '',
+        image: null,
+        points: kind === 'group' ? 0 : 1,
+        options: kind === 'mcq' ? [{ text: '', image: null }, { text: '', image: null }] : [],
+        correct_option: kind === 'mcq' ? 0 : null,
+        reference_answer: '',
+        grading_notes: '',
+        label: '',
+        parts: kind === 'group' ? [blankQuestion('essay')] : [],
+      };
+    }
+
+    // مسار العنصر في الشجرة: "3" لسؤال، و"3.1" للفرع التاني جواه. بيتحط في data-path
+    // وبيترجع منه، فمفيش مصفوفتين متوازيتين ممكن يفترقوا
+    function questionAt(path) {
+      const [index, partIndex] = String(path).split('.').map(Number);
+      const question = quizEditorQuestions[index];
+      if (!question) return null;
+      return Number.isInteger(partIndex) ? question.parts[partIndex] : question;
+    }
+
     function renderQuizQuestions() {
       const box = document.getElementById('quiz-questions-editor');
       if (!quizEditorQuestions.length) {
@@ -8573,71 +8611,177 @@ ${reply.content}` : reply.content;
         return;
       }
       box.innerHTML = quizEditorQuestions.map((question, index) => {
-        const isMcq = question.kind === 'mcq';
-        const options = question.options.length ? question.options : ['', ''];
-        const body = isMcq
-          ? `<div class="quiz-options">${options.map((option, optionIndex) => `
-              <label class="row" style="gap:8px; align-items:center; margin-bottom:6px">
-                <input type="radio" name="quiz-correct-${index}" value="${optionIndex}" ${Number(question.correct_option) === optionIndex ? 'checked' : ''} title="الإجابة الصح" />
-                <input type="text" class="compact-input quiz-option-text" style="flex:1" value="${escapeHtml(option)}" placeholder="اختيار ${optionIndex + 1}" />
-                <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="removeQuizOption(${index}, ${optionIndex})">×</button>
-              </label>`).join('')}
-              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="addQuizOption(${index})">+ اختيار</button>
-            </div>`
-          : `<div class="field"><label>الإجابة المرجعية <span class="card-desc">(المعيار اللي الذكاء الصناعي بيقارن بيه — اكتبها كاملة بالمعنى المطلوب)</span></label>
-               <textarea class="quiz-reference" rows="3">${escapeHtml(question.reference_answer)}</textarea></div>
-             <div class="field"><label>تعليمات إضافية للتصحيح (اختياري)</label>
-               <input type="text" class="compact-input quiz-notes" style="width:100%" value="${escapeHtml(question.grading_notes)}" placeholder="مثال: لازم يذكر القانون بالاسم" /></div>`;
+        const isGroup = question.kind === 'group';
+        const title = isGroup ? 'سؤال برأس وفروع'
+          : question.kind === 'mcq' ? 'اختيار من متعدد'
+          : 'مقالي — بيتصحّح بالذكاء الصناعي';
+
+        const parts = isGroup ? `
+          <div style="margin-top:14px; padding-inline-start:14px; border-inline-start:3px solid var(--primary)">
+            ${question.parts.map((part, partIndex) => renderQuestionFields(part, `${index}.${partIndex}`, partIndex)).join('')}
+            <div class="row" style="gap:8px; margin-top:10px">
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="addQuizPart(${index}, 'essay')">+ فرع مقالي</button>
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="addQuizPart(${index}, 'mcq')">+ فرع اختياري</button>
+            </div>
+          </div>` : '';
 
         return `
-          <div class="card quiz-question" data-index="${index}" data-kind="${question.kind}" style="background:var(--surface-sunken); margin-bottom:12px">
+          <div class="card quiz-question" data-path="${index}" style="background:var(--surface-sunken); margin-bottom:12px">
             <div class="row-between" style="margin-bottom:10px; gap:8px; flex-wrap:wrap">
-              <b>${index + 1}. ${isMcq ? 'اختيار من متعدد' : 'مقالي — بيتصحّح بالذكاء الصناعي'}</b>
+              <b>${index + 1}. ${title}</b>
               <div class="row" style="gap:6px">
                 <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizQuestion(${index}, -1)" ${index === 0 ? 'disabled' : ''}>↑</button>
                 <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizQuestion(${index}, 1)" ${index === quizEditorQuestions.length - 1 ? 'disabled' : ''}>↓</button>
                 ${quizEditorHasAttempts ? '' : `<button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="removeQuizQuestion(${index})">حذف</button>`}
               </div>
             </div>
-            <div class="field"><label>نص السؤال</label><textarea class="quiz-question-text" rows="2">${escapeHtml(question.text)}</textarea></div>
-            <div class="field" style="max-width:150px"><label>الدرجة</label>
-              <input type="number" class="compact-input quiz-points" min="0.5" step="0.5" value="${question.points}" /></div>
-            ${body}
+            ${renderQuestionFields(question, String(index), null)}
+            ${parts}
           </div>`;
       }).join('');
     }
 
-    // بتقري المحرر من الـ DOM جوه المتغير قبل أي إعادة رسم — من غيرها أي إضافة سؤال كانت
-    // بتمسح اللي الموظف كتبه في الأسئلة اللي فوقه
+    // نفس الدالة بترسم السؤال والفرع — الفرق بس إن الفرع بياخد خانة حرف ورأس أصغر
+    function renderQuestionFields(question, path, partIndex) {
+      const isPart = partIndex !== null;
+      const isGroup = question.kind === 'group';
+      const label = isPart ? (question.label || PART_LABELS[partIndex] || String(partIndex + 1)) : '';
+
+      const partHeader = isPart ? `
+        <div class="row-between" style="gap:8px; margin-bottom:8px; flex-wrap:wrap">
+          <div class="row" style="gap:8px; align-items:center">
+            <input type="text" class="compact-input quiz-label" style="width:64px; text-align:center"
+                   value="${escapeHtml(question.label || '')}" placeholder="${escapeHtml(label)}" title="حرف الفرع" />
+            <span class="card-desc">${question.kind === 'mcq' ? 'فرع اختياري' : 'فرع مقالي'}</span>
+          </div>
+          <div class="row" style="gap:6px">
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizPart('${path}', -1)">↑</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizPart('${path}', 1)">↓</button>
+            ${quizEditorHasAttempts ? '' : `<button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="removeQuizPart('${path}')">حذف الفرع</button>`}
+          </div>
+        </div>` : '';
+
+      const points = isGroup ? '' : `
+        <div class="field" style="max-width:150px"><label>الدرجة</label>
+          <input type="number" class="compact-input quiz-points" min="0.5" step="0.5" value="${question.points}" /></div>`;
+
+      const body = question.kind === 'mcq' ? renderOptions(question, path)
+        : question.kind === 'essay' ? `
+          <div class="field"><label>الإجابة المرجعية <span class="card-desc">(المعيار اللي الذكاء الصناعي بيقارن بيه)</span></label>
+            <textarea class="quiz-reference" rows="3">${escapeHtml(question.reference_answer)}</textarea></div>
+          <div class="field"><label>تعليمات إضافية للتصحيح (اختياري)</label>
+            <input type="text" class="compact-input quiz-notes" style="width:100%" value="${escapeHtml(question.grading_notes)}" placeholder="مثال: لازم يذكر القانون بالاسم" /></div>`
+        : '';
+
+      return `
+        <div class="quiz-fields${isPart ? ' quiz-part' : ''}" data-path="${path}" ${isPart ? 'style="margin-bottom:16px"' : ''}>
+          ${partHeader}
+          <div class="field"><label>${isGroup ? 'رأس السؤال' : 'نص السؤال'}
+            <span class="card-desc">${isGroup ? 'الكلام المشترك اللي فوق الفروع' : 'تقدر تسيبه فاضي لو السؤال صورة'}</span></label>
+            <textarea class="quiz-question-text" rows="2">${escapeHtml(question.text)}</textarea></div>
+          ${renderImageField(question, path)}
+          ${points}
+          ${body}
+        </div>`;
+    }
+
+    // الصورة بتترفع فورًا وبيترجع مسارها — مافيش رفع مؤجل مع الحفظ، عشان الموظف يشوفها
+    // قبل ما يكمّل ويتأكد إنها الصورة الصح
+    function renderImageField(question, path) {
+      return `
+        <div class="field">
+          <label>صورة (اختياري)</label>
+          <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap">
+            <label class="btn btn-ghost btn-sm" style="width:auto; cursor:pointer">
+              ${question.image ? 'تغيير الصورة' : 'رفع صورة'}
+              <input type="file" accept="image/jpeg,image/png" style="display:none"
+                     onchange="uploadQuizImage(event, '${path}')" />
+            </label>
+            ${question.image ? `<button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="clearQuizImage('${path}')">إزالة</button>` : ''}
+          </div>
+          ${question.image ? `<img src="${escapeHtml(question.image)}" alt="" style="max-width:100%; max-height:220px; margin-top:8px; border-radius:8px; border:1px solid var(--border)" />` : ''}
+        </div>`;
+    }
+
+    function renderOptions(question, path) {
+      const options = question.options.length ? question.options : [{ text: '', image: null }, { text: '', image: null }];
+      return `
+        <div class="quiz-options">${options.map((option, optionIndex) => `
+          <div class="row" style="gap:8px; align-items:flex-start; margin-bottom:8px">
+            <input type="radio" name="quiz-correct-${path.replace('.', '-')}" value="${optionIndex}"
+                   ${Number(question.correct_option) === optionIndex ? 'checked' : ''} title="الإجابة الصح" style="margin-top:10px" />
+            <div style="flex:1">
+              <input type="text" class="compact-input quiz-option-text" style="width:100%"
+                     value="${escapeHtml(option.text)}" placeholder="اختيار ${optionIndex + 1} — أو سيبه فاضي واكتفِ بالصورة" />
+              <div class="row" style="gap:8px; align-items:center; margin-top:6px">
+                <label class="btn btn-ghost btn-sm" style="width:auto; cursor:pointer; font-size:12px">
+                  ${option.image ? 'تغيير صورة الاختيار' : '🖼️ صورة للاختيار'}
+                  <input type="file" accept="image/jpeg,image/png" style="display:none"
+                         onchange="uploadQuizImage(event, '${path}', ${optionIndex})" />
+                </label>
+                ${option.image ? `<button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto; font-size:12px" onclick="clearQuizImage('${path}', ${optionIndex})">إزالة</button>` : ''}
+              </div>
+              ${option.image ? `<img src="${escapeHtml(option.image)}" alt="" style="max-width:220px; max-height:140px; margin-top:6px; border-radius:6px; border:1px solid var(--border)" />` : ''}
+            </div>
+            <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto; margin-top:4px" onclick="removeQuizOption('${path}', ${optionIndex})">×</button>
+          </div>`).join('')}
+          <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="addQuizOption('${path}')">+ اختيار</button>
+        </div>`;
+    }
+
+    // بتقري كل حقول المحرر من الـ DOM جوه quizEditorQuestions. بتلف على .quiz-fields
+    // (السؤال والفرع بيستخدموا نفس الكلاس) وبتوصل للكائن الصح من data-path
     function readQuizEditor() {
-      document.querySelectorAll('#quiz-questions-editor .quiz-question').forEach((card) => {
-        const index = Number(card.dataset.index);
-        const question = quizEditorQuestions[index];
+      document.querySelectorAll('#quiz-questions-editor .quiz-fields').forEach((node) => {
+        const question = questionAt(node.dataset.path);
         if (!question) return;
-        question.text = card.querySelector('.quiz-question-text').value;
-        question.points = Number(card.querySelector('.quiz-points').value) || 1;
+        question.text = node.querySelector(':scope > .field > .quiz-question-text').value;
+        const labelInput = node.querySelector(':scope > .row-between .quiz-label');
+        if (labelInput) question.label = labelInput.value.trim();
+        const pointsInput = node.querySelector(':scope > .field > .quiz-points');
+        if (pointsInput) question.points = Number(pointsInput.value) || 1;
+
         if (question.kind === 'mcq') {
-          question.options = Array.from(card.querySelectorAll('.quiz-option-text')).map((input) => input.value);
-          const picked = card.querySelector(`input[name="quiz-correct-${index}"]:checked`);
-          question.correct_option = picked ? Number(picked.value) : null;
-        } else {
-          question.reference_answer = card.querySelector('.quiz-reference').value;
-          question.grading_notes = card.querySelector('.quiz-notes').value;
+          const optionsBox = node.querySelector(':scope > .quiz-options');
+          const texts = optionsBox.querySelectorAll('.quiz-option-text');
+          question.options = Array.from(texts).map((input, index) => ({
+            text: input.value,
+            // الصورة مش في الـ DOM كقيمة — متخزّنة في الكائن من ساعة الرفع
+            image: question.options[index] ? question.options[index].image : null,
+          }));
+          const picked = optionsBox.querySelector('input[type="radio"]:checked');
+          question.correct_option = picked ? Number(picked.value) : 0;
+        } else if (question.kind === 'essay') {
+          question.reference_answer = node.querySelector(':scope > .field > .quiz-reference').value;
+          question.grading_notes = node.querySelector(':scope > .field > .quiz-notes').value;
         }
       });
     }
 
     function addQuizQuestion(kind) {
       readQuizEditor();
-      quizEditorQuestions.push(kind === 'mcq'
-        ? { kind: 'mcq', text: '', points: 1, options: ['', ''], correct_option: 0, reference_answer: '', grading_notes: '' }
-        : { kind: 'essay', text: '', points: 1, options: [], correct_option: null, reference_answer: '', grading_notes: '' });
+      quizEditorQuestions.push(blankQuestion(kind));
+      renderQuizQuestions();
+    }
+
+    function addQuizPart(index, kind) {
+      readQuizEditor();
+      quizEditorQuestions[index].parts.push(blankQuestion(kind));
       renderQuizQuestions();
     }
 
     function removeQuizQuestion(index) {
       readQuizEditor();
       quizEditorQuestions.splice(index, 1);
+      renderQuizQuestions();
+    }
+
+    function removeQuizPart(path) {
+      readQuizEditor();
+      const [index, partIndex] = path.split('.').map(Number);
+      const parts = quizEditorQuestions[index].parts;
+      if (parts.length <= 1) return showToast('الرأس محتاج فرع واحد على الأقل — امسح السؤال كله لو مش عايزه');
+      parts.splice(partIndex, 1);
       renderQuizQuestions();
     }
 
@@ -8650,20 +8794,64 @@ ${reply.content}` : reply.content;
       renderQuizQuestions();
     }
 
-    function addQuizOption(index) {
+    function moveQuizPart(path, direction) {
       readQuizEditor();
-      quizEditorQuestions[index].options.push('');
+      const [index, partIndex] = path.split('.').map(Number);
+      const parts = quizEditorQuestions[index].parts;
+      const target = partIndex + direction;
+      if (target < 0 || target >= parts.length) return;
+      const [moved] = parts.splice(partIndex, 1);
+      parts.splice(target, 0, moved);
       renderQuizQuestions();
     }
 
-    function removeQuizOption(index, optionIndex) {
+    function addQuizOption(path) {
       readQuizEditor();
-      const question = quizEditorQuestions[index];
+      questionAt(path).options.push({ text: '', image: null });
+      renderQuizQuestions();
+    }
+
+    function removeQuizOption(path, optionIndex) {
+      readQuizEditor();
+      const question = questionAt(path);
       if (question.options.length <= 2) return showToast('السؤال محتاج اختيارين على الأقل');
       question.options.splice(optionIndex, 1);
       // الإجابة الصح كانت بتفضل على نفس الرقم بعد الحذف فتشاور على اختيار تاني خالص
       if (question.correct_option === optionIndex) question.correct_option = 0;
       else if (question.correct_option > optionIndex) question.correct_option -= 1;
+      renderQuizQuestions();
+    }
+
+    // ---------- صور الأسئلة ----------
+    async function uploadQuizImage(event, path, optionIndex) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      readQuizEditor();
+      const form = new FormData();
+      form.append('image', file);
+      try {
+        showToast('بترفع الصورة...');
+        // من غير Content-Type: المتصفح بيحطه بنفسه مع الـ boundary بتاع multipart
+        const response = await fetch('/api/quizzes/image', { method: 'POST', body: form });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'الرفع فشل');
+        const question = questionAt(path);
+        if (optionIndex === undefined) question.image = data.path;
+        else question.options[optionIndex].image = data.path;
+        renderQuizQuestions();
+        showToast('الصورة اترفعت');
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        event.target.value = '';
+      }
+    }
+
+    function clearQuizImage(path, optionIndex) {
+      readQuizEditor();
+      const question = questionAt(path);
+      if (optionIndex === undefined) question.image = null;
+      else question.options[optionIndex].image = null;
       renderQuizQuestions();
     }
 
@@ -8809,15 +8997,34 @@ ${reply.content}` : reply.content;
         const name = data.attempt.platform_name || data.attempt.student_name || '—';
         const verdictLabels = { correct: 'صح', partial: 'جزئي', incorrect: 'غلط' };
 
-        const answers = data.answers.map((answer, index) => {
-          const isMcq = answer.kind === 'mcq';
+        let questionNumber = 0;
+        const answers = data.answers.map((answer) => {
           const options = Array.isArray(answer.options) ? answer.options : [];
+          const image = answer.image
+            ? `<img src="${escapeHtml(answer.image)}" alt="" style="max-width:100%; max-height:260px; border-radius:8px; margin:8px 0" />`
+            : '';
+
+          // رأس السؤال: عنوان بس، مالوش إجابة ولا درجة يتعدّلوا
+          if (answer.kind === 'group') {
+            questionNumber += 1;
+            return `<div class="card" style="background:var(--surface-sunken); margin-bottom:10px; border-inline-start:3px solid var(--primary)">
+              <b>${questionNumber}. ${escapeHtml(answer.text)}</b>${image}</div>`;
+          }
+          if (!answer.is_part) questionNumber += 1;
+          const heading = answer.is_part
+            ? `<b>${escapeHtml(answer.label || '')}) ${escapeHtml(answer.text)}</b>`
+            : `<b>${questionNumber}. ${escapeHtml(answer.text)}</b>`;
+
+          const isMcq = answer.kind === 'mcq';
+          const optionText = (option) => (option
+            ? escapeHtml(option.text) + (option.image ? ' 🖼️' : '')
+            : '—');
           const studentText = isMcq
             ? (answer.selected_option === null || answer.selected_option === undefined
-              ? '<i>ماختارش</i>' : escapeHtml(options[answer.selected_option]))
+              ? '<i>ماختارش</i>' : optionText(options[answer.selected_option]))
             : (answer.essay_text ? escapeHtml(answer.essay_text) : '<i>ساب السؤال فاضي</i>');
           const reference = isMcq
-            ? escapeHtml(options[answer.correct_option])
+            ? optionText(options[answer.correct_option])
             : escapeHtml(answer.reference_answer);
           // حكم النموذج وسببه بيتعرضوا للموظف مش للطالب — ده اللي بيخليه يقدر يخالفه بثقة
           const verdict = answer.ai_verdict
@@ -8828,11 +9035,12 @@ ${reply.content}` : reply.content;
             : '';
 
           return `
-            <div class="card" style="background:var(--surface-sunken); margin-bottom:10px">
+            <div class="card" style="background:var(--surface-sunken); margin-bottom:10px${answer.is_part ? '; margin-inline-start:18px' : ''}">
               <div class="row-between" style="gap:8px; flex-wrap:wrap">
-                <b>${index + 1}. ${escapeHtml(answer.text)}</b>
+                ${heading}
                 <span class="badge badge-muted">${answer.points} درجة</span>
               </div>
+              ${image}
               <div style="margin-top:10px"><span class="card-desc">إجابة الطالب:</span>
                 <div style="white-space:pre-wrap">${studentText}</div></div>
               <div style="margin-top:8px"><span class="card-desc">${isMcq ? 'الإجابة الصح:' : 'الإجابة المرجعية:'}</span>
@@ -8926,6 +9134,7 @@ ${reply.content}` : reply.content;
     });
     document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));
     document.getElementById('add-essay-btn').addEventListener('click', () => addQuizQuestion('essay'));
+    document.getElementById('add-group-btn').addEventListener('click', () => addQuizQuestion('group'));
     document.getElementById('save-quiz-btn').addEventListener('click', saveQuiz);
     // معاينة الرابط وهو بيكتب — أرخص من إنه يحفظ وبعدين يكتشف إن الشكل مرفوض
     document.getElementById('quiz-slug').addEventListener('input', (event) => {

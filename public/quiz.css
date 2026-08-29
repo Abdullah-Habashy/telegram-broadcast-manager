@@ -111,3 +111,33 @@ body.qz-body {
 
 .qz-pick-list { display: grid; gap: 8px; }
 .qz-foot { text-align: center; color: var(--qz-muted); font-size: 13px; margin-top: 18px; }
+
+/* ---------- رأس السؤال وفروعه ---------- */
+/* الفرع بيتزاح لجوه وبياخد خط جانبي: الطالب لازم يشوف بعينه إن دي فروع لسؤال واحد
+   مش أسئلة منفصلة، من غير ما يقرا الأرقام */
+.qz-part {
+  border-inline-start: 3px solid var(--qz-accent);
+  padding-inline-start: 14px;
+  margin-top: 18px;
+}
+.qz-part-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.qz-part-label {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 26px; padding: 0 7px; border-radius: 8px;
+  background: var(--qz-accent-soft); color: var(--qz-accent);
+  font-weight: 700; font-size: 14px;
+}
+.qz-part-text { font-size: 15.5px; font-weight: 600; margin-bottom: 10px; white-space: pre-wrap; }
+
+/* ---------- صور الأسئلة والاختيارات ---------- */
+/* الصورة ساعات بتكون هي السؤال نفسه (رسم بياني، معادلة)، فالعرض كامل والارتفاع محدود
+   عشان صورة طويلة ماتخليش الطالب يسكرول كتير قبل ما يوصل لخانة الإجابة */
+.qz-q-image {
+  display: block; max-width: 100%; height: auto; max-height: 420px;
+  margin: 0 0 14px; border-radius: 12px; border: 1px solid var(--qz-line);
+  background: var(--qz-bg); object-fit: contain;
+}
+.qz-option-image {
+  display: block; max-width: 100%; height: auto; max-height: 160px;
+  margin-top: 8px; border-radius: 8px; border: 1px solid var(--qz-line);
+}

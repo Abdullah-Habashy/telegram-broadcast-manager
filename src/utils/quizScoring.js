@@ -6,6 +6,14 @@ const { gradeEssayAnswer } = require('./quizGrading');
 // مشترك بين تلات مسارات: الطالب بيسلّم بنفسه، والوقت خلص وهو قافل الصفحة (jobs/quizFinalizer)،
 // والموظف بيضغط "صحّح دلوقتي". التلاتة بيعملوا نفس الحاجة بالظبط فلازم يبقوا كود واحد.
 
+// الفرع بيتبعت مع رأسه: "رأس السؤال\nأ) نص الفرع". من غير الرأس، فرع زي "اذكر اتنين
+// منهم" بيوصل النموذج بلا سياق والحكم بيبقى عشوائي
+function questionTextForGrading(question) {
+  if (!question.parent_text) return question.text;
+  const label = question.label ? `${question.label}) ` : '';
+  return `${question.parent_text}\n\n${label}${question.text}`;
+}
+
 // **التصحيح الآلي مش شرط لإنهاء المحاولة.** لو النموذج فشل (مفتاح ناقص، شبكة، مخرج غريب)،
 // الاختياري بيتحسب والمقالي بيتساب من غير درجة والحالة بتبقى partial — الموظف بيشوفها
 // في اللوحة ويحطها بإيده. البديل (نرمي الطلب كله) كان معناه إن الطالب يفقد إجاباته
@@ -29,7 +37,7 @@ async function gradeEssays(answers, questions) {
     }
     try {
       const grade = await gradeEssayAnswer({
-        question: question.text,
+        question: questionTextForGrading(question),
         referenceAnswer: question.reference_answer || '',
         gradingNotes: question.grading_notes || '',
         studentAnswer,
@@ -60,8 +68,13 @@ async function finalizeAttempt(attemptId, { late = false, force = false } = {}) 
 
   const [questionsResult, answersResult] = await Promise.all([
     pool.query(
-      `SELECT id, kind, text, points, correct_option, reference_answer, grading_notes
-       FROM quiz_questions WHERE quiz_id = $1`, [attempt.quiz_id]),
+      // **نص الأب بيتجاب مع الفرع.** "اذكر اتنين منهم" مالهاش أي معنى لوحدها — النموذج
+      // لازم يشوف رأس السؤال عشان يحكم على إجابة الفرع
+      `SELECT q.id, q.kind, q.text, q.points, q.correct_option, q.reference_answer,
+              q.grading_notes, q.label, p.text AS parent_text
+       FROM quiz_questions q
+       LEFT JOIN quiz_questions p ON p.id = q.parent_id
+       WHERE q.quiz_id = $1`, [attempt.quiz_id]),
     pool.query('SELECT question_id, selected_option, essay_text, graded_by, awarded_points FROM quiz_answers WHERE attempt_id = $1', [attemptId]),
   ]);
 
