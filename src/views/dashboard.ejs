@@ -33,7 +33,13 @@
         <div class="nav-item" data-tab="new-bot"><span class="ind"></span> بوت طفرة</div>
         <div class="nav-item" data-tab="performance"><span class="ind"></span> متابعة الأداء</div>
         <div class="nav-item" data-tab="reports"><span class="ind"></span> التقارير</div>
+      <% } %>
+      <%# الاختبارات مش للأدمن بس: التيم العلمي والدعم الفني بيبنوا أسئلتهم ويراجعوا تصحيحها.
+          الشرط جاي محسوب من السيرفر (utils/teams.js) عشان يفضل هو نفسه اللي بيحمي /api/quizzes %>
+      <% if (canManageQuizzes) { %>
         <div class="nav-item" data-tab="quizzes"><span class="ind"></span> الاختبارات</div>
+      <% } %>
+      <% if (userRole === 'admin') { %>
         <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
         <div class="nav-item" data-tab="ai"><span class="ind"></span> الذكاء الصناعي</div>
         <div class="nav-item" data-tab="settings"><span class="ind"></span> الإعدادات</div>

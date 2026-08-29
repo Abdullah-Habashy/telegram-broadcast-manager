@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/quizzes.controller');
-const { requireAdminApi } = require('../middleware/requireAuth');
+const { requireQuizAccessApi } = require('../middleware/requireAuth');
 
-// أدمن بس — تبويب الاختبارات في اللوحة جوه كتلة الأدمن زي القوالب والتقارير والذكاء الصناعي،
-// والمسارات هنا لازم تقول نفس الكلام. الفرق بين الاتنين كان معناه إن موظف مايشوفش التبويب
-// يقدر برضه يبني اختبار أو يغيّر درجة لو نادى المسار مباشرة.
-// الصفحة العامة للطالب متسجّلة في server.js على /q/:token برّه المسارات المحمية دي
-router.use(requireAdminApi);
+// الأدمن + التيم العلمي + الدعم الفني. نفس الشرط بالظبط اللي بيقرر ظهور التبويب في اللوحة
+// (utils/teams.js) — لو اتفرقوا هيبقى فيه حد شايف التبويب وبيتردّ عليه ٤٠٣.
+// الصفحة العامة للطالب متسجّلة في server.js على /q/:ref برّه المسارات المحمية دي
+router.use(requireQuizAccessApi);
 
 router.get('/', controller.listQuizzes);
 router.post('/', controller.createQuiz);

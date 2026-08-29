@@ -117,8 +117,34 @@ async function requireCallAssignAccessApi(req, res, next) {
   }
 }
 
+// صلاحية بناء الاختبارات ومراجعة تصحيحها: الأدمن + التيم العلمي + الدعم الفني. التيمات
+// جاية من utils/teams.js مش مكتوبة هنا، عشان تفضل مصدر واحد مع اللي بيقرر ظهور التبويب
+// في اللوحة. نفس نمط requireTicketsAccessApi: تحقق من قاعدة البيانات في كل طلب مش من
+// الجلسة، فأي تغيير في تيم الموظف بينفّذ فورًا من غير ما يعمل خروج ودخول
+async function requireQuizAccessApi(req, res, next) {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: 'غير مصرح — سجّل الدخول الأول' });
+  }
+  try {
+    const result = await pool.query('SELECT role, is_active, team FROM users WHERE id = $1', [req.session.userId]);
+    const user = result.rows[0];
+    if (!user?.is_active) {
+      return req.session.destroy(() => res.status(401).json({ error: 'الحساب غير مفعّل' }));
+    }
+    const allowed = user.role === 'admin' || canManageQuizzes(user.team);
+    req.session.userRole = user.role;
+    req.session.canManageQuizzes = allowed;
+    if (!allowed) return res.status(403).json({ error: 'الاختبارات متاحة للمدير والتيم العلمي والدعم الفني' });
+    next();
+  } catch (error) {
+    console.error('❌ Failed to verify quiz permissions:', error.message);
+    res.status(500).json({ error: 'تعذر التحقق من الصلاحيات' });
+  }
+}
+
 module.exports = {
   requireAuth, requireAuthApi, requireAdminApi, requireTicketsAccessApi, requireCallsAccessApi,
-  requireCallAssignAccessApi,
+  requireCallAssignAccessApi, requireQuizAccessApi,
 };
 const pool = require('../config/db');
+const { canManageQuizzes } = require('../utils/teams');

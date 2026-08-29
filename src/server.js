@@ -29,6 +29,7 @@ const performanceRoutes = require('./routes/performance.routes');
 const studentReportRoutes = require('./routes/studentReport.routes');
 const studentReportController = require('./controllers/studentReport.controller');
 const quizPublicController = require('./controllers/quizPublic.controller');
+const { canManageQuizzes: teamCanManageQuizzes } = require('./utils/teams');
 const ticketsRoutes = require('./routes/tickets.routes');
 const assistRoutes = require('./routes/assist.routes');
 const adminRoutes = require('./routes/admin.routes');
@@ -156,10 +157,14 @@ app.get('/', requireAuth, async (req, res) => {
   // موظف التيم المتخصص بيشوف المحوّل له بس. الأدمن مستثنى: هو بيشوف كل حاجة أصلًا
   const userTeam = user.role === 'admin' ? null : (user.team || null);
   req.session.userTeam = userTeam;
+  // بناء الاختبارات: الأدمن + التيمات اللي عليها canManageQuizzes في utils/teams.js.
+  // بنقرا user.team مش userTeam لأن ده بيتصفّر للأدمن فوق
+  const canManageQuizzes = user.role === 'admin' || teamCanManageQuizzes(user.team);
+  req.session.canManageQuizzes = canManageQuizzes;
   const defaultTab = user.role === 'admin' ? 'overview' : canViewTickets ? 'tickets' : canViewCalls ? 'calls' : null;
   res.render('dashboard', {
     userName: user.name, userRole: user.role, userId: req.session.userId,
-    canViewTickets, canViewCalls, canAssignCalls, userTeam, defaultTab,
+    canViewTickets, canViewCalls, canAssignCalls, canManageQuizzes, userTeam, defaultTab,
     impersonatorAdminName: req.session.impersonatorAdminId ? req.session.impersonatorAdminName : null,
   });
 });

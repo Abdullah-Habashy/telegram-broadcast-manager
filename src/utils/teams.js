@@ -12,6 +12,8 @@
 //   idleReturn — بترجع لوحدها بعد نص ساعة سكوت (سؤال علمي أو مشكلة تقنية ليها بداية ونهاية).
 //     الواتساب لأ: دي محادثة إقناع ممكن تاخد أيام.
 //   autoRoute — بيتحوّل عليها تلقائيًا حسب قاعدة، مش بضغطة موظف.
+//   canManageQuizzes — بيبني اختبارات ويراجع تصحيحها من تبويب الاختبارات. قرار صاحب
+//     المشروع: العلمي والفني، مش الواتساب — ده شغله إقناع طالب مش بناء محتوى.
 //   canHandOff — الموظف الماسك التذكرة يقدر يسلّمها لتيم تاني على طول. للواتساب بس لأن
 //     التذكرة وصلته بقاعدة تلقائية مش باختيار موظف متابعة: لو الطالب غير المشترك سأل سؤال
 //     علمي أو عنده مشكلة تقنية، هو الوحيد الشايف التذكرة ولازم يكون عنده مخرج. العلمي والفني
@@ -27,6 +29,7 @@ const TEAMS = {
     transferTitle: 'تحويل السؤال للتيم العلمي',
     requiresAttendance: true,
     idleReturn: true,
+    canManageQuizzes: true,
   },
   tech: {
     key: 'tech',
@@ -37,6 +40,7 @@ const TEAMS = {
     transferTitle: 'تحويل المشكلة للدعم الفني',
     requiresAttendance: true,
     idleReturn: true,
+    canManageQuizzes: true,
   },
   whatsapp: {
     key: 'whatsapp',
@@ -66,4 +70,11 @@ function getTeam(value) {
   return isTeamKey(value) ? TEAMS[value] : null;
 }
 
-module.exports = { TEAMS, TEAM_KEYS, isTeamKey, getTeam };
+// **مصدر واحد لصلاحية الاختبارات** — بتتنادى من الميدل وير اللي بيحمي /api/quizzes ومن
+// صفحة اللوحة اللي بتقرر تظهر التبويب ولا لأ. لو اتفرقوا، هيبقى فيه تيم شايف التبويب
+// وبيتردّ عليه ٤٠٣، أو العكس
+function canManageQuizzes(team) {
+  return Boolean(getTeam(team)?.canManageQuizzes);
+}
+
+module.exports = { TEAMS, TEAM_KEYS, isTeamKey, getTeam, canManageQuizzes };
