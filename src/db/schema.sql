@@ -929,6 +929,13 @@ CREATE TABLE IF NOT EXISTS sms_logs (
 CREATE INDEX IF NOT EXISTS idx_sms_logs_student ON sms_logs (tafra_student_id, sent_at DESC);
 CREATE INDEX IF NOT EXISTS idx_call_logs_follow_up ON call_logs (next_follow_up_at) WHERE next_follow_up_at IS NOT NULL;
 
+
+-- أبواب شرط المتابعة في /api/public/student-status — قايمة معرّفات مفصولة بفاصلة، بتتظبط
+-- من تبويب "بوت طفرة ← شروط الـ API". فاضية معناها الشرط مقفول والـ API بيرد زي الأول
+-- (يعني على دخول البوت بس)، مش معناها "مفيش طالب مشترك" — الفرق ده بيقلب النتيجة لكل الطلاب
+INSERT INTO settings (key, value) VALUES ('api_follow_up_bootcamps', '')
+ON CONFLICT (key) DO NOTHING;
+
 -- تحويل التوكن القديم تلقائيًا إلى أول ملف بوت محفوظ عند ترقية مشروع قائم
 INSERT INTO bot_profiles (label, token_encrypted, is_active, activated_at)
 SELECT 'البوت الحالي', value, TRUE, NOW()

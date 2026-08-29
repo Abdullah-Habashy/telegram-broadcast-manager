@@ -348,7 +348,31 @@ async function updateTafraAutoSyncInterval(req, res) {
   }
 }
 
+// أبواب شرط المتابعة في الـ API العام. بتتخزن كمعرّفات مفصولة بفاصلة — نفس شكل باقي
+// فلاتر الاختيار المتعدد في اللوحة، فالواجهة بتتعامل معاها بنفس الأداة
+async function updateApiFollowUpBootcamps(req, res) {
+  const raw = String(req.body?.bootcamps ?? '').trim();
+  const ids = raw ? raw.split(',').map((value) => value.trim()).filter(Boolean) : [];
+  // أي معرّف مش رقم بيترفض بالكامل بدل ما يتشال بالسكوت: لستة اتحفظت ناقصة معناها طلاب
+  // بيرجعوا true وهما محتاجين متابعة، ومحدش هيلاحظ
+  if (ids.some((id) => !/^\d+$/.test(id))) {
+    return res.status(400).json({ error: 'قائمة الأبواب غير صالحة' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ('api_follow_up_bootcamps', $1)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [ids.join(',')]
+    );
+    res.json({ ok: true, bootcamps: ids });
+  } catch (error) {
+    console.error('❌ Failed to save the API follow-up bootcamps:', error.message);
+    res.status(500).json({ error: 'تعذر حفظ شروط الـ API' });
+  }
+}
+
 module.exports = {
+  updateApiFollowUpBootcamps,
   getSettings,
   saveBotToken,
   updateAutoReply,

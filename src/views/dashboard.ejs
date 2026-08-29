@@ -777,6 +777,7 @@
         <div class="subtabs" id="new-bot-subtabs">
           <button type="button" class="subtab-btn active" data-subtab="subscribers">مراسلة المشتركين</button>
           <button type="button" class="subtab-btn" data-subtab="reports">التقارير</button>
+          <button type="button" class="subtab-btn" data-subtab="api-conditions">شروط الـ API</button>
         </div>
 
         <div class="subtab-section" data-subtab="subscribers">
@@ -886,6 +887,52 @@
             <button type="button" class="btn btn-ghost btn-sm" id="followup-log-next">التالي</button>
           </div>
         </div>
+        </div>
+
+        <!-- ===== شروط الـ API =====
+             بتتحكم في حقل skip_follow_up في /api/public/student-status. الفكرة إن النظام
+             الخارجي يسأل عن رقم ويعرف يتصل بيه ولا لأ، من غير ما حد يفلتر الليستة بإيده -->
+        <div class="subtab-section" data-subtab="api-conditions" style="display:none">
+          <div class="card">
+            <h2>شروط المتابعة في الـ API</h2>
+            <p class="card-desc" style="margin-top:0">
+              النقطة <code dir="ltr">GET /api/public/student-status?phone=...</code> بترجّع حقل
+              <b><code dir="ltr">skip_follow_up</code></b> — النظام الخارجي بيقرا منه على طول:
+            </p>
+            <div class="row" style="gap:10px; flex-wrap:wrap; margin:12px 0">
+              <span class="badge badge-danger">false = اتصل بالطالب ده</span>
+              <span class="badge badge-success">true = سيبه، متضيّعش وقتك</span>
+            </div>
+            <p class="card-desc">
+              <b>بيرجّع <code dir="ltr">true</code></b> لو الطالب داخل البوت خلاص، <b>أو</b> لو مش
+              مشترك في أي باب من اللي هتحددهم تحت.<br>
+              <b>وبيرجّع <code dir="ltr">false</code></b> للمشتركين اللي لسه ما دخلوش البوت — دول بس اللي يستاهلوا مكالمة.
+            </p>
+
+            <div class="field" style="margin-top:16px">
+              <label>الأبواب اللي المتابعة بتتم لمشتركينها</label>
+              <input type="hidden" id="api-bootcamps-filter" />
+            </div>
+            <p class="card-desc" id="api-bootcamps-state">بيتحمّل...</p>
+
+            <div class="row-between" style="margin-top:14px; gap:12px; flex-wrap:wrap">
+              <span class="card-desc">
+                ⚠️ لو سيبتها فاضية، شرط الاشتراك بيتقفل والـ API بيرجع لسلوكه الأصلي:
+                <code dir="ltr">true</code> لدخول البوت بس — <b>مش</b> بيعتبر كل الطلاب غير مشتركين.
+              </span>
+              <button type="button" class="btn btn-primary btn-sm" id="save-api-bootcamps-btn" style="width:auto">حفظ الشروط</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>جرّب على رقم</h2>
+            <p class="card-desc" style="margin-top:0">اكتب رقم موبايل طالب وشوف الـ API هيرجّع إيه عليه دلوقتي بالشروط المحفوظة.</p>
+            <div class="row" style="gap:10px; flex-wrap:wrap">
+              <input type="tel" id="api-test-phone" class="compact-input" placeholder="01xxxxxxxxx" style="flex:1; min-width:200px" dir="ltr" />
+              <button type="button" class="btn btn-ghost btn-sm" id="api-test-btn" style="width:auto">جرّب</button>
+            </div>
+            <div id="api-test-result" style="margin-top:12px"></div>
+          </div>
         </div>
       </section>
 
@@ -8806,6 +8853,96 @@ ${reply.content}` : reply.content;
     document.getElementById('quiz-slug').addEventListener('input', (event) => {
       const value = event.target.value.trim().toLowerCase().replace(/\s+/g, '-');
       document.getElementById('quiz-slug-preview').textContent = value || 'كود-تلقائي';
+    });
+
+    // ---------- شروط الـ API العام ----------
+    // القايمة نفسها بتتقري من فلاتر طلاب المنصة، فمفيش نداء جديد للأبواب. الحفظ بيروح
+    // لـ settings.api_follow_up_bootcamps، واللي بيقرا منها هو /api/public/student-status
+    let apiBootcampsLoaded = false;
+
+    async function initApiConditionsTab() {
+      if (apiBootcampsLoaded) return;
+      const state = document.getElementById('api-bootcamps-state');
+      try {
+        await loadTafraStudentFilters();
+        const control = createMultiSelectFilter('api-bootcamps-filter', 'اختار الأبواب...');
+        control.setOptions(tafraFilterOptions.bootcamps.map((item) => ({ value: item.id, label: item.name })));
+        const settings = await api('/api/settings');
+        document.getElementById('api-bootcamps-filter').value = settings.api_follow_up_bootcamps || '';
+        control.refresh();
+        apiBootcampsLoaded = true;
+        renderApiBootcampsState();
+      } catch (error) {
+        state.textContent = error.message;
+      }
+    }
+
+    // بتقول للأدمن الشرط شغّال ولا مقفول بالكلام مش بعدد — الفرق بين الاتنين هو الفرق بين
+    // "بتابع المشتركين" و"وقفت المتابعة كلها"
+    function renderApiBootcampsState() {
+      const value = document.getElementById('api-bootcamps-filter').value;
+      const count = value ? value.split(',').filter(Boolean).length : 0;
+      document.getElementById('api-bootcamps-state').textContent = count
+        ? `الشرط شغّال على ${count} باب — المشترك في أي واحد منهم بيرجّع false لو لسه ما دخلش البوت.`
+        : 'الشرط مقفول دلوقتي — الـ API بيرد على دخول البوت بس.';
+    }
+
+    async function saveApiBootcamps() {
+      const button = document.getElementById('save-api-bootcamps-btn');
+      button.disabled = true;
+      try {
+        const bootcamps = document.getElementById('api-bootcamps-filter').value || '';
+        await api('/api/settings/api-follow-up', { method: 'POST', body: JSON.stringify({ bootcamps }) });
+        showToast('اتحفظت شروط الـ API');
+        renderApiBootcampsState();
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    // بينده نفس النقطة العامة اللي النظام الخارجي بيستخدمها — مش نسخة منها. أي فرق بين
+    // اللي بيظهر هنا واللي بيوصل بره معناه إننا بنجرّب حاجة تانية
+    async function testApiOnPhone() {
+      const phone = document.getElementById('api-test-phone').value.trim();
+      const box = document.getElementById('api-test-result');
+      if (!phone) return showToast('اكتب رقم موبايل');
+      box.innerHTML = '<div class="empty-state">بيسأل...</div>';
+      try {
+        const response = await fetch(`/api/public/student-status?phone=${encodeURIComponent(phone)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'حصل خطأ');
+
+        const skip = data.skip_follow_up;
+        const verdict = skip
+          ? '<span class="badge badge-success">true — سيبه</span>'
+          : '<span class="badge badge-danger">false — اتصل بيه</span>';
+        const why = !data.found ? 'الرقم مش على منصة طفرة أصلًا'
+          : data.started ? 'داخل البوت خلاص'
+          : data.enrolled === null ? 'شرط الأبواب مقفول، ولسه ما دخلش البوت'
+          : data.enrolled ? `مشترك في: ${data.enrolled_bootcamps.join('، ')} — ولسه ما دخلش البوت`
+          : 'مش مشترك في أي باب من اللي اتحددوا';
+        box.innerHTML = `
+          <div class="card" style="background:var(--surface-sunken); margin:0">
+            <div class="row-between" style="gap:8px; flex-wrap:wrap">
+              <b>${escapeHtml(data.student_name || 'مش موجود على المنصة')}</b>
+              ${verdict}
+            </div>
+            <div class="card-desc" style="margin-top:8px">السبب: ${escapeHtml(why)}</div>
+            <pre dir="ltr" style="margin:10px 0 0; padding:10px; background:var(--surface); border-radius:8px; overflow-x:auto; font-size:12px">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+          </div>`;
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    document.querySelector('#new-bot-subtabs .subtab-btn[data-subtab="api-conditions"]')
+      ?.addEventListener('click', initApiConditionsTab);
+    document.getElementById('save-api-bootcamps-btn')?.addEventListener('click', saveApiBootcamps);
+    document.getElementById('api-test-btn')?.addEventListener('click', testApiOnPhone);
+    document.getElementById('api-test-phone')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') testApiOnPhone();
     });
 
     // ---------- تشغيل أولي ----------
