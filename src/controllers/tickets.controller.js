@@ -838,11 +838,18 @@ async function loadManageableMessage(messageId, userId) {
   );
   const message = result.rows[0];
   if (!message || message.deleted_at) return { error: { status: 404, message: 'الرسالة غير موجودة' } };
-  const assignedTo = message.ticket_assigned_to;
-  const hasTicketAccess = message.viewer_role === 'admin'
-    || assignedTo === null || Number(assignedTo) === Number(userId);
-  if (!hasTicketAccess) {
-    return { error: { status: 403, message: 'التذكرة دي مسندة لموظف تاني' } };
+  // **كل واحد رسايله هو بس.** الشرط كان على ملكية التذكرة (assigned_to)، وده كان بيمنع موظف
+  // التيم العلمي أو الفني من مسح رسالته هو — لأن التحويل مابيغيّرش assigned_to، فالتذكرة
+  // بتفضل باسم موظف المتابعة والماسك الفعلي بياخد ٤٠٣ على كلامه هو.
+  //
+  // وبيمنع كمان الحالة العكسية: موظف يمسح كلام زميله على تذكرة مشتركة.
+  //
+  // **الأدمن استثناء مقصود** — الرسايل الآلية (ترحيب ومتابعة تلقائية، ٣٣٩٧ رسالة) مالهاش
+  // sent_by أصلًا، ولو محدش يقدر يمسحها تبقى رسالة غلط عالقة للأبد. وكمان لازم يكون فيه حد
+  // يقدر يشيل كلام موظف مشي أو غلط في حق طالب
+  const isOwnMessage = message.sent_by !== null && Number(message.sent_by) === Number(userId);
+  if (message.viewer_role !== 'admin' && !isOwnMessage) {
+    return { error: { status: 403, message: 'دي مش رسالتك — كل موظف بيعدّل ويمسح كلامه هو بس' } };
   }
   return { message };
 }

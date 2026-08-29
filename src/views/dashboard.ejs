@@ -1550,7 +1550,6 @@
     let activityPage = 1;
     let activityPages = 1;
     let currentTicketId = null;
-    let currentTicketAssignedTo = null;
     let ticketsPage = 1;
     let ticketsTotalPages = 1;
     // **مش زيادة على ticketsTotalPages — بديل عنه في القرار.** السيرفر بيبعت شكلين مختلفين:
@@ -2450,10 +2449,13 @@
     // أي حد ليه صلاحية يفتح التذكرة (الأدمن، أو الموظف المسند ليه التذكرة، أو أي موظف لو التذكرة
     // لسه مش مسندة لحد) يقدر يتحكم في أي رسالة جواها — حتى لو مبعوتة تلقائيًا أو من موظف سابق
     // تعامل مع نفس التذكرة، مش بس رسائله هو. نفس شرط صلاحية فتح التذكرة أصلاً في الباك اند.
+    // **نفس قاعدة السيرفر بالظبط** (loadManageableMessage): صاحب الرسالة أو الأدمن.
+    // الزراير بتختفي عن اللي مش بتاعه بدل ما يدوس وياخد ٤٠٣ — والمنع الحقيقي على السيرفر
+    // مش هنا، ده عشان الشكل يقول الحقيقة بس
     function canManageMessage(message) {
       return message.direction === 'outgoing' && Boolean(message.message_id)
-        && (currentUserRole === 'admin' || currentTicketAssignedTo === null || currentTicketAssignedTo === undefined
-          || Number(currentTicketAssignedTo) === currentUserId);
+        && (currentUserRole === 'admin'
+          || (message.sent_by !== null && Number(message.sent_by) === currentUserId));
     }
 
     // إيموجيز الـ reaction المسموح بيها فعليًا على تيليجرام — نفس القايمة المسموحة في الباك اند
@@ -5859,7 +5861,6 @@ ${reply.content}` : reply.content;
       try {
         const data = await api('/api/tickets/' + ticketId);
         const ticket = data.ticket;
-        currentTicketAssignedTo = ticket.assigned_to;
         currentReplyToMessageId = null;
         const name = studentDisplayName(ticket);
         const assignedUser = ticketsMeta.users.find((user) => Number(user.id) === Number(ticket.assigned_to));
