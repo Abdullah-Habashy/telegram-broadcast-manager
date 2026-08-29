@@ -92,7 +92,12 @@ class TafraReadOnlyClient {
         });
       } catch (error) {
         lastError = error;
-        if (error.status === 401) {
+        // **isSessionExpiredError مش `error.status === 401`.** المنصة بترجّع انتهاء الجلسة
+        // برسالة "يجب أن تكون مسجل الدخول" وحالة **مش** ٤٠١ — فالفحص على الكود لوحده
+        // بيفوّتها، والطلب بيقع في فرع الرمي وتموت المزامنة كلها.
+        // ده اللي وقّع مزامنة الطلاب عند صفحة ١٢٧ من ٢٣٨: التوكن خلص في النص، والدالة
+        // المتخصصة كانت موجودة ومستخدمة في getWithRetry بس المسارين دول ما اتحدّثوش معاها
+        if (isSessionExpiredError(error)) {
           this.accessToken = null;
           await this.ensureLogin();
         } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429
@@ -133,7 +138,12 @@ class TafraReadOnlyClient {
         });
       } catch (error) {
         lastError = error;
-        if (error.status === 401) {
+        // **isSessionExpiredError مش `error.status === 401`.** المنصة بترجّع انتهاء الجلسة
+        // برسالة "يجب أن تكون مسجل الدخول" وحالة **مش** ٤٠١ — فالفحص على الكود لوحده
+        // بيفوّتها، والطلب بيقع في فرع الرمي وتموت المزامنة كلها.
+        // ده اللي وقّع مزامنة الطلاب عند صفحة ١٢٧ من ٢٣٨: التوكن خلص في النص، والدالة
+        // المتخصصة كانت موجودة ومستخدمة في getWithRetry بس المسارين دول ما اتحدّثوش معاها
+        if (isSessionExpiredError(error)) {
           this.accessToken = null;
           await this.ensureLogin();
         } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429
