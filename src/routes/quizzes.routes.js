@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/quizzes.controller');
-const { requireAuthApi } = require('../middleware/requireAuth');
+const { requireAdminApi } = require('../middleware/requireAuth');
 
-// إدارة الاختبارات متاحة لأي موظف مسجّل دخول — نفس منطق رابط تقرير الطالب: اللي بيتابع
-// الطلاب هو اللي بيبني الاختبار وبيراجع تصحيحه. الصفحة العامة نفسها متسجّلة في server.js
-// على /q/:token برّه المسارات المحمية
-router.use(requireAuthApi);
+// أدمن بس — تبويب الاختبارات في اللوحة جوه كتلة الأدمن زي القوالب والتقارير والذكاء الصناعي،
+// والمسارات هنا لازم تقول نفس الكلام. الفرق بين الاتنين كان معناه إن موظف مايشوفش التبويب
+// يقدر برضه يبني اختبار أو يغيّر درجة لو نادى المسار مباشرة.
+// الصفحة العامة للطالب متسجّلة في server.js على /q/:token برّه المسارات المحمية دي
+router.use(requireAdminApi);
 
 router.get('/', controller.listQuizzes);
 router.post('/', controller.createQuiz);
