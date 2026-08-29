@@ -129,6 +129,8 @@ app.get('/q/:ref', quizPublicController.renderQuiz);
 app.post('/q/:ref/start', quizPublicController.startAttempt);
 app.post('/q/:ref/save', quizPublicController.saveProgress);
 app.post('/q/:ref/submit', quizPublicController.submitAttempt);
+// الصفحة بتسأل بيه عن الدرجة بعد التسليم — التصحيح بقى في طابور مش في نفس الطلب
+app.get('/q/:ref/result', quizPublicController.getResult);
 
 // نفس التقرير للموظف المسجّل دخول بمعرّف الطالب — من غير ما يحتاج يعمل رابط عام
 app.get('/student-report/:id', requireAuth, studentReportController.renderStaffReport);

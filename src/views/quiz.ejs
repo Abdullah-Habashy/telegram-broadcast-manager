@@ -216,7 +216,10 @@
         // الخروج من الخانة أوضح لحظة للحفظ: الطالب خلص السؤال ده وبيروح للي بعده
         textarea.addEventListener('blur', function () { saveProgress(); });
       });
-      setInterval(saveProgress, 15000);
+      // **٤٥ ثانية مش ١٥.** الحفظ عند الخروج من كل خانة شغّال برضه، فده شبكة أمان
+      // للطالب اللي قاعد في نفس السؤال بيكتب. ١٥ ثانية × آلاف الطلاب = تلات أضعاف
+      // الحِمل على السيرفر مقابل ٣٠ ثانية كتابة إضافية في أسوأ حالة
+      setInterval(saveProgress, 45000);
     }
 
     function collectAnswers() {
@@ -284,6 +287,8 @@
           el('qz-exam').style.display = 'none';
           el('qz-timer').style.display = 'none';
           renderResult(data);
+          // التصحيح بقى في طابور على السيرفر: الإجابات اتسجّلت خلاص، والدرجة بتيجي بعدها
+          if (data.state === 'grading') pollResult();
         })
         .catch(function (error) {
           state.submitting = false;
@@ -293,10 +298,41 @@
         });
     }
 
+    // بتسأل عن الدرجة كل ٤ ثواني. **بتوقف بعد دقيقتين مش بتفضل تلف** — الطالب وقتها
+    // بياخد رسالة واضحة إن إجاباته اتسجّلت والدرجة هتظهر بعدين، وده أصدق من دايرة
+    // بتلف للأبد. وأي إعادة فتح للرابط بنفس الرقم بتوريه الدرجة أول ما تجهز
+    var POLL_EVERY_MS = 4000;
+    var POLL_FOR_MS = 120000;
+
+    function pollResult() {
+      var startedAt = Date.now();
+      var timer = setInterval(function () {
+        if (Date.now() - startedAt > POLL_FOR_MS) {
+          clearInterval(timer);
+          el('qz-result-note').textContent = 'إجاباتك اتسجّلت ✅ الدرجة بتتحسب دلوقتي — افتح الرابط تاني بعد شوية وهتلاقيها.';
+          return;
+        }
+        fetch(base + '/result?attempt_key=' + encodeURIComponent(state.key))
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            if (data.state !== 'submitted') return;
+            clearInterval(timer);
+            renderResult(data);
+          })
+          .catch(function () { /* الشبكة اتقطعت لحظيًا — المحاولة الجاية بعد ٤ ثواني */ });
+      }, POLL_EVERY_MS);
+    }
+
     function renderResult(data) {
       el('qz-gate').style.display = 'none';
       el('qz-exam').style.display = 'none';
       el('qz-result').style.display = '';
+      if (data.state === 'grading') {
+        el('qz-result-title').textContent = 'تم استلام إجاباتك ✅';
+        el('qz-result-score').style.display = 'none';
+        el('qz-result-note').textContent = 'بنصحّح إجاباتك دلوقتي... الدرجة هتظهر هنا خلال لحظات.';
+        return;
+      }
       if (data.score !== null && data.score !== undefined) {
         el('qz-result-score').style.display = '';
         el('qz-result-score').innerHTML = Math.round(data.score * 100) / 100

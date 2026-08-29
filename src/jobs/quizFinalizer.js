@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const pool = require('../config/db');
-const { finalizeAttempt, processRegradeQueue } = require('../utils/quizScoring');
+const { finalizeAttempt, processRegradeQueue, queueLength } = require('../utils/quizScoring');
 
 // ---------- إقفال المحاولات اللي وقتها خلص ----------
 //
@@ -14,6 +14,9 @@ const { finalizeAttempt, processRegradeQueue } = require('../utils/quizScoring')
 
 const GRACE_MINUTES = 2;
 const BATCH_SIZE = 20;
+// سقف الدورات في التشغيلة الواحدة: ٢٠ محاولة × ١٠٠ دورة = ٢٠٠٠ ورقة في التشغيلة،
+// وبعدها الكرون بيكمّل. موجود عشان خلل يرجّع الصفوف للطابور مايعملش لوب أبدي
+const MAX_DRAIN_ROUNDS = 100;
 
 let running = false;
 
@@ -37,11 +40,19 @@ async function finalizeExpiredAttempts() {
       }
     }
 
-    // طابور إعادة التصحيح: الموظف بيبدأه من اللوحة والدفعة الأولى بتمشي هناك، وده بيكمّل
-    // الباقي على دفعات وبيلقط الطابور من أوله لو السيرفر اتقفل وهو في نصه
-    const regraded = await processRegradeQueue(BATCH_SIZE);
-    if (regraded.processed) {
-      console.log(`🔁 Regraded ${regraded.processed} quiz attempt(s); ${regraded.remaining} left in the queue.`);
+    // ---------- تصريف طابور التصحيح ----------
+    // **بيفضل ماشي لحد ما الطابور يفضى، مش دفعة واحدة كل تشغيلة.** بدفعة واحدة كل
+    // دقيقتين، امتحان ٥٠٠٠ طالب كان هياخد أيام. علم `running` فوق بيمنع تشغيلتين مع بعض،
+    // فالتصريف الطويل آمن — التشغيلة اللي بعده بترجع من غير ما تعمل حاجة.
+    // السقف عشان تشغيلة واحدة ماتفضلش شغالة للأبد لو حصل خلل بيرجّع الصفوف للطابور
+    let drained = 0;
+    for (let round = 0; round < MAX_DRAIN_ROUNDS; round += 1) {
+      const outcome = await processRegradeQueue(BATCH_SIZE);
+      drained += outcome.processed;
+      if (!outcome.remaining || !outcome.processed) break;
+    }
+    if (drained) {
+      console.log(`🔁 Graded ${drained} queued quiz attempt(s); ${await queueLength()} left in the queue.`);
     }
   } catch (error) {
     console.error('❌ Failed to run the quiz finalizer:', error.message);
@@ -51,10 +62,11 @@ async function finalizeExpiredAttempts() {
 }
 
 function startQuizFinalizer() {
-  cron.schedule('*/2 * * * *', () => {
+  // كل دقيقة مش كل دقيقتين: الطالب مستني درجته، والعلم `running` بيمنع التداخل
+  cron.schedule('* * * * *', () => {
     finalizeExpiredAttempts().catch((err) => console.error('❌ Failed to run quiz finalizer:', err.message));
   });
-  console.log('✅ Quiz finalizer scheduler started; checking every 2 minutes.');
+  console.log('✅ Quiz finalizer scheduler started; draining the grading queue every minute.');
 }
 
 module.exports = { startQuizFinalizer, finalizeExpiredAttempts };

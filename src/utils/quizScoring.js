@@ -131,10 +131,11 @@ async function recalculateAttempt(attemptId) {
   const ungraded = await pool.query(
     'SELECT COUNT(*)::int AS count FROM quiz_answers WHERE attempt_id = $1 AND awarded_points IS NULL', [attemptId]);
   const status = ungraded.rows[0].count > 0 ? 'partial' : 'graded';
-  // الموظف عدّل درجة وسط طابور إعادة تصحيح؟ الحالة تفضل regrading عشان الوظيفة ماتفوّتهاش
+  // الموظف عدّل درجة والمحاولة لسه في الطابور؟ الحالة تفضل زي ما هي عشان الوظيفة
+  // ماتفوّتهاش وتسيبها من غير تصحيح
   await pool.query(
     `UPDATE quiz_attempts SET score = $1,
-            grading_status = CASE WHEN grading_status = 'regrading' THEN 'regrading' ELSE $2 END
+            grading_status = CASE WHEN grading_status IN ('queued', 'regrading') THEN grading_status ELSE $2 END
      WHERE id = $3`,
     [Number(totalResult.rows[0].total), status, attemptId]);
   return { score: Number(totalResult.rows[0].total), grading_status: status };
@@ -175,28 +176,58 @@ async function queueQuizRegrade(quizId) {
   }
 }
 
-// بتاخد دفعة من الطابور وتصحّحها. بيتنداها المسار نفسه بعد ما يرد (عشان يبدأ فورًا) وكمان
-// الكرون كل دقيقتين (عشان يكمّل لو السيرفر اتقفل أو الدفعة الأولى ما كفّتش)
+// حالتين بيدخلوا نفس الطابور: 'queued' (طالب سلّم لسه) و'regrading' (موظف طلب إعادة
+// تصحيح). التصحيح نفسه واحد، فالطابور واحد
+const QUEUED_STATUSES = ['queued', 'regrading'];
+
+// **كام محاولة بالتوازي.** المحاولة الواحدة بتصحّح كل أسئلتها المقالية بالتوازي، فامتحان
+// ٢٥ سؤال مقالي × ٤ محاولات = ١٠٠ نداء متزامن للنموذج. ده الرقم اللي بيتضبط عليه المعدل:
+// أعلى منه بيبقى أسرع لكن أقرب لحد المزوّد (429)، وأقل منه بيبقى أأمن وأبطأ.
+// **الحساب: ٥٠٠٠ طالب ÷ (٤ محاولات كل ~٣ ثواني) ≈ ساعة.**
+const ATTEMPT_CONCURRENCY = Number(process.env.QUIZ_GRADING_CONCURRENCY) || 4;
+
+async function gradeOne(attemptId) {
+  try {
+    await finalizeAttempt(attemptId, { force: true });
+    return true;
+  } catch (error) {
+    // بتطلع من الطابور بحالة "محتاجة مراجعتك" مش بتفضل فيه — لو سيبناها كانت هتفشل كل
+    // دقيقتين للأبد. الموظف بيشوفها في اللوحة ومعاها زرار "أعد التصحيح الآلي"
+    console.error(`❌ Failed to grade quiz attempt #${attemptId}:`, error.message);
+    await pool.query(
+      `UPDATE quiz_attempts SET grading_status = 'partial', grading_error = $1 WHERE id = $2`,
+      [error.message, attemptId]).catch(() => {});
+    return false;
+  }
+}
+
+// بتاخد دفعة من الطابور وتصحّحها. بيتنداها التسليم بعد ما يرد (عشان الطالب الوحيد ياخد
+// درجته فورًا) وكمان الكرون (عشان يصرّف الباقي ويكمّل لو السيرفر اتقفل في النص)
 async function processRegradeQueue(limit = 10) {
   const { rows } = await pool.query(
-    `SELECT id FROM quiz_attempts WHERE grading_status = 'regrading' ORDER BY id LIMIT $1`, [limit]);
+    `SELECT id FROM quiz_attempts WHERE grading_status = ANY($1) ORDER BY submitted_at, id LIMIT $2`,
+    [QUEUED_STATUSES, limit]);
+
   let done = 0;
-  for (const row of rows) {
-    try {
-      await finalizeAttempt(row.id, { force: true });
-      done += 1;
-    } catch (error) {
-      // بتطلع من الطابور بحالة "محتاجة مراجعتك" مش بتفضل فيه — لو سيبناها كانت هتفشل كل
-      // دقيقتين للأبد. الموظف بيشوفها في اللوحة ومعاها زرار "أعد التصحيح الآلي"
-      console.error(`❌ Failed to regrade quiz attempt #${row.id}:`, error.message);
-      await pool.query(
-        `UPDATE quiz_attempts SET grading_status = 'partial', grading_error = $1 WHERE id = $2`,
-        [error.message, row.id]).catch(() => {});
-    }
+  // على دفعات بحجم ATTEMPT_CONCURRENCY: التسلسل الكامل بطيء جدًا لخمس آلاف ورقة،
+  // والتوازي الكامل بيولّع حد المعدل عند المزوّد
+  for (let index = 0; index < rows.length; index += ATTEMPT_CONCURRENCY) {
+    const slice = rows.slice(index, index + ATTEMPT_CONCURRENCY);
+    const outcomes = await Promise.all(slice.map((row) => gradeOne(row.id)));
+    done += outcomes.filter(Boolean).length;
   }
+
   const left = await pool.query(
-    "SELECT COUNT(*)::int AS count FROM quiz_attempts WHERE grading_status = 'regrading'");
+    'SELECT COUNT(*)::int AS count FROM quiz_attempts WHERE grading_status = ANY($1)',
+    [QUEUED_STATUSES]);
   return { processed: done, remaining: left.rows[0].count };
 }
 
-module.exports = { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue };
+async function queueLength() {
+  const { rows } = await pool.query(
+    'SELECT COUNT(*)::int AS count FROM quiz_attempts WHERE grading_status = ANY($1)',
+    [QUEUED_STATUSES]);
+  return rows[0].count;
+}
+
+module.exports = { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue, queueLength };

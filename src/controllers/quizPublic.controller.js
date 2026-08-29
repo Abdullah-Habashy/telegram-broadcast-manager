@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
-const { finalizeAttempt } = require('../utils/quizScoring');
+const { finalizeAttempt, processRegradeQueue } = require('../utils/quizScoring');
 
 // ---------- صفحة الاختبار للطالب ----------
 //
@@ -68,9 +68,14 @@ async function renderQuiz(req, res) {
 // بترجع شكل موحّد للواجهة في كل الحالات: محاولة جديدة، استكمال محاولة مفتوحة، أو نتيجة
 // محاولة اتسلّمت خلاص
 function attemptPayload(attempt, quiz, questions) {
+  // اتسلّمت ولسه في الطابور: 'grading' مش 'submitted' — الصفحة وقتها بتوري "بنصحّح"
+  // وتسأل عن الدرجة، بدل ما توري صفر على إنه نتيجته
+  const grading = Boolean(attempt.submitted_at)
+    && (attempt.grading_status === 'queued' || attempt.grading_status === 'regrading');
   return {
-    state: attempt.submitted_at ? 'submitted' : 'open',
-    attempt_key: attempt.submitted_at ? null : attempt.attempt_key,
+    state: grading ? 'grading' : attempt.submitted_at ? 'submitted' : 'open',
+    // بيفضل موجود في حالة grading عشان الصفحة تقدر تسأل عن الدرجة بيه
+    attempt_key: grading || !attempt.submitted_at ? attempt.attempt_key : null,
     student_name: attempt.student_name,
     deadline_at: attempt.deadline_at,
     questions: attempt.submitted_at ? [] : questions,
@@ -135,7 +140,7 @@ async function startAttempt(req, res) {
   // محاولة موجودة؟ الرجوع ليها أهم من منعها: الطالب ممكن يكون قفل الصفحة بالغلط، والمؤقت
   // بيفضل ماشي من وقت الدخول الأول فمفيش استفادة من إعادة الفتح
   const existing = await pool.query(
-    `SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score
+    `SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status
      FROM quiz_attempts
      WHERE quiz_id = $1 AND phone = $2 AND COALESCE(tafra_student_id, 0) = $3`,
     [quiz.id, phone, studentId || 0]);
@@ -146,7 +151,7 @@ async function startAttempt(req, res) {
     if (!attempt.submitted_at && attempt.deadline_at && new Date(attempt.deadline_at) <= new Date()) {
       await finalizeAttempt(attempt.id, { late: false });
       const refreshed = await pool.query(
-        'SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score FROM quiz_attempts WHERE id = $1',
+        'SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status FROM quiz_attempts WHERE id = $1',
         [attempt.id]);
       return res.json(attemptPayload(refreshed.rows[0], quiz, []));
     }
@@ -167,14 +172,14 @@ async function startAttempt(req, res) {
     created = await pool.query(
       `INSERT INTO quiz_attempts (quiz_id, tafra_student_id, student_name, phone, attempt_key, deadline_at)
        VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, attempt_key, student_name, deadline_at, submitted_at, score, max_score`,
+       RETURNING id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status`,
       [quiz.id, studentId, studentName, phone, attemptKey, deadline]);
   } catch (error) {
     // سباق: نفس الطالب فتح الرابط في تابين في نفس اللحظة. الفهرس الفريد بيمسكها،
     // وبنرجع للمحاولة اللي كسبت بدل ما نرمي خطأ في وش الطالب
     if (error.code !== '23505') throw error;
     const raced = await pool.query(
-      `SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score
+      `SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status
        FROM quiz_attempts WHERE quiz_id = $1 AND phone = $2 AND COALESCE(tafra_student_id, 0) = $3`,
       [quiz.id, phone, studentId || 0]);
     created = raced;
@@ -207,30 +212,58 @@ async function saveProgress(req, res) {
 }
 
 // بتكتب الإجابات بس — من غير أي درجة. الفهرس الفريد (attempt_id, question_id) بيخلي
-// الحفظ المتكرر تحديث مش صفوف جديدة
+// الحفظ المتكرر تحديث مش صفوف جديدة.
+//
+// **استعلام واحد لكل الأسئلة، مش استعلام لكل سؤال.** النسخة الأولى كانت بتعمل استعلام
+// للأنواع + استعلام لكل إجابة: امتحان ٥٠ سؤال = ٥١ استعلام في كل حفظ تلقائي، وضرب
+// آلاف الطلاب كل كام ثانية بيوصل لعشرات الآلاف من الاستعلامات في الثانية — رقم بيوقّع
+// السيرفر من غير ما يظهر أي خطأ في الكود.
+//
+// الجوين على quiz_questions بيعمل حاجتين في نفس الجملة: بيتأكد إن السؤال من الاختبار ده
+// فعلًا (الواجهة مش مصدر ثقة)، وبيحط القيمة في العمود الصح حسب نوع السؤال
 async function persistAnswers(attempt, answers) {
   if (!Array.isArray(answers) || !answers.length) return;
-  const { rows: questions } = await pool.query(
-    'SELECT id, kind FROM quiz_questions WHERE quiz_id = $1', [attempt.quiz_id]);
-  const kinds = new Map(questions.map((row) => [row.id, row.kind]));
 
+  // سؤال متكرر في نفس الطلب بيرمي "cannot affect row a second time" في ON CONFLICT،
+  // فآخر قيمة للسؤال هي اللي بتتحفظ
+  const byQuestion = new Map();
   for (const answer of answers) {
     const questionId = Number(answer?.question_id);
-    // سؤال من اختبار تاني (أو مش موجود) بيتتجاهل — الواجهة مش مصدر ثقة
-    if (!kinds.has(questionId)) continue;
-    const isMcq = kinds.get(questionId) === 'mcq';
-    const selected = isMcq && answer.selected_option !== null && answer.selected_option !== undefined
-      ? Number(answer.selected_option) : null;
-    const essay = !isMcq ? String(answer.essay_text || '').slice(0, 20000) : null;
-    await pool.query(
-      `INSERT INTO quiz_answers (attempt_id, question_id, selected_option, essay_text)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (attempt_id, question_id) DO UPDATE
-       SET selected_option = EXCLUDED.selected_option, essay_text = EXCLUDED.essay_text`,
-      [attempt.id, questionId, Number.isFinite(selected) ? selected : null, essay]);
+    if (!Number.isInteger(questionId)) continue;
+    const selected = answer?.selected_option === null || answer?.selected_option === undefined
+      ? null : Number(answer.selected_option);
+    byQuestion.set(questionId, {
+      selected: Number.isFinite(selected) ? selected : null,
+      essay: answer?.essay_text === null || answer?.essay_text === undefined
+        ? null : String(answer.essay_text).slice(0, 20000),
+    });
   }
+  if (!byQuestion.size) return;
+
+  const ids = [...byQuestion.keys()];
+  await pool.query(
+    `INSERT INTO quiz_answers (attempt_id, question_id, selected_option, essay_text)
+     SELECT $1, t.question_id,
+            CASE WHEN q.kind = 'mcq' THEN t.selected_option END,
+            CASE WHEN q.kind = 'essay' THEN t.essay_text END
+     FROM UNNEST($2::int[], $3::int[], $4::text[]) AS t(question_id, selected_option, essay_text)
+     JOIN quiz_questions q ON q.id = t.question_id AND q.quiz_id = $5
+     ON CONFLICT (attempt_id, question_id) DO UPDATE
+     SET selected_option = EXCLUDED.selected_option, essay_text = EXCLUDED.essay_text`,
+    [attempt.id, ids,
+      ids.map((id) => byQuestion.get(id).selected),
+      ids.map((id) => byQuestion.get(id).essay),
+      attempt.quiz_id]);
 }
 
+// **التسليم بيقفل المحاولة ويدخلها الطابور — مابيصححش في مكانه.**
+//
+// امتحان ٢٥ سؤال مقالي معناه ٢٥ نداء للنموذج في اللحظة اللي الطالب بيدوس فيها "سلّم".
+// طالب واحد؟ عادي. خمس آلاف طالب في نفس النص ساعة؟ ده آلاف النداءات المتزامنة، يعني
+// 429 من المزوّد وطلبات بتموت على timeout والطالب مايعرفش إجاباته اتسجّلت ولا لأ.
+//
+// دلوقتي التسليم بيكتب الإجابات ويقفل المحاولة فورًا (وده اللي بيهم الطالب فعلًا)،
+// والتصحيح بيمشي في الخلفية بمعدل نقدر نتحكم فيه. الصفحة بتسأل عن الدرجة كل كام ثانية.
 async function submitAttempt(req, res) {
   const attempt = await loadOpenAttempt(req.params.ref, req.body?.attempt_key);
   if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
@@ -241,13 +274,48 @@ async function submitAttempt(req, res) {
   // البطيئة مش ذنب الطالب. أبعد من كده بيتسجّل متأخر ويبان للموظف
   const late = Boolean(attempt.deadline_at && Date.now() > new Date(attempt.deadline_at).getTime() + 60 * 1000);
 
-  const result = await finalizeAttempt(attempt.id, { late });
+  await pool.query(
+    `UPDATE quiz_attempts SET submitted_at = NOW(), grading_status = 'queued', is_late = is_late OR $1
+     WHERE id = $2`, [late, attempt.id]);
+
+  // بيبدأ الطابور فورًا بعد ما الرد يروح — الطالب الوحيد على السيرفر بياخد درجته في ثواني
+  // زي الأول، والزحمة هي اللي بتخلي الطابور يطول. الكرون بيلقط الباقي في كل الحالات
+  kickGradingQueue();
+
+  res.json({ state: 'grading', score: null, max_score: null, score_hidden: !attempt.show_score_to_student });
+}
+
+// نداء واحد شغّال في المرة من المسار ده — الكرون هو اللي بيضمن الاستمرار، وده بس
+// بيقصّر الانتظار للطالب اللي سلّم والسيرفر فاضي
+let queueKickRunning = false;
+function kickGradingQueue() {
+  if (queueKickRunning) return;
+  queueKickRunning = true;
+  processRegradeQueue(4)
+    .catch((error) => console.error('❌ Failed to kick the grading queue:', error.message))
+    .finally(() => { queueKickRunning = false; });
+}
+
+// الصفحة بتسأل بيها كل كام ثانية بعد التسليم. استعلام واحد خفيف — ده اللي هيتنده
+// آلاف المرات وقت الزحمة
+async function getResult(req, res) {
+  const { rows } = await pool.query(
+    `SELECT a.grading_status, a.score, a.max_score, q.show_score_to_student
+     FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id
+     WHERE (LOWER(q.slug) = LOWER($1) OR q.token = $1) AND a.attempt_key = $2`,
+    [req.params.ref, req.query?.attempt_key || '']);
+  const attempt = rows[0];
+  if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
+
+  // partial = التصحيح خلص بس فيه سؤال محتاج مراجعة موظف. الطالب بياخد اللي اتحسب،
+  // مش شاشة انتظار للأبد
+  const done = attempt.grading_status === 'graded' || attempt.grading_status === 'partial';
   res.json({
-    state: 'submitted',
-    score: attempt.show_score_to_student ? result.score : null,
-    max_score: attempt.show_score_to_student ? result.max_score : null,
+    state: done ? 'submitted' : 'grading',
+    score: done && attempt.show_score_to_student ? Number(attempt.score) : null,
+    max_score: done && attempt.show_score_to_student ? Number(attempt.max_score) : null,
     score_hidden: !attempt.show_score_to_student,
   });
 }
 
-module.exports = { renderQuiz, startAttempt, saveProgress, submitAttempt, normalizePhone };
+module.exports = { renderQuiz, startAttempt, saveProgress, submitAttempt, getResult, normalizePhone };

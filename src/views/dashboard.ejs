@@ -8766,6 +8766,8 @@ ${reply.content}` : reply.content;
           const name = attempt.platform_name || attempt.student_name || '—';
           const status = !attempt.submitted_at
             ? '<span class="badge badge-warning">لسه بيحل</span>'
+            : attempt.grading_status === 'queued'
+              ? '<span class="badge badge-muted">في طابور التصحيح...</span>'
             : attempt.grading_status === 'regrading'
               ? '<span class="badge badge-muted">بيتصحّح تاني...</span>'
               : attempt.grading_status === 'partial'
@@ -8785,7 +8787,7 @@ ${reply.content}` : reply.content;
         // طول ما فيه محاولة في الطابور بنعيد التحميل لوحدنا — التصحيح ماشي في الخلفية
         // والموظف مالوش دعوة يفضل يضغط تحديث عشان يعرف خلص ولا لأ
         clearTimeout(quizRegradeTimer);
-        const stillRegrading = attempts.filter((attempt) => attempt.grading_status === 'regrading').length;
+        const stillRegrading = attempts.filter((attempt) => ['regrading', 'queued'].includes(attempt.grading_status)).length;
         if (stillRegrading) {
           document.getElementById('quiz-results-title').dataset.pending = stillRegrading;
           quizRegradeTimer = setTimeout(() => {
