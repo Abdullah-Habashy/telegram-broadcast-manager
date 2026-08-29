@@ -18,6 +18,9 @@ const PROVIDERS = {
     key: 'anthropic',
     label: 'Claude Opus 5 — الأدق',
     model: 'claude-opus-5',
+    // Opus بيقبل output_config.effort، وHaiku بيرد 400 عليه — الفرق ده لازم يبقى خاصية
+    // على المزوّد مش شرط مدفون جوه دالة النداء
+    supportsEffort: true,
     available: () => Boolean(anthropicClient),
   },
   // نفس المزوّد بنموذج أخف. اتقاس على نفس التمن أسئلة: ٨/٨ زي Opus، وضعف السرعة (٢.٤ث
@@ -27,6 +30,7 @@ const PROVIDERS = {
     key: 'anthropic_haiku',
     label: 'Claude Haiku 4.5 — أسرع وأرخص',
     model: 'claude-haiku-4-5',
+    supportsEffort: false,
     available: () => Boolean(anthropicClient),
   },
   groq: {
@@ -85,12 +89,15 @@ function normalizeOutput(raw) {
 
 // tool اختيارية: لو مبعوتة بتستخدم بدل أداة الرد الافتراضية. ده اللي بيخلّي نفس المزوّدين
 // يخدموا الرد على الطالب والحصاد من المحادثات والملفات — نفس الطريق ونفس التحقق
-async function callAnthropic({ systemPrompt, question, tool, maxTokens, model }) {
+async function callAnthropic({ systemPrompt, question, tool, maxTokens, model, supportsEffort = true }) {
   const activeTool = tool || ANSWER_TOOL;
   const response = await anthropicClient.messages.create({
     model: model || PROVIDERS.anthropic.model,
     max_tokens: maxTokens || 1024,
-    output_config: { effort: 'low' },
+    // **مشروط مش دايمًا.** كان بيتبعت مع كل نداء، فـ Haiku كان بيرد
+    // 400 "This model does not support the effort parameter" في كل مرة — يعني المزوّد
+    // كان مذكور في القايمة ومختار من اللوحة وفاشل ١٠٠٪ من غير ما حد يعرف السبب
+    ...(supportsEffort ? { output_config: { effort: 'low' } } : {}),
     // الكاش على المصدر: بيتبعت كامل مع كل سؤال وهو نفسه بالحرف، فالكتابة مرة والقراءة بعُشر
     // السعر. ttl ساعة لأن الرسايل بتيجي متفرقة بالليل وكاش الـ ٥ دقايق بيتكتب من أول وجديد
     system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral', ttl: '1h' } }],
@@ -166,7 +173,7 @@ async function callProvider(providerKey, args) {
   if (!provider.available()) throw new Error(`مفتاح ${provider.label} مش مضبوط على السيرفر`);
   return providerKey === 'groq'
     ? callGroq(args)
-    : callAnthropic({ ...args, model: provider.model });
+    : callAnthropic({ ...args, model: provider.model, supportsEffort: provider.supportsEffort !== false });
 }
 
 function listProviders() {
