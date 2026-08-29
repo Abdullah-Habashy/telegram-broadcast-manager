@@ -8,6 +8,8 @@ const { requireQuizAccessApi } = require('../middleware/requireAuth');
 // الصفحة العامة للطالب متسجّلة في server.js على /q/:ref برّه المسارات المحمية دي
 router.use(requireQuizAccessApi);
 
+// قبل /:id عن قصد: "grade-preview" مش رقم، بس ترتيب المسارات أوضح من الاعتماد على ده
+router.post('/grade-preview', controller.gradePreview);
 router.get('/', controller.listQuizzes);
 router.post('/', controller.createQuiz);
 router.get('/:id', controller.getQuiz);

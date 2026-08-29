@@ -637,6 +637,37 @@
             </div>
             <div id="quizzes-list"><div class="empty-state">بيتحمّل...</div></div>
           </div>
+
+          <!-- ===== خانة تجريب التصحيح =====
+               مالهاش أي علاقة باختبار محفوظ ومابتكتبش حاجة في القاعدة. الهدف إنك تجرّب
+               الإجابة المرجعية على إجابات فعلية قبل ما تبعت الرابط، مش بعد كده -->
+          <div class="card">
+            <div class="row-between" style="margin-bottom:6px">
+              <b>🧪 جرّب التصحيح قبل ما تبعت</b>
+            </div>
+            <p class="card-desc" style="margin-top:0">
+              حط سؤال وإجابته المرجعية، وجرّب عليه إجابات طالب مختلفة — كاملة، وناقصة، وغلط —
+              وشوف الدرجة اللي هتطلع. مافيش أي حاجة بتتحفظ هنا.
+            </p>
+            <div class="field"><label>السؤال</label><textarea id="preview-question" rows="2" placeholder="عرّف عملية البناء الضوئي واذكر نواتجها."></textarea></div>
+            <div class="field"><label>الإجابة المرجعية</label><textarea id="preview-reference" rows="3" placeholder="اكتب الإجابة النموذجية كاملة بالمعنى المطلوب..."></textarea></div>
+            <div class="row" style="gap:16px; flex-wrap:wrap">
+              <div class="field" style="flex:2; min-width:220px"><label>تعليمات إضافية للتصحيح (اختياري)</label>
+                <input type="text" id="preview-notes" placeholder="مثال: المطلوب فرقين، فرق واحد = نص الدرجة" /></div>
+              <div class="field" style="width:110px"><label>الدرجة</label>
+                <input type="number" id="preview-points" min="0.5" step="0.5" value="3" /></div>
+            </div>
+            <div class="field"><label>إجابة الطالب التجريبية</label>
+              <textarea id="preview-answer" rows="3" placeholder="اكتبها بإملاء مكسور أو ناقصة عن قصد — ده بالظبط اللي عايز تختبره"></textarea></div>
+            <div class="row-between" style="gap:12px; flex-wrap:wrap">
+              <span class="card-desc" id="preview-hint">السؤال والمرجع بيفضلوا مكانهم بعد كل تجربة — غيّر إجابة الطالب بس وجرّب تاني.</span>
+              <div class="row" style="gap:8px">
+                <button type="button" class="btn btn-ghost btn-sm" id="preview-clear-btn" style="width:auto">امسح النتايج</button>
+                <button type="button" class="btn btn-primary btn-sm" id="preview-grade-btn" style="width:auto">صحّح</button>
+              </div>
+            </div>
+            <div id="preview-results" style="margin-top:14px"></div>
+          </div>
         </div>
 
         <div id="quiz-editor-view" style="display:none">
@@ -8319,6 +8350,51 @@ ${reply.content}` : reply.content;
       }
     }
 
+    // ---------- تجريب التصحيح ----------
+    // النتايج بتتراكم من فوق لتحت عشان المقارنة: نفس المرجع مع خمس إجابات مختلفة في
+    // نفس الشاشة هو اللي بيوريك إن الدرجة الجزئية متدرّجة صح ولا بتقفز
+    async function runGradePreview() {
+      const button = document.getElementById('preview-grade-btn');
+      const payload = {
+        text: document.getElementById('preview-question').value.trim(),
+        reference_answer: document.getElementById('preview-reference').value.trim(),
+        grading_notes: document.getElementById('preview-notes').value.trim(),
+        points: Number(document.getElementById('preview-points').value) || 1,
+        student_answer: document.getElementById('preview-answer').value.trim(),
+      };
+      button.disabled = true;
+      button.textContent = 'بيصحّح...';
+      try {
+        const result = await api('/api/quizzes/grade-preview', { method: 'POST', body: JSON.stringify(payload) });
+        renderPreviewResult(payload, result);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = 'صحّح';
+      }
+    }
+
+    function renderPreviewResult(payload, result) {
+      const labels = { correct: 'صح', partial: 'جزئي', incorrect: 'غلط' };
+      const badges = { correct: 'badge-success', partial: 'badge-warning', incorrect: 'badge-danger' };
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.cssText = 'background:var(--surface-sunken); margin-bottom:10px';
+      card.innerHTML = `
+        <div class="row-between" style="gap:8px; flex-wrap:wrap">
+          <span class="badge ${badges[result.verdict] || 'badge-muted'}">${labels[result.verdict] || result.verdict}</span>
+          <b>${result.awarded_points} / ${result.points}</b>
+        </div>
+        <div style="margin-top:8px"><span class="card-desc">إجابة الطالب:</span>
+          <div style="white-space:pre-wrap">${escapeHtml(payload.student_answer)}</div></div>
+        <div style="margin-top:8px"><span class="card-desc">سبب المصحّح:</span>
+          <div>${escapeHtml(result.reason)}</div></div>
+        <div class="card-desc" style="margin-top:8px">${escapeHtml(result.model || result.provider)} · ${result.latency_ms} م.ث</div>`;
+      const box = document.getElementById('preview-results');
+      box.insertBefore(card, box.firstChild);
+    }
+
     // ---------- محرر الاختبار ----------
     function newQuizEditor() {
       editingQuizId = null;
@@ -8719,6 +8795,10 @@ ${reply.content}` : reply.content;
       showQuizView('list');
     });
     document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);
+    document.getElementById('preview-grade-btn').addEventListener('click', runGradePreview);
+    document.getElementById('preview-clear-btn').addEventListener('click', () => {
+      document.getElementById('preview-results').innerHTML = '';
+    });
     document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));
     document.getElementById('add-essay-btn').addEventListener('click', () => addQuizQuestion('essay'));
     document.getElementById('save-quiz-btn').addEventListener('click', saveQuiz);

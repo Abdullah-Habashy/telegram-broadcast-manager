@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const pool = require('../config/db');
 const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue } = require('../utils/quizScoring');
+const { gradeEssayAnswer } = require('../utils/quizGrading');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -227,6 +228,46 @@ async function saveQuestions(req, res) {
   res.json({ ok: true });
 }
 
+// ---------- تجربة التصحيح قبل الإرسال ----------
+//
+// **ليه دي مهمة:** الإجابة المرجعية بتتكتب مرة وبتتحاسب عليها عشرات الطلاب. الطريقة الوحيدة
+// لمعرفة إن المرجع مكتوب صح هي إنك تجرّب عليه إجابات فعلية قبل ما تبعت الرابط — إجابة كاملة،
+// وناقصة، وغلط — وتشوف الدرجة طلعت منطقية ولا لأ. من غير الخانة دي، أول تجربة حقيقية للمرجع
+// بتكون على ورق طلاب حقيقيين.
+//
+// **مافيش أي كتابة في قاعدة البيانات هنا** — لا محاولة ولا إجابة ولا سجل. نداء واحد للنموذج
+// ورد، فالموظف يقدر يجرّب عشرين إجابة من غير ما يوسّخ نتايج أي اختبار
+async function gradePreview(req, res) {
+  const question = String(req.body?.text || '').trim();
+  const reference = String(req.body?.reference_answer || '').trim();
+  const studentAnswer = String(req.body?.student_answer || '').trim();
+  if (!question) return res.status(400).json({ error: 'اكتب السؤال' });
+  if (!reference) return res.status(400).json({ error: 'اكتب الإجابة المرجعية — من غيرها مفيش معيار للتصحيح' });
+  if (!studentAnswer) return res.status(400).json({ error: 'اكتب إجابة الطالب التجريبية' });
+
+  const points = Number(req.body?.points) > 0 ? Number(req.body.points) : 1;
+  const startedAt = Date.now();
+  try {
+    const grade = await gradeEssayAnswer({
+      question,
+      referenceAnswer: reference,
+      gradingNotes: String(req.body?.grading_notes || '').trim(),
+      studentAnswer,
+    });
+    res.json({
+      ...grade,
+      points,
+      // نفس التقريب اللي بيتحسب بيه الطالب فعلًا (توثيق: finalizeAttempt)
+      awarded_points: Number((points * grade.score_ratio).toFixed(2)),
+      latency_ms: Date.now() - startedAt,
+    });
+  } catch (error) {
+    // الرسالة بتوصل الموظف زي ما هي: "المفتاح مش مضبوط" حاجة يقدر يتصرف فيها،
+    // و"حصل خطأ" مايقدرش
+    res.status(502).json({ error: `التصحيح فشل: ${error.message}` });
+  }
+}
+
 // ---------- المحاولات والنتايج ----------
 async function listAttempts(req, res) {
   const quizId = Number(req.params.id);
@@ -339,5 +380,5 @@ async function regradeQuiz(req, res) {
 
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
-  listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz,
+  listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
 };
