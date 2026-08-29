@@ -9,6 +9,7 @@ const registerStaffLinkHandler = require('./handlers/staffLink');
 const registerMessageHandler = require('./handlers/message');
 const registerStudentReportHandler = require('./handlers/studentReport');
 const registerStudentTransferHandler = require('./handlers/studentTransfer');
+const registerPhoneLinkHandler = require('./handlers/phoneLink');
 
 const WEBHOOK_PATH = '/bot/webhook';
 
@@ -43,6 +44,9 @@ function createBot(token) {
   // وتولّع التذكرة أزرق عند الموظف. الهاندلر بيوقفها عنده إلا لما تحتاج بني آدم فعلًا
   registerStudentReportHandler(bot);
   registerStudentTransferHandler(bot);
+  // **قبل message.js:** جهة الاتصال المشارَكة نوع رسالة، ولو وصلت للمعالج العادي هتتسجّل
+  // كوسائط مش مدعومة والطالب ياخد رد "ابعت مكتوب" على حاجة إحنا اللي طلبناها منه
+  registerPhoneLinkHandler(bot);
   registerMessageHandler(bot);
   bot.catch((err, ctx) => {
     console.error(`❌ Telegraf failed while processing update [${ctx.updateType}]:`, err.message);

@@ -89,6 +89,10 @@ CREATE INDEX IF NOT EXISTS idx_contacts_last_contacted ON contacts (last_contact
 -- التبديل بيكتب على الاتنين لو الربط موجود، والقراءة OR بينهم — فهي علامة واحدة منطقيًا
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS is_urgent BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- إمتى بعتنا لجهة الاتصال دي طلب مشاركة الرقم. **بيتسجّل عشان نسأل مرة واحدة بس** — الطالب
+-- اللي مايشاركش رقمه مش عايز يشاركه، وتكرار الطلب كل رسالة بيتحوّل لمضايقة
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS phone_request_sent_at TIMESTAMPTZ;
+
 -- نص مخصّص لرسالة المتابعة التلقائية القادمة لهذه التذكرة وحدها. فاضي = استخدم القالب العام
 -- من الإعدادات. بيتمسح بعد الإرسال عشان يفضل "الرسالة القادمة" مش قالب دائم للطالب ده
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS next_follow_up_message TEXT;
@@ -599,6 +603,12 @@ INSERT INTO settings (key, value) VALUES
     -- رابط المنصة اللي زرار "ابدأ الدرس الجاي" في تقرير الطالب بيوّدي له. متاخد من الروابط
     -- اللي الفريق فعلًا بيبعتها للطلاب في المحادثات. لو اتفضّى، الزرار بيتحوّل لاسم الدرس
     -- من غير رابط — معلومة مفيدة بدل زرار مكسور
+    -- طلب مشاركة الرقم من الطلاب اللي البوت مايعرفهمش. تيليجرام مابيدّيناش الرقم عند /start،
+    -- فالطالب اللي ما ربطش تيليجرام على المنصة بيفضل مجهول مهما كلّمنا — واسمه المعروض
+    -- ممكن يكون لقب أو إيموجي. الزرار بيحلّها بضغطة واحدة من غير كتابة
+    ('phone_request_enabled', 'true'),
+    ('phone_request_message', 'عشان نقدر نتابعك صح ونطلّعلك تقريرك، محتاجين نعرف حسابك على المنصة 🙌
+اضغط الزرار تحت وهيتبعت رقمك تلقائيًا — مش هتكتب حاجة.'),
     ('platform_url', 'https://abdullah-habashy.com'),
     ('forwarding_enabled', 'false'),
     ('forward_chat_id', NULL),

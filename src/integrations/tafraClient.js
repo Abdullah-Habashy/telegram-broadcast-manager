@@ -83,15 +83,24 @@ class TafraReadOnlyClient {
     const safePage = Math.max(1, Number(page) || 1);
     const safePerPage = Math.min(100, Math.max(1, Number(perPage) || 100));
     const url = `${BASE_URL}/students?page=${safePage}&per_page=${safePerPage}`;
+    // **المهلة الافتراضية (٦٠ث) أقصر من الصفحات العميقة.** المنصة بتبطّأ خطّيًا مع رقم
+    // الصفحة لأنها بتقرا وترمي كل الصفوف اللي قبلها: صفحة ١ = ٢ث، ٦٠ = ٣٠ث، ١٢٦ = ٦٢ث
+    // — يعني آخر صفحة (٢٤٥) متوقّعة ~١٢٠ث. الرقم ده سقف أمان لطلب معلّق، مش ضبط أداء
+    const timeoutMs = 240000;
     let lastError;
     for (let attempt = 1; attempt <= 4; attempt += 1) {
       try {
         return await this.request(url, {
           method: 'GET',
+          timeoutMs,
           headers: { Authorization: `Bearer ${this.accessToken}` },
         });
       } catch (error) {
         lastError = error;
+        // **الطلب المقطوع بيقتل الجلسة عند المنصة.** قِسناها: صفحة اتقطعت بالمهلة، وكل
+        // اللي بعدها رجّع "يجب أن تكون مسجل الدخول" فورًا — فإعادة المحاولة بنفس التوكن
+        // بعد انقطاع = محاولات محروقة على توكن ميت (١٩٠ ثانية ضاعت في القياس)
+        if (error.name === 'AbortError') this.accessToken = null;
         // **isSessionExpiredError مش `error.status === 401`.** المنصة بترجّع انتهاء الجلسة
         // برسالة "يجب أن تكون مسجل الدخول" وحالة **مش** ٤٠١ — فالفحص على الكود لوحده
         // بيفوّتها، والطلب بيقع في فرع الرمي وتموت المزامنة كلها.
@@ -103,6 +112,7 @@ class TafraReadOnlyClient {
         } else if (attempt < 4 && (error.name === 'AbortError' || error.status === 429
           || error.status >= 500 || error.platformFailure)) {
           await delay(attempt * 1500);
+          await this.ensureLogin();
         } else {
           throw error;
         }
