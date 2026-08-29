@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { TAFRA_NAME_JOIN_SQL, DISPLAY_NAME_SQL } = require('../utils/studentName');
 const { parse } = require('csv-parse/sync');
 const { stringify } = require('csv-stringify/sync');
 const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
@@ -185,6 +186,7 @@ async function listContacts(req, res) {
       t.status AS ticket_status, t.priority AS ticket_priority, t.category AS ticket_category,
       t.assigned_to, t.unread_count, t.next_follow_up_at,
       ts.name AS subtitle_name, u.name AS assigned_name,
+      tafra_match.name AS tafra_name,
       bootcamp_marks.in_chapter_one, bootcamp_marks.in_full_curriculum,
       COALESCE((
         SELECT json_agg(json_build_object('id', tag_item.id, 'name', tag_item.name, 'color', tag_item.color))
@@ -196,6 +198,7 @@ async function listContacts(req, res) {
     LEFT JOIN tickets t ON t.contact_id = c.id
     LEFT JOIN ticket_subtitles ts ON ts.id = t.subtitle_id
     LEFT JOIN users u ON u.id = t.assigned_to
+    ${TAFRA_NAME_JOIN_SQL}
     ${BOOTCAMP_MARKS_JOIN_SQL}
     ${where}
     ORDER BY c.created_at DESC
@@ -274,9 +277,13 @@ async function importContacts(req, res) {
 async function exportContacts(req, res) {
   try {
     const result = await pool.query(
-      `SELECT chat_id, telegram_username AS username, first_name, last_name, phone,
-              source, last_contacted_at, created_at
-       FROM contacts ORDER BY created_at DESC`
+      // اسم المنصة أول عمود: ده الاسم اللي الموظف بيدوّر بيه في الملف
+      `SELECT ${DISPLAY_NAME_SQL} AS name, tafra_match.name AS platform_name,
+              c.chat_id, c.telegram_username AS username, c.first_name, c.last_name, c.phone,
+              c.source, c.last_contacted_at, c.created_at
+       FROM contacts c
+       ${TAFRA_NAME_JOIN_SQL}
+       ORDER BY c.created_at DESC`
     );
     const excelRows = result.rows.map((row) => ({
       ...row,

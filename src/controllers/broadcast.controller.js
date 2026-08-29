@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { TAFRA_NAME_JOIN_SQL, DISPLAY_NAME_SQL } = require('../utils/studentName');
 const fs = require('fs');
 const { sendBroadcast } = require('../bot/broadcastSender');
 
@@ -148,9 +149,11 @@ async function getBroadcast(req, res) {
       return res.status(404).json({ error: 'مش موجود' });
     }
     const recipientsResult = await pool.query(
-      `SELECT br.*, c.chat_id, c.first_name, c.telegram_username
+      `SELECT br.*, c.chat_id, c.first_name, c.last_name, c.telegram_username,
+              tafra_match.name AS tafra_name, ${DISPLAY_NAME_SQL} AS display_name
        FROM broadcast_recipients br
        JOIN contacts c ON c.id = br.contact_id
+       ${TAFRA_NAME_JOIN_SQL}
        WHERE br.broadcast_id = $1
        ORDER BY br.id`,
       [req.params.id]

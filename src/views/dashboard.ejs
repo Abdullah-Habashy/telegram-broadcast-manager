@@ -1696,12 +1696,15 @@
       return isUrgent ? '<span class="badge badge-danger" title="حالة عاجلة">🚨 عاجل</span>' : '';
     }
 
+    // **نسخة من src/utils/studentName.js — نفس الترتيب بالحرف.** الاسم على منصة طفرة هو
+    // الاسم الحقيقي، واسم تيليجرام بيكتبه الطالب بنفسه وساعات بيبقى لقب أو رموز.
+    // أي تعديل هنا لازم يتعمل هناك، وإلا الطالب يظهر باسمين مختلفين في شاشتين
     function studentDisplayName(row) {
       if (!row) return 'بدون اسم';
-      const tafra = (row.tafra_name || '').trim();
-      if (tafra) return tafra;
+      const platform = String(row.tafra_name || row.platform_name || '').trim();
+      if (platform) return platform;
       const telegram = [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
-      return telegram || row.telegram_username || String(row.chat_id || 'بدون اسم');
+      return telegram || String(row.telegram_username || row.username || '').trim() || String(row.chat_id || 'بدون اسم');
     }
 
     function escapeHtml(value) {

@@ -1,4 +1,5 @@
 const pool = require('../../config/db');
+const { displayName, platformNameFor } = require('../../utils/studentName');
 const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
 const { notifyEmployeesOfIncomingMessage } = require('./message');
 const { sendOutsideHoursAck } = require('../outsideHoursAck');
@@ -106,7 +107,10 @@ module.exports = function registerStartHandler(bot) {
           [ticketId, messageText, telegramMessage.message_id]
         );
 
-        const studentName = [first_name, last_name].filter(Boolean).join(' ') || (username ? `@${username}` : String(chatId));
+        const platformName = await platformNameFor(chatId);
+        const studentName = displayName({
+          tafra_name: platformName, first_name, last_name, telegram_username: username, chat_id: chatId,
+        });
         try {
           const events = require('../../utils/events');
           events.notifyNewIncomingMessage({

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const pool = require('../../config/db');
+const { displayName, platformNameFor } = require('../../utils/studentName');
 const push = require('../../utils/push');
 const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
 const { isWithinWorkingHours, currentCairoTime, formatArabicTime } = require('../../utils/workingHours');
@@ -134,7 +135,12 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
       ticketClient.release();
     }
     const ticketId = ticketRow?.id;
-    const studentName = [first_name, last_name].filter(Boolean).join(' ') || (username ? `@${username}` : String(chatId));
+    // اسم المنصة الأول: الموظف بيشوف الإشعار على تليفونه وبيقرر يفتح ولا لأ من الاسم،
+    // و"ᗰ" مابتقولّهوش حاجة
+    const platformName = await platformNameFor(chatId);
+    const studentName = displayName({
+      tafra_name: platformName, first_name, last_name, telegram_username: username, chat_id: chatId,
+    });
 
     // إرسال إشعار فوري لجميع الموظفين المتصلين عبر SSE
     try {
@@ -169,7 +175,8 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
       && settings.forward_chat_id
       && String(chatId) !== settings.forward_chat_id
     ) {
-      const senderName = [first_name, last_name].filter(Boolean).join(' ') || 'بدون اسم';
+      // نفس الاسم اللي في اللوحة والإشعار — الرسالة المحوّلة للجروب مش استثناء
+      const senderName = studentName;
       const senderUsername = username ? `@${username}` : 'بدون username';
       const metadata = `📩 رسالة جديدة للبوت\nمن: ${senderName}\nالمستخدم: ${senderUsername}\nChat ID: ${chatId}`;
 

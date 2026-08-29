@@ -1,5 +1,6 @@
 const fs = require('fs');
 const pool = require('../config/db');
+const { getFirstName } = require('../utils/messagePersonalization');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { TafraReadOnlyClient, BASE_URL } = require('../integrations/tafraClient');
 const reportExport = require('../utils/reportExport');
@@ -646,8 +647,15 @@ async function sendNewBotBroadcast(req, res) {
   // بتبعت chat_ids متحددة، وممكن تكون اتحددت قبل ما الطالب يدخل بوت المتابعة — والفلترة هنا
   // هي الوحيدة اللي بتتحقق وقت الإرسال نفسه
   const contactsResult = await pool.query(
-    `SELECT nbc.chat_id, nbc.first_name FROM new_bot_contacts nbc
+    // اسم المنصة وnوع الطالب بيتجابوا هنا عشان المناداة في الرسالة تبقى بالاسم الحقيقي —
+    // نفس اللي بيحصل في الإرسال الجماعي للبوت الأساسي (bot/broadcastSender.js)
+    `SELECT nbc.chat_id, nbc.first_name, nbc.telegram_username,
+            tafra.name AS tafra_name, tafra.gender
+     FROM new_bot_contacts nbc
      LEFT JOIN contacts c ON c.chat_id = nbc.chat_id
+     LEFT JOIN LATERAL (
+       SELECT name, gender FROM tafra_students WHERE telegram_chat_id = nbc.chat_id LIMIT 1
+     ) tafra ON TRUE
      WHERE nbc.chat_id = ANY($1::bigint[]) AND c.last_contacted_at IS NULL`,
     [chatIds]
   );
@@ -668,7 +676,9 @@ async function sendNewBotBroadcast(req, res) {
   let telegramFileId = null;
   for (const contact of contactsResult.rows) {
     try {
-      const personalized = message.replaceAll('الاسم', contact.first_name || 'صديقنا');
+      // **نفس دالة الإرسال الجماعي بالظبط.** كانت بتنادي باسم تيليجرام أو "صديقنا"،
+      // فالطالب بياخد رسالة من بوت طفرة باسم غير اللي بياخده من بوت المتابعة
+      const personalized = message.replaceAll('الاسم', getFirstName(contact));
       if (imagePath) {
         const photo = telegramFileId || { source: imagePath };
         const result = await bot.telegram.sendPhoto(contact.chat_id, photo, {
