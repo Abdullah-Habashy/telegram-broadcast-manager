@@ -961,6 +961,16 @@ CREATE TABLE IF NOT EXISTS quizzes (
 );
 CREATE INDEX IF NOT EXISTS idx_quizzes_token ON quizzes (token);
 
+-- رابط مختصر بديل للتوكن الطويل: /q/olom1 بدل ٦٤ حرف. الاتنين بيفتحوا نفس الاختبار، فأي
+-- رابط اتبعت بالتوكن قبل كده مايكسرش.
+-- **الرابط المختصر مش سر** — قصير عشان الموظف يقدر يكتبه أو يقوله في فيديو، والحماية
+-- الحقيقية في قفل الاختبار (is_open) وفي إن الأسئلة مابتتبعتش قبل ما الطالب يدخل برقمه.
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS slug VARCHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quizzes_slug ON quizzes (LOWER(slug)) WHERE slug IS NOT NULL;
+-- تعبئة الاختبارات اللي اتعملت قبل الميزة دي بكود قصير. الشرط بيخلي الجملة تنفّذ مرة
+-- واحدة فعليًا مهما اتطبّق الـ schema كام مرة
+UPDATE quizzes SET slug = SUBSTRING(MD5(RANDOM()::text || id::text) FROM 1 FOR 6) WHERE slug IS NULL;
+
 -- الأسئلة نوعين في نفس الجدول: عمود kind هو الفارق، والأعمدة الخاصة بكل نوع NULL في التاني.
 -- جدولين منفصلين كان هيخلي ترتيب الأسئلة في الصفحة (position) موزّع على جدولين
 CREATE TABLE IF NOT EXISTS quiz_questions (

@@ -643,6 +643,9 @@
               <div class="field" style="flex:2; min-width:240px"><label>عنوان الاختبار</label><input type="text" id="quiz-title" /></div>
               <div class="field" style="flex:1; min-width:160px"><label>المدة بالدقايق</label><input type="number" min="1" id="quiz-time-limit" placeholder="فاضية = من غير مؤقت" /></div>
             </div>
+            <div class="field"><label>الرابط المختصر
+              <span class="card-desc">آخر جزء من الرابط اللي الطالب بيفتحه: <code>/q/</code><span id="quiz-slug-preview">bio-1</span> — إنجليزي وأرقام وشرطة بس. سيبها فاضية وهيتولّد كود قصير لوحده.</span></label>
+              <input type="text" id="quiz-slug" placeholder="مثال: bio-1" dir="ltr" style="text-align:left" /></div>
             <div class="field"><label>وصف مختصر (اختياري)</label><textarea id="quiz-description" rows="2"></textarea></div>
             <label class="row" style="gap:8px; cursor:pointer; margin-top:4px">
               <input type="checkbox" id="quiz-show-score" checked />
@@ -8313,6 +8316,7 @@ ${reply.content}` : reply.content;
       quizEditorHasAttempts = false;
       document.getElementById('quiz-editor-title').textContent = 'اختبار جديد';
       document.getElementById('quiz-title').value = '';
+      document.getElementById('quiz-slug').value = '';
       document.getElementById('quiz-description').value = '';
       document.getElementById('quiz-time-limit').value = '';
       document.getElementById('quiz-show-score').checked = true;
@@ -8338,6 +8342,7 @@ ${reply.content}` : reply.content;
         }));
         document.getElementById('quiz-editor-title').textContent = `تعديل: ${quiz.title}`;
         document.getElementById('quiz-title').value = quiz.title;
+        document.getElementById('quiz-slug').value = quiz.slug || '';
         document.getElementById('quiz-description').value = quiz.description || '';
         document.getElementById('quiz-time-limit').value = quiz.time_limit_minutes || '';
         document.getElementById('quiz-show-score').checked = quiz.show_score_to_student;
@@ -8462,6 +8467,8 @@ ${reply.content}` : reply.content;
 
       const payload = {
         title,
+        // فاضية = مابنبعتش الحقل خالص، والسيرفر بيسيب الرابط القديم زي ما هو (COALESCE)
+        slug: document.getElementById('quiz-slug').value.trim() || undefined,
         description: document.getElementById('quiz-description').value.trim(),
         time_limit_minutes: document.getElementById('quiz-time-limit').value || null,
         show_score_to_student: document.getElementById('quiz-show-score').checked,
@@ -8669,6 +8676,11 @@ ${reply.content}` : reply.content;
     document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));
     document.getElementById('add-essay-btn').addEventListener('click', () => addQuizQuestion('essay'));
     document.getElementById('save-quiz-btn').addEventListener('click', saveQuiz);
+    // معاينة الرابط وهو بيكتب — أرخص من إنه يحفظ وبعدين يكتشف إن الشكل مرفوض
+    document.getElementById('quiz-slug').addEventListener('input', (event) => {
+      const value = event.target.value.trim().toLowerCase().replace(/\s+/g, '-');
+      document.getElementById('quiz-slug-preview').textContent = value || 'كود-تلقائي';
+    });
 
     // ---------- تشغيل أولي ----------
     const hasTicketsAccess = Boolean(document.querySelector('.nav-item[data-tab="tickets"]'));

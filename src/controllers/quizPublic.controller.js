@@ -4,8 +4,12 @@ const { finalizeAttempt } = require('../utils/quizScoring');
 
 // ---------- صفحة الاختبار للطالب ----------
 //
-// صفحة عامة من غير تسجيل دخول — نفس نمط /r/:token و /me/:token. الحماية إن التوكن عشوائي
-// طويل، والهوية بتتحدد جوه الصفحة برقم التليفون.
+// صفحة عامة من غير تسجيل دخول — نفس نمط /r/:token و /me/:token، والهوية بتتحدد جوه
+// الصفحة برقم التليفون.
+//
+// **الرابط مش وسيلة الحماية هنا.** الاختبار بيتبعت لمئات الطلاب في رسالة واحدة وبيتنشر
+// بينهم في دقايق، فالتوكن الطويل كان بيدّي إحساس زائف بالسرّية. اللي بيحمي فعلًا: قفل
+// الاختبار (is_open)، ومحاولة واحدة لكل طالب، وإن الأسئلة مابتتبعتش قبل الدخول بالرقم.
 //
 // **الأسئلة مابتتحقنش في الـ HTML.** الصفحة بتتحمّل ببوابة رقم التليفون بس، والأسئلة بتيجي
 // في نداء تاني بعد ما المحاولة تتفتح. لولا كده كان أي حد يفتح مصدر الصفحة يقرا الأسئلة
@@ -23,10 +27,13 @@ function normalizePhone(raw) {
   return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
-async function loadQuizByToken(token) {
+// الرابط بياخد شكلين: المختصر (/q/bio-1) والتوكن الطويل (/q/5bf5...). الاتنين على نفس
+// الاختبار عن قصد — الروابط اللي اتبعتت للطلاب قبل ما المختصر يتضاف لازم تفضل شغّالة.
+// المقارنة على المختصر بتتجاهل حالة الحروف لأن الطالب بيكتبه بإيده
+async function loadQuizByRef(ref) {
   const { rows } = await pool.query(
     `SELECT id, title, description, time_limit_minutes, is_open, show_score_to_student
-     FROM quizzes WHERE token = $1`, [token]);
+     FROM quizzes WHERE LOWER(slug) = LOWER($1) OR token = $1`, [ref]);
   return rows[0] || null;
 }
 
@@ -43,7 +50,7 @@ async function loadQuestionsForStudent(quizId) {
 }
 
 async function renderQuiz(req, res) {
-  const quiz = await loadQuizByToken(req.params.token);
+  const quiz = await loadQuizByRef(req.params.ref);
   if (!quiz) return res.status(404).render('report-not-found');
   const countResult = await pool.query(
     'SELECT COUNT(*)::int AS count FROM quiz_questions WHERE quiz_id = $1', [quiz.id]);
@@ -87,7 +94,7 @@ async function loadSavedAnswers(attemptId) {
 // بيتنادى بالتليفون، وممكن يترد عليه بطلب اختيار (رقم مشترك بين إخوات) أو طلب اسم (رقم
 // مش على المنصة). الحالتين بيرجعوا للواجهة عشان تسأل، والنداء بيتعاد بنفس التليفون + الزيادة
 async function startAttempt(req, res) {
-  const quiz = await loadQuizByToken(req.params.token);
+  const quiz = await loadQuizByRef(req.params.ref);
   if (!quiz) return res.status(404).json({ error: 'الاختبار مش موجود' });
 
   const phone = normalizePhone(req.body?.phone);
@@ -180,18 +187,18 @@ async function startAttempt(req, res) {
 }
 
 // المحاولة بتتعرف بمفتاحها مش بالتليفون: الرقم مش سر، والمفتاح بيتولّد مرة واحدة ومابيتعرضش
-async function loadOpenAttempt(token, attemptKey) {
+async function loadOpenAttempt(ref, attemptKey) {
   const { rows } = await pool.query(
     `SELECT a.id, a.quiz_id, a.submitted_at, a.deadline_at, q.is_open, q.show_score_to_student, q.title
      FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id
-     WHERE q.token = $1 AND a.attempt_key = $2`, [token, attemptKey]);
+     WHERE (LOWER(q.slug) = LOWER($1) OR q.token = $1) AND a.attempt_key = $2`, [ref, attemptKey]);
   return rows[0] || null;
 }
 
 // حفظ تلقائي كل شوية وقت ما الطالب بيكتب. **بيتخزّن من غير تصحيح** — التصحيح بيحصل مرة
 // واحدة عند التسليم. من غير الحفظ ده، أي قفل للتاب في امتحان بمؤقت كان بيساوي صفر
 async function saveProgress(req, res) {
-  const attempt = await loadOpenAttempt(req.params.token, req.body?.attempt_key);
+  const attempt = await loadOpenAttempt(req.params.ref, req.body?.attempt_key);
   if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
   if (attempt.submitted_at) return res.status(409).json({ error: 'الاختبار اتسلّم خلاص' });
 
@@ -225,7 +232,7 @@ async function persistAnswers(attempt, answers) {
 }
 
 async function submitAttempt(req, res) {
-  const attempt = await loadOpenAttempt(req.params.token, req.body?.attempt_key);
+  const attempt = await loadOpenAttempt(req.params.ref, req.body?.attempt_key);
   if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
   if (attempt.submitted_at) return res.status(409).json({ error: 'الاختبار اتسلّم خلاص' });
 

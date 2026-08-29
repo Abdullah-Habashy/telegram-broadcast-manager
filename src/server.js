@@ -121,13 +121,13 @@ app.get('/me/:token', studentReportController.renderSelfReport);
 app.get('/me/:token/videos', studentReportController.getSelfReportVideos);
 
 // ===== صفحة الاختبار للطالب =====
-// نفس فكرة /r/ و /me/: توكن عشوائي بدل تسجيل دخول، ومتسجّلة قبل مسارات المصادقة عشان
-// مايتمش تحويلها للوجين. الهوية بتتحدد جوه الصفحة برقم التليفون، والأسئلة بتيجي في نداء
-// منفصل بعد الدخول — مش محقونة في الـ HTML
-app.get('/q/:token', quizPublicController.renderQuiz);
-app.post('/q/:token/start', quizPublicController.startAttempt);
-app.post('/q/:token/save', quizPublicController.saveProgress);
-app.post('/q/:token/submit', quizPublicController.submitAttempt);
+// متسجّلة قبل مسارات المصادقة عشان مايتمش تحويلها للوجين. الـ ref بياخد الرابط المختصر
+// (/q/bio-1) أو التوكن الطويل — الاتنين على نفس الاختبار عشان الروابط القديمة ماتكسرش.
+// الهوية بتتحدد جوه الصفحة برقم التليفون، والأسئلة بتيجي في نداء منفصل بعد الدخول
+app.get('/q/:ref', quizPublicController.renderQuiz);
+app.post('/q/:ref/start', quizPublicController.startAttempt);
+app.post('/q/:ref/save', quizPublicController.saveProgress);
+app.post('/q/:ref/submit', quizPublicController.submitAttempt);
 
 // نفس التقرير للموظف المسجّل دخول بمعرّف الطالب — من غير ما يحتاج يعمل رابط عام
 app.get('/student-report/:id', requireAuth, studentReportController.renderStaffReport);

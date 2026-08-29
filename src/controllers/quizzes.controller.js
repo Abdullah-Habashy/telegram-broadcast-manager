@@ -4,15 +4,36 @@ const { finalizeAttempt, recalculateAttempt } = require('../utils/quizScoring');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
-function quizUrl(req, token) {
+// الرابط المعروض للموظف هو المختصر لما يكون موجود — التوكن الطويل بيفضل شغّال على نفس
+// الصفحة، بس محدش محتاج ينسخه بعد كده
+function quizUrl(req, quiz) {
   const base = (process.env.PUBLIC_URL || '').replace(/\/+$/, '')
     || `${req.protocol}://${req.get('host')}`;
-  return `${base}/q/${token}`;
+  return `${base}/q/${quiz.slug || quiz.token}`;
+}
+
+// حروف من غير المتشابهات (0/O و 1/l/i) — الكود ده بيتقال في فيديو وبيتكتب على الموبايل،
+// والحرف اللي بيتلخبط فيه الطالب بيولّد تذكرة دعم
+const SLUG_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+
+function generateSlug() {
+  return Array.from({ length: 6 }, () =>
+    SLUG_ALPHABET[crypto.randomInt(SLUG_ALPHABET.length)]).join('');
+}
+
+// الموظف بيقدر يكتبه بنفسه (اسم الدرس مثلًا). بنقبل إنجليزي وأرقام وشرطة بس — العربي في
+// الرابط بيتحوّل لـ percent-encoding وبيبقى أوحش من التوكن اللي بنهرب منه
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{1,39}$/;
+
+function normalizeSlug(raw) {
+  const value = String(raw || '').trim().toLowerCase().replace(/\s+/g, '-');
+  if (!value) return null;
+  return SLUG_PATTERN.test(value) ? value : false;
 }
 
 async function listQuizzes(req, res) {
   const { rows } = await pool.query(
-    `SELECT q.id, q.title, q.description, q.token, q.time_limit_minutes, q.is_open,
+    `SELECT q.id, q.title, q.description, q.token, q.slug, q.time_limit_minutes, q.is_open,
             q.show_score_to_student, q.created_at,
             (SELECT COUNT(*)::int FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS question_count,
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NOT NULL) AS submitted_count,
@@ -20,7 +41,7 @@ async function listQuizzes(req, res) {
             -- محتاج تدخّل: تصحيح آلي فشل أو سؤال مقالي لسه من غير درجة
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.grading_status = 'partial') AS needs_review_count
      FROM quizzes q ORDER BY q.created_at DESC`);
-  res.json(rows.map((row) => ({ ...row, url: quizUrl(req, row.token) })));
+  res.json(rows.map((row) => ({ ...row, url: quizUrl(req, row) })));
 }
 
 async function getQuiz(req, res) {
@@ -37,25 +58,51 @@ async function getQuiz(req, res) {
 
   res.json({
     ...quiz,
-    url: quizUrl(req, quiz.token),
+    url: quizUrl(req, quiz),
     // الواجهة بتقفل زرار حذف السؤال لما يبقى فيه محاولات — الحذف بيمسح إجابات طلاب معاه
     attempt_count: attemptCount.rows[0].count,
     questions: questions.rows.map((row) => ({ ...row, points: Number(row.points) })),
   });
 }
 
+const SLUG_HELP = 'الرابط المختصر يبقى إنجليزي وأرقام وشرطة بس، من حرفين لأربعين — زي bio-1 أو olom5';
+
 async function createQuiz(req, res) {
   const title = String(req.body?.title || '').trim();
   if (!title) return res.status(400).json({ error: 'عنوان الاختبار مطلوب' });
   const timeLimit = req.body?.time_limit_minutes ? Number(req.body.time_limit_minutes) : null;
   const token = crypto.randomBytes(32).toString('hex');
-  const { rows } = await pool.query(
-    `INSERT INTO quizzes (title, description, token, time_limit_minutes, show_score_to_student, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [title, String(req.body?.description || '').trim() || null, token,
-      Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
-      req.body?.show_score_to_student !== false, req.session.userId]);
-  res.json({ ...rows[0], url: quizUrl(req, rows[0].token) });
+
+  const requested = normalizeSlug(req.body?.slug);
+  if (requested === false) return res.status(400).json({ error: SLUG_HELP });
+
+  const params = (slug) => [title, String(req.body?.description || '').trim() || null, token, slug,
+    Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
+    req.body?.show_score_to_student !== false, req.session.userId];
+  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`;
+
+  // الموظف اختار الرابط بنفسه؟ التعارض بيترد عليه برسالة. مااخترش؟ بنولّد كود ونعيد
+  // المحاولة لحد ما يعدّي — الاحتمال ضعيف بس السكوت عنه معناه اختبار من غير رابط مختصر
+  if (requested) {
+    try {
+      const { rows } = await pool.query(insert, params(requested));
+      return res.json({ ...rows[0], url: quizUrl(req, rows[0]) });
+    } catch (error) {
+      if (error.code === '23505') return res.status(409).json({ error: 'الرابط المختصر ده مستخدم في اختبار تاني — اختار غيره' });
+      throw error;
+    }
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const { rows } = await pool.query(insert, params(generateSlug()));
+      return res.json({ ...rows[0], url: quizUrl(req, rows[0]) });
+    } catch (error) {
+      if (error.code !== '23505') throw error;
+    }
+  }
+  return res.status(500).json({ error: 'مقدرناش نولّد رابط مختصر — جرّب تاني' });
 }
 
 async function updateQuiz(req, res) {
@@ -63,15 +110,25 @@ async function updateQuiz(req, res) {
   const title = String(req.body?.title || '').trim();
   if (!title) return res.status(400).json({ error: 'عنوان الاختبار مطلوب' });
   const timeLimit = req.body?.time_limit_minutes ? Number(req.body.time_limit_minutes) : null;
-  const { rows } = await pool.query(
-    `UPDATE quizzes SET title = $1, description = $2, time_limit_minutes = $3,
-            is_open = $4, show_score_to_student = $5, updated_at = NOW()
-     WHERE id = $6 RETURNING *`,
-    [title, String(req.body?.description || '').trim() || null,
-      Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
-      req.body?.is_open !== false, req.body?.show_score_to_student !== false, quizId]);
+  const requested = normalizeSlug(req.body?.slug);
+  if (requested === false) return res.status(400).json({ error: SLUG_HELP });
+
+  let rows;
+  try {
+    // COALESCE: الطلب اللي مابيبعتش slug (زي زرار القفل والفتح) مايمسحش الرابط الموجود
+    ({ rows } = await pool.query(
+      `UPDATE quizzes SET title = $1, description = $2, time_limit_minutes = $3,
+              is_open = $4, show_score_to_student = $5, slug = COALESCE($6, slug), updated_at = NOW()
+       WHERE id = $7 RETURNING *`,
+      [title, String(req.body?.description || '').trim() || null,
+        Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
+        req.body?.is_open !== false, req.body?.show_score_to_student !== false, requested, quizId]));
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'الرابط المختصر ده مستخدم في اختبار تاني — اختار غيره' });
+    throw error;
+  }
   if (!rows.length) return res.status(404).json({ error: 'الاختبار مش موجود' });
-  res.json({ ...rows[0], url: quizUrl(req, rows[0].token) });
+  res.json({ ...rows[0], url: quizUrl(req, rows[0]) });
 }
 
 async function deleteQuiz(req, res) {
