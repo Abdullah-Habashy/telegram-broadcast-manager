@@ -99,9 +99,16 @@ function normalizeGrade(raw) {
   };
 }
 
+// نموذج التصحيح منفصل عن نموذج الرد الآلي: الرد بيتكلم مع طالب، والتصحيح بيحط درجة.
+// لو المفتاح فاضي أو فيه مزوّد اتشال من الكود، بنرجع لمزوّد الرد الآلي وبعده للافتراضي —
+// **مابنرميش خطأ**: إعداد غلط في صف settings مايوقفش تصحيح ورقة طالب
 async function activeProvider() {
-  const { rows } = await pool.query("SELECT value FROM settings WHERE key = 'ai_provider'");
-  return rows[0]?.value || DEFAULT_PROVIDER;
+  const { rows } = await pool.query(
+    "SELECT key, value FROM settings WHERE key IN ('quiz_grading_provider', 'ai_provider')");
+  const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  const chosen = settings.quiz_grading_provider;
+  if (chosen && PROVIDERS[chosen]) return chosen;
+  return settings.ai_provider && PROVIDERS[settings.ai_provider] ? settings.ai_provider : DEFAULT_PROVIDER;
 }
 
 function isEnabled() {

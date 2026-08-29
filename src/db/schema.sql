@@ -930,6 +930,13 @@ CREATE INDEX IF NOT EXISTS idx_sms_logs_student ON sms_logs (tafra_student_id, s
 CREATE INDEX IF NOT EXISTS idx_call_logs_follow_up ON call_logs (next_follow_up_at) WHERE next_follow_up_at IS NOT NULL;
 
 
+
+-- نموذج تصحيح الأسئلة المقالية. **منفصل عن ai_provider بتاع الرد الآلي عن قصد**: الرد الآلي
+-- بيتكلم مع طالب ومحتاج أخف وأسرع، والتصحيح بيحط درجة في ورقة وبيتحاسب عليها — فاللي يختار
+-- Haiku للرد مش لازم يبقى مجبر يختاره للتصحيح. فاضي أو قيمة مش معروفة = يرجع لـ ai_provider
+INSERT INTO settings (key, value) VALUES ('quiz_grading_provider', 'anthropic')
+ON CONFLICT (key) DO NOTHING;
+
 -- أبواب شرط المتابعة في /api/public/student-status — قايمة معرّفات مفصولة بفاصلة، بتتظبط
 -- من تبويب "بوت طفرة ← شروط الـ API". فاضية معناها الشرط مقفول والـ API بيرد زي الأول
 -- (يعني على دخول البوت بس)، مش معناها "مفيش طالب مشترك" — الفرق ده بيقلب النتيجة لكل الطلاب

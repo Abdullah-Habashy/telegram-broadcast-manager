@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const pool = require('../config/db');
 const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue } = require('../utils/quizScoring');
 const { gradeEssayAnswer } = require('../utils/quizGrading');
+const { listProviders, PROVIDERS } = require('../utils/aiProviders');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -228,6 +229,34 @@ async function saveQuestions(req, res) {
   res.json({ ok: true });
 }
 
+// ---------- نموذج التصحيح ----------
+// منفصل عن نموذج الرد الآلي في تبويب الذكاء الصناعي: ده بيحط درجة في ورقة، وده بيتكلم
+// مع طالب. المزوّد اللي مفتاحه مش مضبوط على السيرفر بيرجع available: false والواجهة
+// بتقفله بدل ما الموظف يختاره ويكتشف الفشل وقت تصحيح أول امتحان
+async function getGradingProviders(req, res) {
+  const { rows } = await pool.query(
+    "SELECT key, value FROM settings WHERE key IN ('quiz_grading_provider', 'ai_provider')");
+  const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  const chosen = settings.quiz_grading_provider;
+  const current = chosen && PROVIDERS[chosen] ? chosen
+    : (settings.ai_provider && PROVIDERS[settings.ai_provider] ? settings.ai_provider : 'anthropic');
+  res.json({ providers: listProviders(), current });
+}
+
+async function setGradingProvider(req, res) {
+  const provider = String(req.body?.provider || '').trim();
+  if (!PROVIDERS[provider]) return res.status(400).json({ error: 'المزوّد ده مش معروف' });
+  // المفتاح الناقص بيتمسك هنا مش وقت تصحيح ورقة: الرسالة للأدمن دلوقتي أنفع بكتير من
+  // محاولة تصحيح بتفشل بعد أسبوع على امتحان حقيقي
+  if (!PROVIDERS[provider].available()) {
+    return res.status(400).json({ error: `مفتاح ${PROVIDERS[provider].label} مش مضبوط على السيرفر` });
+  }
+  await pool.query(
+    `INSERT INTO settings (key, value) VALUES ('quiz_grading_provider', $1)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [provider]);
+  res.json({ ok: true, provider, label: PROVIDERS[provider].label });
+}
+
 // ---------- تجربة التصحيح قبل الإرسال ----------
 //
 // **ليه دي مهمة:** الإجابة المرجعية بتتكتب مرة وبتتحاسب عليها عشرات الطلاب. الطريقة الوحيدة
@@ -248,11 +277,16 @@ async function gradePreview(req, res) {
   const points = Number(req.body?.points) > 0 ? Number(req.body.points) : 1;
   const startedAt = Date.now();
   try {
+    // provider اختياري: بيخلي الموظف يجرّب نفس الإجابة على أكتر من نموذج ويقارن قبل
+    // ما يعتمد واحد فيهم. من غيره بيستخدم المحفوظ
+    const requested = String(req.body?.provider || '').trim();
+    if (requested && !PROVIDERS[requested]) return res.status(400).json({ error: 'المزوّد ده مش معروف' });
     const grade = await gradeEssayAnswer({
       question,
       referenceAnswer: reference,
       gradingNotes: String(req.body?.grading_notes || '').trim(),
       studentAnswer,
+      provider: requested || undefined,
     });
     res.json({
       ...grade,
@@ -381,4 +415,5 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
+  getGradingProviders, setGradingProvider,
 };

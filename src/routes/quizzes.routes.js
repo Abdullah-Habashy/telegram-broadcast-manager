@@ -9,6 +9,8 @@ const { requireQuizAccessApi } = require('../middleware/requireAuth');
 router.use(requireQuizAccessApi);
 
 // قبل /:id عن قصد: "grade-preview" مش رقم، بس ترتيب المسارات أوضح من الاعتماد على ده
+router.get('/grading-provider', controller.getGradingProviders);
+router.post('/grading-provider', controller.setGradingProvider);
 router.post('/grade-preview', controller.gradePreview);
 router.get('/', controller.listQuizzes);
 router.post('/', controller.createQuiz);
