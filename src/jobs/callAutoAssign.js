@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const crypto = require('crypto');
 const pool = require('../config/db');
-const { TafraReadOnlyClient } = require('../integrations/tafraClient');
+const { getSharedClient } = require('../integrations/tafraSession');
 const { getCredentials, saveEnrollmentPage } = require('../controllers/tafra.controller');
 
 let running = false;
@@ -11,7 +11,7 @@ let running = false;
 async function pullBootcampEnrollmentsLive(bootcampId) {
   const credentials = await getCredentials();
   if (!credentials) return false;
-  const tafra = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+  const tafra = getSharedClient(credentials);
   const first = await tafra.getBootcampEnrollmentsPage(bootcampId, 1);
   const totalPages = Number(first.data?.meta?.last_page || 1);
   for (let page = 1; page <= totalPages; page += 1) {

@@ -1,4 +1,4 @@
-const { TafraReadOnlyClient } = require('../integrations/tafraClient');
+const { getSharedClient } = require('../integrations/tafraSession');
 
 // مشاهدات فيديوهات الطالب — مصدر واحد بتقرا منه شاشة المتابعة التليفونية وصندوق الدعم، عشان
 // الرقم اللي الموظف بيشوفه في المحادثة يبقى هو هو اللي في بروفايل المتابعة بالظبط.
@@ -82,7 +82,10 @@ function summariseLessonViews(allRows, meta = {}) {
 }
 
 async function fetchStudentLessonViews(credentials, studentId) {
-  const client = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+  // **الجلسة المشتركة مش عميل جديد.** الدالة دي بتتنادى مع كل فتح لكارت تقرير طالب،
+  // وكل تسجيل دخول جديد بيقتل جلسة المزامنة الشغالة — يعني موظف بيفتح كارت كان بيوقّع
+  // مزامنة ماشية من ساعة
+  const client = getSharedClient(credentials);
   const { rows, total, truncated } = await client.getStudentLessonViews(studentId);
   return summariseLessonViews(rows, { total, truncated });
 }

@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const { getFirstName } = require('../utils/messagePersonalization');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { TafraReadOnlyClient, BASE_URL } = require('../integrations/tafraClient');
+const { getSharedClient, resetSharedClient } = require('../integrations/tafraSession');
 const reportExport = require('../utils/reportExport');
 const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
 const { inferGenderFromName } = require('../utils/genderInference');
@@ -76,6 +77,8 @@ async function saveCredentials(req, res) {
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
       [encrypt(identifier), encrypt(password)]
     );
+    // العميل المشترك لسه ماسك التوكن القديم — بيتصفّر عشان النداء الجاي يسجّل بالجديد
+    resetSharedClient();
     res.json({ ok: true, message: 'تم التحقق من الحساب وحفظ بيانات الربط مشفّرة' });
   } catch (error) {
     console.error('Failed to verify Tafra credentials:', error.message);
@@ -1047,7 +1050,7 @@ async function syncBootcampNames(req, res) {
   if (!credentials) return res.status(400).json({ error: 'احفظ بيانات ربط منصة طفرة أولًا' });
   const dbClient = await pool.connect();
   try {
-    const tafra = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+    const tafra = getSharedClient(credentials);
     const response = await tafra.getBootcamps();
     const bootcamps = Array.isArray(response.data) ? response.data : [];
     if (!bootcamps.length) return res.status(502).json({ error: 'لم تُرجع المنصة أي أبواب؛ لم يتم تغيير القائمة المحلية' });
@@ -1141,7 +1144,7 @@ async function performEnrollmentSync(credentials) {
        total_bootcamps=0, synced_enrollments=0, started_at=NOW(), completed_at=NULL,
        error_message=NULL, updated_at=NOW() WHERE id=1`
     );
-    const tafra = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+    const tafra = getSharedClient(credentials);
     const bootcampResponse = await tafra.getBootcamps();
     const bootcamps = Array.isArray(bootcampResponse.data) ? bootcampResponse.data : [];
     for (const bootcamp of bootcamps) {
@@ -1205,7 +1208,7 @@ async function performSelectiveSync(credentials, bootcamps) {
        error_message=NULL, updated_at=NOW() WHERE id=1`,
       [bootcamps.length, bootcamps.map((b) => b.name).join('، ')]
     );
-    const tafra = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+    const tafra = getSharedClient(credentials);
 
     for (let index = 0; index < bootcamps.length; index += 1) {
       const bootcamp = bootcamps[index];
@@ -1341,7 +1344,7 @@ async function performSync(credentials) {
       , [resume]
     );
 
-    const tafra = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+    const tafra = getSharedClient(credentials);
     const firstResponse = await tafra.getStudentsPage(startPage, 100);
     const firstMeta = firstResponse.data?.meta || {};
     const totalPages = Number(firstMeta.last_page || previous.total_pages || 1);
@@ -1527,7 +1530,7 @@ async function performExamSync(credentials) {
       `UPDATE tafra_exam_sync_status SET status='discovering', current_exam=0, total_exams=0,
        synced_marks=0, started_at=NOW(), completed_at=NULL, error_message=NULL, updated_at=NOW() WHERE id=1`
     );
-    const tafra = new TafraReadOnlyClient(credentials.identifier, credentials.password);
+    const tafra = getSharedClient(credentials);
 
     const reportDiscoveryProgress = async (foundSoFar) => {
       idsScanned += 1;

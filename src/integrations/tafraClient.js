@@ -28,6 +28,7 @@ class TafraReadOnlyClient {
     this.identifier = identifier;
     this.password = password;
     this.accessToken = null;
+    this.loginPromise = null;
   }
 
   async request(url, options = {}) {
@@ -63,7 +64,16 @@ class TafraReadOnlyClient {
     }
   }
 
+  // **تسجيل دخول واحد في المرة.** المزامنة بتشتغل بأربع طلبات متوازية؛ لو الأربعة اتقطعت
+  // جلستهم في نفس اللحظة، كل واحد هينده login وهيقتل جلسة اللي قبله — الأربعة يفضلوا
+  // يتقاتلوا على نفس الحساب. الوعد المشترك بيخلّي التلاتة الباقيين يستنوا نتيجة الأول
   async login() {
+    if (this.loginPromise) return this.loginPromise;
+    this.loginPromise = this.performLogin().finally(() => { this.loginPromise = null; });
+    return this.loginPromise;
+  }
+
+  async performLogin() {
     const payload = await this.request(`${BASE_URL}/login`, {
       method: 'POST',
       body: JSON.stringify({ identifier: this.identifier, password: this.password }),
