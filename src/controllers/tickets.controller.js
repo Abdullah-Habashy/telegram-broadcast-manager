@@ -103,21 +103,14 @@ function buildTicketFilters(query, { restrictToUserId, userTeam = null } = {}) {
 
   if (restrictToUserId) {
     // موظف التيم المتخصص بيشوف المحوّل له بس — مش بيشوف صندوق المتابعة أصلًا. التذكرة بتظهر
-    // عنده وقت التحويل وبتختفي أول ما ترجع، والطالب مش حاسس بأي حاجة من ده
-    if (userTeam) {
-      conditions.push(`t.transfer_agent_id = ${add(restrictToUserId)}`);
-    } else {
-      // **الشرط التالت لتيم المتابعة التليفونية.** الموظفة اللي هتتصل بطالب لازم تقرا آخر
-      // كلام حصل معاه على تيليجرام الأول — من غير كده بتسأله سؤال زميلتها جاوبته امبارح.
-      //
-      // بيستخدم `sca` الجاي من STUDENT_FILTER_JOIN_SQL (موجود في كل استعلام بيستعمل الدالة
-      // دي)، والإسناد **واحد لكل طالب** (٢٤٤٧ إسناد = ٢٤٤٧ طالب) فمفيش تكرار صفوف.
-      //
-      // **إضافة مش استبدال:** الموظف اللي مالوش إسنادات مكالمات مابيتغيرش عنده حاجة — وكل
-      // اللي بيشوفوا التذاكر دلوقتي عندهم صفر إسنادات، فالشرط ده مابيزوّدش لهم ولا تذكرة
-      const viewer = add(restrictToUserId);
-      conditions.push(`(t.assigned_to = ${viewer} OR t.assigned_to IS NULL OR sca.assigned_to = ${viewer})`);
-    }
+    // عنده وقت التحويل وبتختفي أول ما ترجع، والطالب مش حاسس بأي حاجة من ده.
+    //
+    // **متزوّدش شرط لتيم المتابعة التليفونية هنا.** اتجرّب إنهم يشوفوا تذاكر الطلاب المسندين
+    // لهم للمكالمات، واتشال بقرار صاحب المشروع: شغلهم مكالمات بس، والرسايل المكتوبة مش من
+    // اختصاصهم. و`can_view_tickets` مقفولة عليهم كمان — الاتنين مقصودين
+    conditions.push(userTeam
+      ? `t.transfer_agent_id = ${add(restrictToUserId)}`
+      : `(t.assigned_to = ${add(restrictToUserId)} OR t.assigned_to IS NULL)`);
   }
 
   if (query.status && VALID_STATUSES.includes(query.status)) {
