@@ -73,6 +73,11 @@
     <p id="qz-result-note"></p>
   </div>
 
+  <%# ===== ورقة التصحيح =====
+      بتيجي من السيرفر بعد التسليم والتصحيح بس — الأسئلة والإجابات الصح مش في الصفحة قبل
+      كده، زي بوابة الدخول بالظبط. الطالب بيرجع بنفس الرابط ونفس الرقم في أي وقت ويلاقيها %>
+  <div id="qz-review"></div>
+
 </div>
 
 <script>
@@ -135,6 +140,13 @@
           throw new Error('اكتب اسمك بالكامل وبعدين ابدأ');
         }
         if (data.state === 'submitted') return renderResult(data);
+        // رجع بنفس الرقم والتصحيح لسه في الطابور: شاشة الانتظار والسؤال عن الدرجة —
+        // من غير ده كان بيتفتحله امتحان فاضي (questions بترجع [] بعد التسليم)
+        if (data.state === 'grading') {
+          state.key = data.attempt_key;
+          renderResult(data);
+          return pollResult();
+        }
         startExam(data);
       }).catch(function (error) {
         showError('qz-gate-error', error.message);
@@ -372,6 +384,7 @@
         el('qz-result-title').textContent = 'تم استلام إجاباتك ✅';
         el('qz-result-score').style.display = 'none';
         el('qz-result-note').textContent = 'بنصحّح إجاباتك دلوقتي... الدرجة هتظهر هنا خلال لحظات.';
+        el('qz-review').innerHTML = '';
         return;
       }
       if (data.score !== null && data.score !== undefined) {
@@ -384,6 +397,118 @@
           ? 'الدرجة هتتعلن من الفريق.'
           : 'إجاباتك وصلت والفريق بيصحّحها.';
       }
+      renderReview(data.review);
+    }
+
+    // ---------- ورقة التصحيح ----------
+    //
+    // **الحكم على السؤال بيتحسب من الدرجة اللي اتحطّت، مش من حكم النموذج.** لو موظف عدّل
+    // الدرجة بإيده، حكم النموذج القديم بيفضل مكتوب في القاعدة — والطالب اللي بيشوف "غلط"
+    // فوق درجة كاملة بيفتح تذكرة. الدرجة هي اللي بتتجمع في المجموع، فهي مصدر الحقيقة
+    function verdictOf(answer) {
+      // سؤال اتضاف للاختبار بعد ما الطالب سلّم: مافيش صف إجابة، ومش داخل في مجموعه.
+      // عرضه "غلط" ظلم، وعرضه "مستني" كدب — فبيتقال زي ما هو
+      if (!answer.answered) return { key: 'pending', icon: '—', label: 'السؤال ده مالوش تصحيح في ورقتك' };
+      if (answer.awarded_points === null || answer.awarded_points === undefined) {
+        return { key: 'pending', icon: '🕓', label: 'مستني مراجعة الفريق' };
+      }
+      if (answer.awarded_points >= answer.points) return { key: 'correct', icon: '✅', label: 'إجابة صح' };
+      if (answer.awarded_points > 0) return { key: 'partial', icon: '🟡', label: 'إجابة ناقصة' };
+      return { key: 'wrong', icon: '❌', label: 'إجابة غلط' };
+    }
+
+    function reviewMark(answer, verdict) {
+      var points = answer.awarded_points === null || answer.awarded_points === undefined
+        ? '—' : Math.round(answer.awarded_points * 100) / 100;
+      return '<span class="qz-rv-mark ' + verdict.key + '" title="' + esc(verdict.label) + '">'
+        + verdict.icon + ' ' + points + ' / ' + answer.points + '</span>';
+    }
+
+    // الاختياري: الاختيارات كلها بتتعرض ومعلّم عليها — الصح فين، وهو اختار إيه. عرض
+    // القايمة كلها بدل سطرين نص بيخلي الطالب يلاقي اختياره من غير ما يدوّر
+    function reviewOptions(answer) {
+      var body = answer.options.map(function (option, optionIndex) {
+        var isCorrect = answer.correct_option !== null && answer.correct_option !== undefined
+          && Number(answer.correct_option) === optionIndex;
+        var isPicked = answer.selected_option === optionIndex;
+        var tag = isCorrect ? '<span class="qz-rv-tag correct">الإجابة الصح</span>'
+          : (isPicked ? '<span class="qz-rv-tag wrong">اختيارك</span>' : '');
+        return '<div class="qz-rv-option' + (isCorrect ? ' correct' : '')
+          + (isPicked && !isCorrect ? ' wrong' : '') + '">'
+          + '<span>' + (option.text ? esc(option.text) : '')
+          + (option.image ? '<img class="qz-option-image" src="' + esc(option.image) + '" alt="" loading="lazy" />' : '')
+          + '</span>' + tag + '</div>';
+      }).join('');
+      if (answer.selected_option === null || answer.selected_option === undefined) {
+        body += '<div class="qz-rv-empty">ماخترتش إجابة</div>';
+      }
+      return body;
+    }
+
+    // المقالي: إجابته وجنبها الإجابة النموذجية. الطالب محتاج يقارن بنفسه — الدرجة لوحدها
+    // مابتعلّمهوش حاجة
+    function reviewEssay(answer) {
+      var written = answer.essay_text
+        ? '<div class="qz-rv-text">' + esc(answer.essay_text) + '</div>'
+        : '<div class="qz-rv-empty">سيبت السؤال فاضي</div>';
+      var model = answer.reference_answer
+        ? '<div class="qz-rv-block"><span class="qz-rv-label">الإجابة النموذجية</span>'
+          + '<div class="qz-rv-text model">' + esc(answer.reference_answer) + '</div></div>'
+        : '';
+      return '<div class="qz-rv-block"><span class="qz-rv-label">إجابتك</span>' + written + '</div>' + model;
+    }
+
+    function reviewBody(answer) {
+      var body = answer.kind === 'mcq' ? reviewOptions(answer) : reviewEssay(answer);
+      // سبب المصحّح الآلي بييجي للمقالي بس. الموظف اللي عدّل الدرجة بإيده بيوصل سببه
+      // فاضي من السيرفر عن قصد — السبب القديم بيناقض الدرجة الجديدة
+      if (answer.reason) {
+        body += '<div class="qz-rv-reason">' + esc(answer.reason) + '</div>';
+      }
+      return body;
+    }
+
+    // الشجرة زي شاشة الحل بالظبط: الأب كارت واحد وفروعه جواه. الفرق إن كل فرع بيتلوّن
+    // بحكمه هو — الفروع بتتصحّح كل واحد لوحده
+    function renderReview(review) {
+      var box = el('qz-review');
+      if (!review || !review.length) { box.innerHTML = ''; return; }
+
+      var number = 0;
+      var open = false;
+      var html = '<div class="qz-card qz-rv-head"><h2>ورقتك بعد التصحيح</h2>'
+        + '<p>كل سؤال ومعاه إجابتك والإجابة الصح. الأسئلة المقالية ممكن الفريق يراجعها ويعدّل درجتها.</p></div>';
+
+      review.forEach(function (answer) {
+        if (answer.kind === 'group') {
+          if (open) html += '</div>';
+          number += 1;
+          html += '<div class="qz-card qz-rv-q">'
+            + '<div class="qz-q-head"><span class="qz-q-num">سؤال ' + number + '</span></div>'
+            + (answer.text ? '<div class="qz-q-text">' + esc(answer.text) + '</div>' : '')
+            + questionImage(answer);
+          open = true;
+          return;
+        }
+        var verdict = verdictOf(answer);
+        if (answer.is_part) {
+          html += '<div class="qz-part qz-rv-part ' + verdict.key + '">'
+            + '<div class="qz-part-head"><span class="qz-part-label">' + esc(answer.label || '') + '</span>'
+            + reviewMark(answer, verdict) + '</div>'
+            + (answer.text ? '<div class="qz-part-text">' + esc(answer.text) + '</div>' : '')
+            + questionImage(answer) + reviewBody(answer) + '</div>';
+          return;
+        }
+        if (open) { html += '</div>'; open = false; }
+        number += 1;
+        html += '<div class="qz-card qz-rv-q ' + verdict.key + '">'
+          + '<div class="qz-q-head"><span class="qz-q-num">سؤال ' + number + '</span>'
+          + reviewMark(answer, verdict) + '</div>'
+          + (answer.text ? '<div class="qz-q-text">' + esc(answer.text) + '</div>' : '')
+          + questionImage(answer) + reviewBody(answer) + '</div>';
+      });
+      if (open) html += '</div>';
+      box.innerHTML = html;
     }
   }());
 </script>

@@ -654,6 +654,13 @@
             <div id="quizzes-list"><div class="empty-state">بيتحمّل...</div></div>
           </div>
 
+          <%# ===== إعدادات المصحّح الآلي — للأدمن بس =====
+              الكارتين اللي تحت (اعتماد النموذج، وتجريب التصحيح) بيتحكموا في المصحّح لكل
+              الاختبارات ولكل الطلاب — قرار على مستوى المنصة مش على مستوى اختبار. التيم
+              العلمي بيبني الأسئلة ويراجع الدرجات، والنموذج نفسه مش شغله.
+              **الإخفاء هنا في العرض بس** — المسارات نفسها مقفولة بـ requireAdminApi في
+              routes/quizzes.routes.js، لأن إخفاء زرار مش صلاحية %>
+          <% if (userRole === 'admin') { %>
           <!-- ===== نموذج التصحيح =====
                منفصل عن نموذج الرد الآلي في تبويب الذكاء الصناعي عن قصد — ده بيحط درجة
                في ورقة طالب، وده بيتكلم مع طالب -->
@@ -705,6 +712,7 @@
             </div>
             <div id="preview-results" style="margin-top:14px"></div>
           </div>
+          <% } %>
         </div>
 
         <div id="quiz-editor-view" style="display:none">
@@ -723,7 +731,14 @@
             <div class="field"><label>وصف مختصر (اختياري)</label><textarea id="quiz-description" rows="2"></textarea></div>
             <label class="row" style="gap:8px; cursor:pointer; margin-top:4px">
               <input type="checkbox" id="quiz-show-score" checked />
-              <span>الطالب يشوف درجته بعد التسليم <span class="card-desc">(الأسئلة الصح والغلط مابتظهرلوش في الحالتين)</span></span>
+              <span>الطالب يشوف درجته بعد التسليم</span>
+            </label>
+            <%# الاختبار اللي بيتحل على مدى أيام: أول طالب يشوف التصحيح يقدر ينشره لزمايله،
+                فالخانة دي هي اللي بتقفله لحد ما الاختبار يخلص %>
+            <label class="row" style="gap:8px; cursor:pointer; margin-top:8px">
+              <input type="checkbox" id="quiz-show-answers" checked />
+              <span>الطالب يشوف تصحيح ورقته
+                <span class="card-desc">(إجابته والإجابة الصح، سؤال سؤال — بيلاقيها لما يفتح الرابط بنفس رقمه في أي وقت)</span></span>
             </label>
           </div>
 
@@ -8470,7 +8485,9 @@ ${reply.content}` : reply.content;
     function initQuizzes() {
       showQuizView('list');
       loadQuizzes();
-      loadGradingProviders();
+      // كارت النموذج وكارت التجريب مش موجودين أصلًا في صفحة غير الأدمن، والنداء بيرجّع
+      // ٤٠٣ — فبيتخطى بدل ما يرمي على عناصر مش موجودة
+      if (currentUserRole === 'admin') loadGradingProviders();
     }
 
     function showQuizView(view) {
@@ -8644,6 +8661,7 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-description').value = '';
       document.getElementById('quiz-time-limit').value = '';
       document.getElementById('quiz-show-score').checked = true;
+      document.getElementById('quiz-show-answers').checked = true;
       document.getElementById('quiz-editor-note').textContent = '';
       renderQuizQuestions();
       showQuizView('editor');
@@ -8674,6 +8692,7 @@ ${reply.content}` : reply.content;
         document.getElementById('quiz-description').value = quiz.description || '';
         document.getElementById('quiz-time-limit').value = quiz.time_limit_minutes || '';
         document.getElementById('quiz-show-score').checked = quiz.show_score_to_student;
+        document.getElementById('quiz-show-answers').checked = quiz.show_answers_to_student;
         // الحذف بيمسح إجابات الطلاب معاه، فبيتقفل خالص أول ما حد يحل — والموظف لازم يعرف
         // ليه الزرار مش موجود قبل ما يدوّر عليه
         document.getElementById('quiz-editor-note').textContent = quizEditorHasAttempts
@@ -8983,6 +9002,7 @@ ${reply.content}` : reply.content;
         description: document.getElementById('quiz-description').value.trim(),
         time_limit_minutes: document.getElementById('quiz-time-limit').value || null,
         show_score_to_student: document.getElementById('quiz-show-score').checked,
+        show_answers_to_student: document.getElementById('quiz-show-answers').checked,
         is_open: true,
       };
 
@@ -9019,6 +9039,9 @@ ${reply.content}` : reply.content;
             description: quiz.description,
             time_limit_minutes: quiz.time_limit_minutes,
             show_score_to_student: quiz.show_score_to_student,
+            // من غير السطر ده القفل والفتح كان بيرجّع عرض التصحيح لافتراضيه — الحقل
+            // اللي مش في الطلب بياخد الافتراضي عند السيرفر مش قيمته الحالية
+            show_answers_to_student: quiz.show_answers_to_student,
             is_open: !quiz.is_open,
           }),
         });
@@ -9242,9 +9265,9 @@ ${reply.content}` : reply.content;
       showQuizView('list');
     });
     document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);
-    document.getElementById('preview-grade-btn').addEventListener('click', runGradePreview);
-    document.getElementById('save-grading-provider-btn').addEventListener('click', saveGradingProvider);
-    document.getElementById('preview-clear-btn').addEventListener('click', () => {
+    document.getElementById('preview-grade-btn')?.addEventListener('click', runGradePreview);
+    document.getElementById('save-grading-provider-btn')?.addEventListener('click', saveGradingProvider);
+    document.getElementById('preview-clear-btn')?.addEventListener('click', () => {
       document.getElementById('preview-results').innerHTML = '';
     });
     document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));

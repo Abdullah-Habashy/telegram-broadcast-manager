@@ -36,7 +36,7 @@ function normalizeSlug(raw) {
 async function listQuizzes(req, res) {
   const { rows } = await pool.query(
     `SELECT q.id, q.title, q.description, q.token, q.slug, q.time_limit_minutes, q.is_open,
-            q.show_score_to_student, q.created_at,
+            q.show_score_to_student, q.show_answers_to_student, q.created_at,
             (SELECT COUNT(*)::int FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS question_count,
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NOT NULL) AS submitted_count,
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NULL) AS in_progress_count,
@@ -143,9 +143,10 @@ async function createQuiz(req, res) {
 
   const params = (slug) => [title, String(req.body?.description || '').trim() || null, token, slug,
     Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
-    req.body?.show_score_to_student !== false, req.session.userId];
-  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`;
+    req.body?.show_score_to_student !== false, req.body?.show_answers_to_student !== false,
+    req.session.userId];
+  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, show_answers_to_student, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`;
 
   // الموظف اختار الرابط بنفسه؟ التعارض بيترد عليه برسالة. مااخترش؟ بنولّد كود ونعيد
   // المحاولة لحد ما يعدّي — الاحتمال ضعيف بس السكوت عنه معناه اختبار من غير رابط مختصر
@@ -183,11 +184,13 @@ async function updateQuiz(req, res) {
     // COALESCE: الطلب اللي مابيبعتش slug (زي زرار القفل والفتح) مايمسحش الرابط الموجود
     ({ rows } = await pool.query(
       `UPDATE quizzes SET title = $1, description = $2, time_limit_minutes = $3,
-              is_open = $4, show_score_to_student = $5, slug = COALESCE($6, slug), updated_at = NOW()
-       WHERE id = $7 RETURNING *`,
+              is_open = $4, show_score_to_student = $5, show_answers_to_student = $6,
+              slug = COALESCE($7, slug), updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
       [title, String(req.body?.description || '').trim() || null,
         Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
-        req.body?.is_open !== false, req.body?.show_score_to_student !== false, requested, quizId]));
+        req.body?.is_open !== false, req.body?.show_score_to_student !== false,
+        req.body?.show_answers_to_student !== false, requested, quizId]));
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'الرابط المختصر ده مستخدم في اختبار تاني — اختار غيره' });
     throw error;

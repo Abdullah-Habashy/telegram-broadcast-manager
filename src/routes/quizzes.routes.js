@@ -5,7 +5,7 @@ const path = require('path');
 const multer = require('multer');
 const router = express.Router();
 const controller = require('../controllers/quizzes.controller');
-const { requireQuizAccessApi } = require('../middleware/requireAuth');
+const { requireQuizAccessApi, requireAdminApi } = require('../middleware/requireAuth');
 
 // نفس مجلد ونفس حدود صور الإرسال الجماعي — مفيش سبب لمسار تاني بقواعد تانية
 const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads');
@@ -35,9 +35,12 @@ router.use(requireQuizAccessApi);
 
 // قبل /:id عن قصد: "grade-preview" مش رقم، بس ترتيب المسارات أوضح من الاعتماد على ده
 router.post('/image', uploadQuizImage.single('image'), controller.uploadQuestionImage);
-router.get('/grading-provider', controller.getGradingProviders);
-router.post('/grading-provider', controller.setGradingProvider);
-router.post('/grade-preview', controller.gradePreview);
+// اعتماد المصحّح الآلي وتجريبه: **الأدمن بس**. القرار على مستوى المنصة كلها — نموذج
+// واحد بيصحّح كل الاختبارات لكل الطلاب — والتيم العلمي شغله الأسئلة ومراجعة الدرجات.
+// الكارتين متخفيين من اللوحة كمان، والقفل هنا هو اللي بيعمل الحماية فعلًا
+router.get('/grading-provider', requireAdminApi, controller.getGradingProviders);
+router.post('/grading-provider', requireAdminApi, controller.setGradingProvider);
+router.post('/grade-preview', requireAdminApi, controller.gradePreview);
 router.get('/', controller.listQuizzes);
 router.post('/', controller.createQuiz);
 router.get('/:id', controller.getQuiz);

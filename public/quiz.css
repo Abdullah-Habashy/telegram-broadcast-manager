@@ -141,3 +141,77 @@ body.qz-body {
   display: block; max-width: 100%; height: auto; max-height: 160px;
   margin-top: 8px; border-radius: 8px; border: 1px solid var(--qz-line);
 }
+
+/* ---------- ورقة التصحيح ---------- */
+/* بتظهر بعد التسليم والتصحيح بس. اللون هو الرسالة هنا: الطالب بيسكرول ورقة فيها ٢٥ سؤال،
+   والشريط الجانبي بيوريه أنهي سؤال محتاج يقف عنده من غير ما يقرا كلمة */
+.qz-rv-head { text-align: center; border-top: 4px solid var(--qz-accent); }
+.qz-rv-head h2 { font-size: 19px; margin: 0 0 6px; }
+.qz-rv-head p { margin: 0; color: var(--qz-muted); font-size: 14px; line-height: 1.8; }
+
+.qz-rv-q { border-inline-start: 4px solid var(--qz-line); }
+.qz-rv-q.correct { border-inline-start-color: var(--qz-good); }
+.qz-rv-q.partial { border-inline-start-color: var(--qz-warn); }
+.qz-rv-q.wrong { border-inline-start-color: var(--qz-danger); }
+.qz-rv-q.pending { border-inline-start-color: var(--qz-accent); }
+
+.qz-rv-mark {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 999px; font-size: 13.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  background: var(--qz-bg); color: var(--qz-muted);
+}
+.qz-rv-mark.correct { background: var(--qz-good-soft); color: var(--qz-good); }
+.qz-rv-mark.partial { background: color-mix(in srgb, var(--qz-warn) 14%, transparent); color: var(--qz-warn); }
+.qz-rv-mark.wrong { background: color-mix(in srgb, var(--qz-danger) 12%, transparent); color: var(--qz-danger); }
+.qz-rv-mark.pending { background: var(--qz-accent-soft); color: var(--qz-accent); }
+
+/* الاختيارات في المراجعة مش قابلة للضغط — بلاش cursor ولا hover يوحيوا إنه لسه بيحل */
+.qz-rv-option {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 11px 13px; margin-bottom: 8px; border-radius: 12px;
+  border: 1px solid var(--qz-line); font-size: 15.5px; line-height: 1.8;
+}
+.qz-rv-option.correct { border-color: var(--qz-good); background: var(--qz-good-soft); }
+.qz-rv-option.wrong {
+  border-color: var(--qz-danger);
+  background: color-mix(in srgb, var(--qz-danger) 8%, transparent);
+}
+.qz-rv-tag {
+  flex-shrink: 0; padding: 3px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.qz-rv-tag.correct { background: var(--qz-good); color: #fff; }
+.qz-rv-tag.wrong { background: var(--qz-danger); color: #fff; }
+
+.qz-rv-block { margin-bottom: 12px; }
+.qz-rv-block:last-child { margin-bottom: 0; }
+.qz-rv-label {
+  display: block; font-size: 13px; font-weight: 700;
+  color: var(--qz-muted); margin-bottom: 5px;
+}
+.qz-rv-text {
+  padding: 11px 13px; border-radius: 12px; border: 1px solid var(--qz-line);
+  background: var(--qz-bg); font-size: 15.5px; line-height: 1.9; white-space: pre-wrap;
+}
+/* الإجابة النموذجية بلون الصح دايمًا — هي المرجع مش حكم على إجابته */
+.qz-rv-text.model { border-color: var(--qz-good); background: var(--qz-good-soft); }
+.qz-rv-empty {
+  padding: 11px 13px; border-radius: 12px; border: 1px dashed var(--qz-line);
+  color: var(--qz-muted); font-size: 14.5px;
+}
+.qz-rv-reason {
+  margin-top: 10px; padding: 10px 13px; border-radius: 12px;
+  background: var(--qz-accent-soft); color: var(--qz-text);
+  font-size: 14.5px; line-height: 1.9;
+}
+
+/* الفرع جوه سؤال بفروع: نفس الألوان بس على الفرع نفسه — كل فرع بيتصحّح لوحده */
+.qz-rv-part { border-inline-start: 3px solid var(--qz-line); }
+.qz-rv-part.correct { border-inline-start-color: var(--qz-good); }
+.qz-rv-part.partial { border-inline-start-color: var(--qz-warn); }
+.qz-rv-part.wrong { border-inline-start-color: var(--qz-danger); }
+.qz-rv-part.pending { border-inline-start-color: var(--qz-accent); }
+
+/* علامة الدرجة بتروح لآخر السطر جنب حرف الفرع */
+.qz-rv-part .qz-part-head { justify-content: space-between; }

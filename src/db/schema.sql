@@ -976,8 +976,8 @@ CREATE TABLE IF NOT EXISTS quizzes (
     time_limit_minutes INTEGER,
     -- مقفول = الرابط بيفتح صفحة "الاختبار قفل" بدل الأسئلة. الحذف بيضيّع الإجابات، والقفل لأ
     is_open BOOLEAN NOT NULL DEFAULT TRUE,
-    -- الطالب بيشوف رقم درجته بس. عرض الأسئلة الصح والغلط مقفول عن قصد: نفس الرابط بيتحل
-    -- على مدى أيام، وأول طالب يشوف الإجابات ينشرها للباقي
+    -- الطالب بيشوف رقم درجته. عرض الأسئلة الصح والغلط مفتاح منفصل (show_answers_to_student
+    -- تحت) عشان تقدر توري الدرجة من غير التصحيح
     show_score_to_student BOOLEAN NOT NULL DEFAULT TRUE,
     created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -994,6 +994,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_quizzes_slug ON quizzes (LOWER(slug)) WHER
 -- تعبئة الاختبارات اللي اتعملت قبل الميزة دي بكود قصير. الشرط بيخلي الجملة تنفّذ مرة
 -- واحدة فعليًا مهما اتطبّق الـ schema كام مرة
 UPDATE quizzes SET slug = SUBSTRING(MD5(RANDOM()::text || id::text) FROM 1 FOR 6) WHERE slug IS NULL;
+
+-- **الطالب بيشوف تصحيح ورقته**: إجابته، والإجابة الصح، وليه اتحسبت كده — نفس اللي الموظف
+-- بيشوفه في مراجعة المحاولة، ما عدا اسم اللي عدّل الدرجة (ده شغل داخلي).
+--
+-- التعليق فوق على show_score_to_student كان بيقول إن ده مقفول عن قصد لأن نفس الرابط بيتحل
+-- على مدى أيام وأول طالب يشوف الإجابات ينشرها. **القرار اتغيّر بطلب صاحب المشروع** —
+-- التصحيح فايدته للطالب أكبر من الضرر، والمفتاح ده هو اللي بيسمح بقفله للاختبار اللي لسه
+-- مفتوح لو الموقف اختلف. الافتراضي مفتوح.
+--
+-- التصحيح مابيتبعتش قبل ما المحاولة تتسلّم وتتصحّح — الطالب اللي لسه بيحل مابيشوفش حاجة
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS show_answers_to_student BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- الأسئلة نوعين في نفس الجدول: عمود kind هو الفارق، والأعمدة الخاصة بكل نوع NULL في التاني.
 -- جدولين منفصلين كان هيخلي ترتيب الأسئلة في الصفحة (position) موزّع على جدولين

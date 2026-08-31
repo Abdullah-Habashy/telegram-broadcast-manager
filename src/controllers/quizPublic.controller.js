@@ -32,7 +32,8 @@ function normalizePhone(raw) {
 // المقارنة على المختصر بتتجاهل حالة الحروف لأن الطالب بيكتبه بإيده
 async function loadQuizByRef(ref) {
   const { rows } = await pool.query(
-    `SELECT id, title, description, time_limit_minutes, is_open, show_score_to_student
+    `SELECT id, title, description, time_limit_minutes, is_open,
+            show_score_to_student, show_answers_to_student
      FROM quizzes WHERE LOWER(slug) = LOWER($1) OR token = $1`, [ref]);
   return rows[0] || null;
 }
@@ -82,6 +83,70 @@ async function loadQuestionsForStudent(quizId) {
   return parents;
 }
 
+// ---------- تصحيح الورقة للطالب ----------
+//
+// **بيتبعت بعد التسليم والتصحيح بس.** الاستعلام ده هو استعلام مراجعة المحاولة عند الموظف
+// بالحرف (quizzes.controller.js → getAttempt) — نفس الجوينات ونفس الترتيب — عشان الطالب
+// يشوف نفس الورقة اللي الموظف شايفها، مايبقاش فيه نسختين للتصحيح تفترقوا مع أول تعديل.
+//
+// **الفرق الوحيد: اللي بيخص الشغل الداخلي مابيخرجش.** اسم الموظف اللي عدّل الدرجة، والمزوّد
+// اللي صحّح، وتعليمات التصحيح — كلها مالهاش معنى للطالب. نفس قاعدة صفحة /me/:token:
+// الطالب بياخد اللي بيفيده هو، مش سجل إداري.
+//
+// وسبب النموذج (ai_reason) بيتبعت **لو النموذج هو اللي حاطط الدرجة**. لو موظف عدّلها بإيده،
+// السبب القديم بقى بيناقض الدرجة المعروضة — والطالب اللي بيقرا "إجابتك ناقصة" جنب الدرجة
+// الكاملة بيفتح تذكرة، فبيتشال
+async function loadReviewForAttempt(attemptId, quizId) {
+  const { rows } = await pool.query(
+    `SELECT q.id AS question_id, q.parent_id, q.label, q.kind, q.text, q.points,
+            q.options, q.correct_option, q.reference_answer, q.image_path,
+            (an.id IS NOT NULL) AS answered,
+            an.selected_option, an.essay_text, an.awarded_points, an.is_correct,
+            an.ai_verdict, an.ai_reason, an.graded_by
+     FROM quiz_questions q
+     LEFT JOIN quiz_questions p ON p.id = q.parent_id
+     LEFT JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
+     WHERE q.quiz_id = $2
+     ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
+    [attemptId, quizId]);
+
+  return rows.map((row) => ({
+    question_id: row.question_id,
+    kind: row.kind,
+    label: row.label || null,
+    text: row.text,
+    image: row.image_path || null,
+    points: Number(row.points),
+    is_part: row.parent_id !== null,
+    // نفس تطبيع الاختيارات في loadQuestionsForStudent — الصف القديم نصوص والجديد كائنات
+    options: row.kind === 'mcq'
+      ? (row.options || []).map((option) => (typeof option === 'string'
+        ? { text: option, image: null }
+        : { text: String(option?.text || ''), image: option?.image || null }))
+      : [],
+    correct_option: row.kind === 'mcq' ? row.correct_option : null,
+    reference_answer: row.kind === 'essay' ? row.reference_answer : null,
+    // **فرق بين "ماجاوبش" و"مالوش صف أصلًا".** الصفحة بتبعت صف لكل سؤال حتى لو فاضي،
+    // فغياب الصف معناه سؤال اتضاف للاختبار بعد ما الطالب سلّم — ده مالوش تصحيح، مش غلط
+    answered: row.answered,
+    selected_option: row.selected_option,
+    essay_text: row.essay_text,
+    awarded_points: row.awarded_points === null ? null : Number(row.awarded_points),
+    is_correct: row.is_correct,
+    verdict: row.ai_verdict,
+    reason: row.graded_by === 'auto' ? row.ai_reason : null,
+  }));
+}
+
+// التصحيح بيتحمّل لما يكون فيه تصحيح فعلًا: المحاولة اتسلّمت، والتصحيح خلص (graded) أو خلص
+// وفيه سؤال مستني موظف (partial). و**queued/regrading مابيرجّعوش حاجة** — الدرجات وقتها
+// نص مكتوبة، والطالب اللي شاف "غلط" وبعد دقيقة بقت "صح" بيفقد الثقة في الورقة كلها
+async function reviewIfReady(attempt, quiz) {
+  if (!attempt.submitted_at || !quiz.show_answers_to_student) return null;
+  if (attempt.grading_status !== 'graded' && attempt.grading_status !== 'partial') return null;
+  return loadReviewForAttempt(attempt.id, quiz.id);
+}
+
 async function renderQuiz(req, res) {
   const quiz = await loadQuizByRef(req.params.ref);
   if (!quiz) return res.status(404).render('report-not-found');
@@ -100,7 +165,7 @@ async function renderQuiz(req, res) {
 
 // بترجع شكل موحّد للواجهة في كل الحالات: محاولة جديدة، استكمال محاولة مفتوحة، أو نتيجة
 // محاولة اتسلّمت خلاص
-function attemptPayload(attempt, quiz, questions) {
+function attemptPayload(attempt, quiz, questions, review) {
   // اتسلّمت ولسه في الطابور: 'grading' مش 'submitted' — الصفحة وقتها بتوري "بنصحّح"
   // وتسأل عن الدرجة، بدل ما توري صفر على إنه نتيجته
   const grading = Boolean(attempt.submitted_at)
@@ -117,6 +182,8 @@ function attemptPayload(attempt, quiz, questions) {
     max_score: attempt.submitted_at && quiz.show_score_to_student ? Number(attempt.max_score) : null,
     // الدرجة اتحجبت بقرار من الموظف مش لأنها لسه بتتحسب — الفرق ده لازم يوصل للطالب
     score_hidden: Boolean(attempt.submitted_at && !quiz.show_score_to_student),
+    // ورقة التصحيح: سؤال سؤال، إجابته والصح. null = مش متاحة (لسه بتتصحّح أو الموظف قافلها)
+    review: review || null,
   };
 }
 
@@ -186,9 +253,14 @@ async function startAttempt(req, res) {
       const refreshed = await pool.query(
         'SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status FROM quiz_attempts WHERE id = $1',
         [attempt.id]);
-      return res.json(attemptPayload(refreshed.rows[0], quiz, []));
+      return res.json(attemptPayload(refreshed.rows[0], quiz, [],
+        await reviewIfReady(refreshed.rows[0], quiz)));
     }
-    if (attempt.submitted_at) return res.json(attemptPayload(attempt, quiz, []));
+    // **ده المسار اللي الطالب بيرجع بيه يشوف تصحيحه**: نفس الرابط ونفس الرقم في أي وقت.
+    // مافيش محاولة تانية بتتفتح — الفهرس الفريد بيمنعها — فالرجوع بيوري الورقة بس
+    if (attempt.submitted_at) {
+      return res.json(attemptPayload(attempt, quiz, [], await reviewIfReady(attempt, quiz)));
+    }
     if (!quiz.is_open) return res.status(403).json({ error: 'الاختبار اتقفل' });
     const questions = await loadQuestionsForStudent(quiz.id);
     attempt.saved = await loadSavedAnswers(attempt.id);
@@ -333,7 +405,8 @@ function kickGradingQueue() {
 // آلاف المرات وقت الزحمة
 async function getResult(req, res) {
   const { rows } = await pool.query(
-    `SELECT a.grading_status, a.score, a.max_score, q.show_score_to_student
+    `SELECT a.id, a.quiz_id, a.submitted_at, a.grading_status, a.score, a.max_score,
+            q.show_score_to_student, q.show_answers_to_student
      FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id
      WHERE (LOWER(q.slug) = LOWER($1) OR q.token = $1) AND a.attempt_key = $2`,
     [req.params.ref, req.query?.attempt_key || '']);
@@ -343,11 +416,20 @@ async function getResult(req, res) {
   // partial = التصحيح خلص بس فيه سؤال محتاج مراجعة موظف. الطالب بياخد اللي اتحسب،
   // مش شاشة انتظار للأبد
   const done = attempt.grading_status === 'graded' || attempt.grading_status === 'partial';
+  // **الاستعلام التاني بيتنفّذ مرة واحدة لكل محاولة**: الصفحة بتبطّل تسأل أول ما done
+  // تبقى true، فالنداء المتكرر وقت الزحمة بيفضل الاستعلام الخفيف اللي فوق لوحده
+  const review = done
+    ? await reviewIfReady(attempt, {
+      id: attempt.quiz_id,
+      show_answers_to_student: attempt.show_answers_to_student,
+    })
+    : null;
   res.json({
     state: done ? 'submitted' : 'grading',
     score: done && attempt.show_score_to_student ? Number(attempt.score) : null,
     max_score: done && attempt.show_score_to_student ? Number(attempt.max_score) : null,
     score_hidden: !attempt.show_score_to_student,
+    review,
   });
 }
 
