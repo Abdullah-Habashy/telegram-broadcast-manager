@@ -431,29 +431,53 @@
         });
     }
 
-    // بتسأل عن الدرجة كل ٤ ثواني. **بتوقف بعد دقيقتين مش بتفضل تلف** — الطالب وقتها
-    // بياخد رسالة واضحة إن إجاباته اتسجّلت والدرجة هتظهر بعدين، وده أصدق من دايرة
-    // بتلف للأبد. وأي إعادة فتح للرابط بنفس الرقم بتوريه الدرجة أول ما تجهز
-    var POLL_EVERY_MS = 4000;
-    var POLL_FOR_MS = 120000;
+    // ---------- السؤال عن الدرجة ----------
+    //
+    // **التباعد بيكبر مع كل محاولة بدل ما يفضل ثابت.** كل ٤ ثواني لمدة دقيقتين = ٣٠
+    // نداء لكل طالب. امتحان بعشرين ألف طالب بيسلّموا في نص ساعة معناه آلاف النداءات في
+    // الثانية على عملية Node واحدة — والاستعلام نفسه سريع، لكن عدد الطلبات هو المشكلة.
+    //
+    // بالتباعد المتزايد (٢ ثانية وبعدين ٣ و٤.٥...) الطالب اللي السيرفر فاضي قدامه بياخد
+    // درجته أسرع من الأول، واللي مستني بيسأل ٩ مرات بدل ٣٠ — ٧٠٪ أقل حمل في أسوأ لحظة.
+    //
+    // **وبتوقف بعد دقيقة ونص مش بتفضل تلف.** الطالب وقتها بياخد رسالة إن إجاباته
+    // اتسجّلت، والدرجة بتوصله على تيليجرام لو حسابه مربوط، وأي إعادة فتح للرابط بنفس
+    // الرقم بتوريه الدرجة أول ما تجهز
+    var POLL_START_MS = 2000;
+    var POLL_GROWTH = 1.5;
+    var POLL_MAX_MS = 15000;
+    var POLL_FOR_MS = 90000;
 
     function pollResult() {
       var startedAt = Date.now();
-      var timer = setInterval(function () {
+      var wait = POLL_START_MS;
+      var timer = null;
+
+      function stop(message) {
+        clearTimeout(timer);
+        if (message) el('qz-result-note').textContent = message;
+      }
+
+      function ask() {
         if (Date.now() - startedAt > POLL_FOR_MS) {
-          clearInterval(timer);
-          el('qz-result-note').textContent = 'إجاباتك اتسجّلت ✅ الدرجة بتتحسب دلوقتي — افتح الرابط تاني بعد شوية وهتلاقيها.';
-          return;
+          return stop('إجاباتك اتسجّلت ✅ الدرجة بتتحسب دلوقتي — هتوصلك على تيليجرام لو حسابك مربوط، أو افتح الرابط تاني بنفس رقمك.');
         }
         fetch(base + '/result?attempt_key=' + encodeURIComponent(state.key))
           .then(function (response) { return response.json(); })
           .then(function (data) {
-            if (data.state !== 'submitted') return;
-            clearInterval(timer);
+            if (data.state !== 'submitted') return schedule();
+            stop();
             renderResult(data);
           })
-          .catch(function () { /* الشبكة اتقطعت لحظيًا — المحاولة الجاية بعد ٤ ثواني */ });
-      }, POLL_EVERY_MS);
+          .catch(function () { schedule(); });
+      }
+
+      function schedule() {
+        wait = Math.min(wait * POLL_GROWTH, POLL_MAX_MS);
+        timer = setTimeout(ask, wait);
+      }
+
+      timer = setTimeout(ask, wait);
     }
 
     function renderResult(data) {

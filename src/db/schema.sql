@@ -973,6 +973,14 @@ CREATE INDEX IF NOT EXISTS idx_call_logs_follow_up ON call_logs (next_follow_up_
 INSERT INTO settings (key, value) VALUES ('quiz_grading_mode', 'instant')
 ON CONFLICT (key) DO NOTHING;
 
+-- **كام ورقة بتتصحّح بالتوازي.** الرقم بيتضرب في عدد الأسئلة المقالية: امتحان ٢٥ سؤال
+-- × ٤ أوراق = ١٠٠ نداء متزامن على النموذج. ٤ هو التوازن اللي اتحسب عليه ("٥٠٠٠ طالب ÷
+-- ٤ أوراق كل ~٣ ثواني ≈ ساعة"). أعلى = الطابور أسرع وأقرب لـ429، وأقل = أبطأ وأأمن.
+-- كان متغيّر بيئة بس، يعني تغييره محتاج SSH وrestart — وده بالظبط اللي مش متاح وقت
+-- الحاجة له
+INSERT INTO settings (key, value) VALUES ('quiz_grading_concurrency', '4')
+ON CONFLICT (key) DO NOTHING;
+
 INSERT INTO settings (key, value) VALUES ('quiz_grading_provider', 'anthropic')
 ON CONFLICT (key) DO NOTHING;
 

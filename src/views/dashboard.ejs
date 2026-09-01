@@ -679,6 +679,13 @@
                   <option value="instant">تصحيح فوري — الدرجة في ثواني</option>
                   <option value="queued">طابور — أخف على السيرفر وقت الزحمة</option>
                 </select>
+                <%# كام ورقة بالتوازي. كان متغيّر بيئة على السيرفر — يعني تغييره وقت
+                    الحاجة له (نص امتحان كبير) مكانش ممكن من غير SSH %>
+                <label class="row" style="gap:6px; align-items:center; white-space:nowrap">
+                  <span class="card-desc">أوراق بالتوازي</span>
+                  <input type="number" id="grading-concurrency" class="compact-input"
+                         style="width:74px" min="1" max="32" step="1" value="4" />
+                </label>
                 <button type="button" class="btn btn-primary btn-sm" id="save-grading-provider-btn" style="width:auto">اعتمد</button>
               </div>
             </div>
@@ -8700,6 +8707,8 @@ ${reply.content}` : reply.content;
         preview.innerHTML = options;
         preview.value = data.current;
         document.getElementById('grading-mode-select').value = data.mode || 'instant';
+        document.getElementById('grading-concurrency').value = data.concurrency;
+        document.getElementById('grading-concurrency').max = data.max_concurrency;
         renderGradingProviderState(data.current, data.mode, data.queue_length);
       } catch (error) {
         state.textContent = error.message;
@@ -8718,7 +8727,9 @@ ${reply.content}` : reply.content;
       document.getElementById('grading-provider-state').textContent = provider
         ? `المعتمد دلوقتي: ${provider.label} (${provider.model})`
         : 'مفيش نموذج معتمد.';
-      const help = GRADING_MODE_HELP[mode === 'queued' ? 'queued' : 'instant'];
+      const parallel = document.getElementById('grading-concurrency').value;
+      const help = GRADING_MODE_HELP[mode === 'queued' ? 'queued' : 'instant']
+        + ` بيتصحّح ${parallel} ورقة بالتوازي — أعلى أسرع وأقرب لحد المزوّد، وأقل أبطأ وأأمن.`;
       // طول الطابور بيتعرض لما يكون فيه ورق مستني فعلًا — الصفر مش معلومة
       const waiting = queued ? ` — مستني في الطابور دلوقتي: ${queued} ورقة.` : '';
       document.getElementById('grading-mode-help').textContent = help + waiting;
@@ -8730,9 +8741,11 @@ ${reply.content}` : reply.content;
       try {
         const provider = document.getElementById('grading-provider-select').value;
         const mode = document.getElementById('grading-mode-select').value;
+        const concurrency = Number(document.getElementById('grading-concurrency').value) || undefined;
         const result = await api('/api/quizzes/grading-provider', {
-          method: 'POST', body: JSON.stringify({ provider, mode }),
+          method: 'POST', body: JSON.stringify({ provider, mode, concurrency }),
         });
+        document.getElementById('grading-concurrency').value = result.concurrency;
         // **الإعداد بيتقرا مكاشًا على السيرفر لمدة دقيقة**، فالتغيير مش بيسري لحظيًا على
         // التسليمات. الرسالة بتقول كده صراحة بدل ما الأدمن يجرّب ويستغرب.
         // ورسالة واحدة مش اتنين: الـ toast التاني بيمسح الأول قبل ما يتقرا

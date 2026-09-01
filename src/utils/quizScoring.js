@@ -197,7 +197,28 @@ const QUEUED_STATUSES = ['queued', 'regrading'];
 // ٢٥ سؤال مقالي × ٤ محاولات = ١٠٠ نداء متزامن للنموذج. ده الرقم اللي بيتضبط عليه المعدل:
 // أعلى منه بيبقى أسرع لكن أقرب لحد المزوّد (429)، وأقل منه بيبقى أأمن وأبطأ.
 // **الحساب: ٥٠٠٠ طالب ÷ (٤ محاولات كل ~٣ ثواني) ≈ ساعة.**
-const ATTEMPT_CONCURRENCY = Number(process.env.QUIZ_GRADING_CONCURRENCY) || 4;
+// **كام ورقة بالتوازي.** كان متغيّر بيئة بس — يعني تغييره محتاج SSH وتعديل ملف
+// وrestart، وده مقفول على صاحب المشروع وقت ما يكون محتاجه بالظبط (نص امتحان بآلاف
+// الطلاب). بقى إعداد في القاعدة بيتقرا مع كل دورة طابور، والمتغيّر البيئي بقى
+// الافتراضي لو الصف مش موجود.
+//
+// الرقم بيتضرب في عدد الأسئلة المقالية: امتحان ٢٥ سؤال × ٤ أوراق = ١٠٠ نداء متزامن.
+// أعلى = أسرع وأقرب لـ429 من المزوّد، وأقل = أبطأ وأأمن
+const DEFAULT_CONCURRENCY = Number(process.env.QUIZ_GRADING_CONCURRENCY) || 4;
+const MAX_CONCURRENCY = 32;
+
+async function attemptConcurrency() {
+  try {
+    const { rows } = await pool.query(
+      "SELECT value FROM settings WHERE key = 'quiz_grading_concurrency'");
+    const value = Number(rows[0]?.value);
+    if (Number.isFinite(value) && value >= 1) return Math.min(Math.floor(value), MAX_CONCURRENCY);
+  } catch (error) {
+    // إعداد مش مقروء مايوقفش التصحيح — بنكمّل على الافتراضي
+    console.error('❌ Failed to read the grading concurrency setting:', error.message);
+  }
+  return DEFAULT_CONCURRENCY;
+}
 
 async function gradeOne(attemptId) {
   try {
@@ -222,10 +243,13 @@ async function processRegradeQueue(limit = 10) {
     [QUEUED_STATUSES, limit]);
 
   let done = 0;
-  // على دفعات بحجم ATTEMPT_CONCURRENCY: التسلسل الكامل بطيء جدًا لخمس آلاف ورقة،
-  // والتوازي الكامل بيولّع حد المعدل عند المزوّد
-  for (let index = 0; index < rows.length; index += ATTEMPT_CONCURRENCY) {
-    const slice = rows.slice(index, index + ATTEMPT_CONCURRENCY);
+  // بيتقرا مرة لكل دورة طابور مش لكل ورقة: الدورة بتحصل مرة في الدقيقة، فتغيير الأدمن
+  // بيسري في الدورة اللي بعده على طول من غير أي حمل يذكر
+  const concurrency = await attemptConcurrency();
+  // على دفعات: التسلسل الكامل بطيء جدًا لخمس آلاف ورقة، والتوازي الكامل بيولّع حد
+  // المعدل عند المزوّد
+  for (let index = 0; index < rows.length; index += concurrency) {
+    const slice = rows.slice(index, index + concurrency);
     const outcomes = await Promise.all(slice.map((row) => gradeOne(row.id)));
     done += outcomes.filter(Boolean).length;
   }
@@ -243,4 +267,7 @@ async function queueLength() {
   return rows[0].count;
 }
 
-module.exports = { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue, queueLength };
+module.exports = {
+  finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue, queueLength,
+  attemptConcurrency, MAX_CONCURRENCY,
+};

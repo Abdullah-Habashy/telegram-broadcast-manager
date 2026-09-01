@@ -4,7 +4,7 @@ const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQue
 const { gradeEssayAnswer } = require('../utils/quizGrading');
 const { listProviders, PROVIDERS } = require('../utils/aiProviders');
 const { streamQuizWorkbook } = require('../utils/quizExport');
-const { queueLength } = require('../utils/quizScoring');
+const { queueLength, attemptConcurrency, MAX_CONCURRENCY } = require('../utils/quizScoring');
 const { parseQuizDocument } = require('../utils/quizDocImport');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
@@ -411,10 +411,11 @@ function normalizeGradingMode(value) {
 }
 
 async function getGradingProviders(req, res) {
-  const [settingsResult, queued] = await Promise.all([
+  const [settingsResult, queued, concurrency] = await Promise.all([
     pool.query("SELECT key, value FROM settings WHERE key IN ('quiz_grading_provider', 'ai_provider', 'quiz_grading_mode')"),
     // طول الطابور بيتعرض جنب الاختيار: الأدمن اللي بيقرر الوضع محتاج يشوف أثره
     queueLength().catch(() => null),
+    attemptConcurrency(),
   ]);
   const settings = Object.fromEntries(settingsResult.rows.map((row) => [row.key, row.value]));
   const chosen = settings.quiz_grading_provider;
@@ -425,6 +426,8 @@ async function getGradingProviders(req, res) {
     current,
     mode: normalizeGradingMode(settings.quiz_grading_mode),
     queue_length: queued,
+    concurrency,
+    max_concurrency: MAX_CONCURRENCY,
   });
 }
 
@@ -439,10 +442,19 @@ async function setGradingProvider(req, res) {
   // الوضع بيتحفظ مع المزوّد لأن الاتنين في نفس الكارت وبيتاخدوا بنفس الضغطة — زرارين
   // منفصلين لإعدادين جنب بعض بيخلّي الأدمن يغيّر واحد ويسيب التاني من غير ما ياخد باله
   const mode = normalizeGradingMode(req.body?.mode);
+  // التوازي بيتقفل بين ١ و٣٢: الصفر بيوقّف الطابور خالص، والرقم الكبير بيولّع حد المعدل
+  // عند المزوّد وكل الأوراق بتفشل مرة واحدة
+  const requested = Number(req.body?.concurrency);
+  const concurrency = Number.isFinite(requested)
+    ? Math.min(Math.max(Math.floor(requested), 1), MAX_CONCURRENCY)
+    : await attemptConcurrency();
+
   await pool.query(
-    `INSERT INTO settings (key, value) VALUES ('quiz_grading_provider', $1), ('quiz_grading_mode', $2)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [provider, mode]);
-  res.json({ ok: true, provider, mode, label: PROVIDERS[provider].label });
+    `INSERT INTO settings (key, value)
+     VALUES ('quiz_grading_provider', $1), ('quiz_grading_mode', $2), ('quiz_grading_concurrency', $3)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [provider, mode, String(concurrency)]);
+  res.json({ ok: true, provider, mode, concurrency, label: PROVIDERS[provider].label });
 }
 
 // ---------- تجربة التصحيح قبل الإرسال ----------
