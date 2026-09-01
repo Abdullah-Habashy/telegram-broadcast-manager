@@ -33,9 +33,37 @@ function normalizePhone(raw) {
 async function loadQuizByRef(ref) {
   const { rows } = await pool.query(
     `SELECT id, title, description, time_limit_minutes, is_open,
-            show_score_to_student, show_answers_to_student
+            show_score_to_student, show_answers_to_student, answers_after_close,
+            shuffle_questions, shuffle_options
      FROM quizzes WHERE LOWER(slug) = LOWER($1) OR token = $1`, [ref]);
   return rows[0] || null;
+}
+
+// ---------- الترتيب العشوائي ----------
+//
+// **الخلط لازم يبقى ثابت لكل محاولة.** الطالب بيعمل Refresh وبيرجع للصفحة أكتر من مرة،
+// وترتيب مختلف كل مرة بيخلّيه يفتكر إن الامتحان اتغيّر. البذرة من رقم المحاولة، فنفس
+// الطالب بيشوف نفس الترتيب دايمًا وطالبين مختلفين بيشوفوا ترتيبين مختلفين.
+//
+// Math.random مايصلحش هنا لنفس السبب — مافيش حتة نخزّن فيها الترتيب، فالتوليد لازم
+// يبقى قابل لإعادة الحساب من رقم المحاولة لوحده
+function seededShuffle(items, seed) {
+  const array = items.slice();
+  let state = seed >>> 0;
+  const random = () => {
+    state = (state + 0x6D2B79F5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let index = array.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    const held = array[index];
+    array[index] = array[swap];
+    array[swap] = held;
+  }
+  return array;
 }
 
 // الأسئلة زي ما الطالب لازم يشوفها: من غير correct_option ولا reference_answer. الحذف هنا
@@ -43,7 +71,7 @@ async function loadQuizByRef(ref) {
 //
 // الشكل شجرة: السؤال اللي ليه رأس بيرجع kind='group' ومعاه parts، والسؤال العادي بيرجع
 // لوحده. الأب مالوش خانة إجابة ولا درجة — هو عنوان للفروع
-async function loadQuestionsForStudent(quizId) {
+async function loadQuestionsForStudent(quizId, shuffle) {
   const { rows } = await pool.query(
     `SELECT q.id, q.parent_id, q.label, q.kind, q.text, q.points, q.options, q.image_path
      FROM quiz_questions q
@@ -59,11 +87,15 @@ async function loadQuestionsForStudent(quizId) {
     text: row.text,
     image: row.image_path || null,
     points: Number(row.points),
-    // الاختيار بقى {text, image}. الصف القديم النص بيتحوّل هنا عشان الواجهة تشوف شكل واحد
+    // الاختيار بقى {text, image}. الصف القديم النص بيتحوّل هنا عشان الواجهة تشوف شكل واحد.
+    //
+    // **وindex هو رقم الاختيار الأصلي في المصفوفة.** الصفحة بتبعته هو اللي بيتخزّن في
+    // selected_option، مش مكانه في العرض — فالخلط بيغيّر الترتيب اللي الطالب شايفه من
+    // غير ما يمسّ معنى أي إجابة متخزّنة، قديمة كانت أو جديدة
     options: row.kind === 'mcq'
-      ? (row.options || []).map((option) => (typeof option === 'string'
-        ? { text: option, image: null }
-        : { text: String(option?.text || ''), image: option?.image || null }))
+      ? (row.options || []).map((option, index) => (typeof option === 'string'
+        ? { text: option, image: null, index }
+        : { text: String(option?.text || ''), image: option?.image || null, index }))
       : [],
   });
 
@@ -80,7 +112,32 @@ async function loadQuestionsForStudent(quizId) {
     byId.set(row.id, question);
     parents.push(question);
   }
-  return parents;
+
+  if (!shuffle) return parents;
+
+  // الاختيارات بتتخلط لكل سؤال ببذرة مختلفة (البذرة + رقم السؤال)، وإلا كل الأسئلة
+  // بتتخلط بنفس النمط والطالب بياخد باله إن الصح دايمًا في نفس المكان
+  const shuffleOptions = (question) => {
+    if (shuffle.options && question.kind === 'mcq' && question.options.length > 1) {
+      question.options = seededShuffle(question.options, shuffle.seed + question.id);
+    }
+    return question;
+  };
+  for (const parent of parents) {
+    shuffleOptions(parent);
+    parent.parts.forEach(shuffleOptions);
+  }
+
+  // **الفروع مابتتخلطش جوه رأسها.** "أ" و"ب" ترتيبهم جزء من السؤال نفسه، والرأس بيفضل
+  // ماسك فروعه — اللي بيتخلط هو ترتيب الأسئلة الرئيسية بس
+  return shuffle.questions ? seededShuffle(parents, shuffle.seed) : parents;
+}
+
+// الخلط بيتحسب من رقم المحاولة عشان يفضل ثابت للطالب، وnull لما الاختبار مش مخلوط
+// أصلًا — عشان مانعديش على المصفوفات من غير داعي
+function shuffleFor(quiz, attempt) {
+  if (!quiz.shuffle_questions && !quiz.shuffle_options) return null;
+  return { questions: quiz.shuffle_questions, options: quiz.shuffle_options, seed: attempt.id };
 }
 
 // ---------- تصحيح الورقة للطالب ----------
@@ -143,6 +200,9 @@ async function loadReviewForAttempt(attemptId, quizId) {
 // نص مكتوبة، والطالب اللي شاف "غلط" وبعد دقيقة بقت "صح" بيفقد الثقة في الورقة كلها
 async function reviewIfReady(attempt, quiz) {
   if (!attempt.submitted_at || !quiz.show_answers_to_student) return null;
+  // مؤجّل لحد ما الاختبار يتقفل: ده الحل الوسط بين إن الطالب يتعلّم من غلطه وإن أول
+  // واحد يشوف الإجابات ينشرها للباقي وهو لسه مفتوح
+  if (quiz.answers_after_close && quiz.is_open) return null;
   if (attempt.grading_status !== 'graded' && attempt.grading_status !== 'partial') return null;
   return loadReviewForAttempt(attempt.id, quiz.id);
 }
@@ -275,7 +335,7 @@ async function startAttempt(req, res) {
       attempt.deadline_at = timed.rows.length ? timed.rows[0].deadline_at : attempt.deadline_at;
     }
 
-    const questions = await loadQuestionsForStudent(quiz.id);
+    const questions = await loadQuestionsForStudent(quiz.id, shuffleFor(quiz, attempt));
     attempt.saved = await loadSavedAnswers(attempt.id);
     return res.json(attemptPayload(attempt, quiz, questions));
   }
@@ -305,7 +365,7 @@ async function startAttempt(req, res) {
 
   const attempt = created.rows[0];
   attempt.saved = await loadSavedAnswers(attempt.id);
-  const questions = await loadQuestionsForStudent(quiz.id);
+  const questions = await loadQuestionsForStudent(quiz.id, shuffleFor(quiz, attempt));
   res.json(attemptPayload(attempt, quiz, questions));
 }
 
@@ -419,7 +479,7 @@ function kickGradingQueue() {
 async function getResult(req, res) {
   const { rows } = await pool.query(
     `SELECT a.id, a.quiz_id, a.submitted_at, a.grading_status, a.score, a.max_score,
-            q.show_score_to_student, q.show_answers_to_student
+            q.show_score_to_student, q.show_answers_to_student, q.answers_after_close, q.is_open
      FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id
      WHERE (LOWER(q.slug) = LOWER($1) OR q.token = $1) AND a.attempt_key = $2`,
     [req.params.ref, req.query?.attempt_key || '']);
@@ -435,6 +495,8 @@ async function getResult(req, res) {
     ? await reviewIfReady(attempt, {
       id: attempt.quiz_id,
       show_answers_to_student: attempt.show_answers_to_student,
+      answers_after_close: attempt.answers_after_close,
+      is_open: attempt.is_open,
     })
     : null;
   res.json({
@@ -446,4 +508,4 @@ async function getResult(req, res) {
   });
 }
 
-module.exports = { renderQuiz, startAttempt, saveProgress, submitAttempt, getResult, normalizePhone };
+module.exports = { renderQuiz, startAttempt, saveProgress, submitAttempt, getResult, normalizePhone, seededShuffle };

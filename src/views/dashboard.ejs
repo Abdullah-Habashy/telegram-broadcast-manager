@@ -747,6 +747,23 @@
               <span>الطالب يشوف تصحيح ورقته
                 <span class="card-desc">(إجابته والإجابة الصح، سؤال سؤال — بيلاقيها لما يفتح الرابط بنفس رقمه في أي وقت)</span></span>
             </label>
+            <%# الحل الوسط: التصحيح يستنى لحد ما الاختبار يتقفل. الخانة تحت اللي فوقها
+                لأنها بتقيّدها مش بتلغيها %>
+            <label class="row" style="gap:8px; cursor:pointer; margin-top:6px; margin-inline-start:24px">
+              <input type="checkbox" id="quiz-answers-after-close" />
+              <span>بس مايشوفهوش غير بعد ما الاختبار يتقفل
+                <span class="card-desc">(لو الرابط بيتحل على مدى أيام — عشان أول واحد يشوف الإجابات مايوزعهاش)</span></span>
+            </label>
+            <label class="row" style="gap:8px; cursor:pointer; margin-top:10px">
+              <input type="checkbox" id="quiz-shuffle-questions" />
+              <span>رتّب الأسئلة عشوائي لكل طالب
+                <span class="card-desc">(الرأس بيفضل ماسك فروعه — اللي بيتخلط ترتيب الأسئلة الرئيسية)</span></span>
+            </label>
+            <label class="row" style="gap:8px; cursor:pointer; margin-top:6px">
+              <input type="checkbox" id="quiz-shuffle-options" />
+              <span>رتّب اختيارات كل سؤال عشوائي
+                <span class="card-desc">(الترتيب ثابت للطالب الواحد مهما عمل Refresh)</span></span>
+            </label>
           </div>
 
           <div class="card">
@@ -8695,6 +8712,9 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-show-score').checked = true;
       document.getElementById('quiz-show-answers').checked = true;
       document.getElementById('quiz-bootcamp').value = '';
+      document.getElementById('quiz-answers-after-close').checked = false;
+      document.getElementById('quiz-shuffle-questions').checked = false;
+      document.getElementById('quiz-shuffle-options').checked = false;
       document.getElementById('quiz-editor-note').textContent = '';
       renderQuizQuestions();
       showQuizView('editor');
@@ -8727,6 +8747,9 @@ ${reply.content}` : reply.content;
         document.getElementById('quiz-show-score').checked = quiz.show_score_to_student;
         document.getElementById('quiz-show-answers').checked = quiz.show_answers_to_student;
         document.getElementById('quiz-bootcamp').value = quiz.target_bootcamp_id || '';
+        document.getElementById('quiz-answers-after-close').checked = quiz.answers_after_close;
+        document.getElementById('quiz-shuffle-questions').checked = quiz.shuffle_questions;
+        document.getElementById('quiz-shuffle-options').checked = quiz.shuffle_options;
         // الحذف بيمسح إجابات الطلاب معاه، فبيتقفل خالص أول ما حد يحل — والموظف لازم يعرف
         // ليه الزرار مش موجود قبل ما يدوّر عليه
         document.getElementById('quiz-editor-note').textContent = quizEditorHasAttempts
@@ -9038,6 +9061,9 @@ ${reply.content}` : reply.content;
         show_score_to_student: document.getElementById('quiz-show-score').checked,
         show_answers_to_student: document.getElementById('quiz-show-answers').checked,
         target_bootcamp_id: document.getElementById('quiz-bootcamp').value || null,
+        answers_after_close: document.getElementById('quiz-answers-after-close').checked,
+        shuffle_questions: document.getElementById('quiz-shuffle-questions').checked,
+        shuffle_options: document.getElementById('quiz-shuffle-options').checked,
         is_open: true,
       };
 
@@ -9078,6 +9104,9 @@ ${reply.content}` : reply.content;
             // اللي مش في الطلب بياخد الافتراضي عند السيرفر مش قيمته الحالية
             show_answers_to_student: quiz.show_answers_to_student,
             target_bootcamp_id: quiz.target_bootcamp_id || null,
+            answers_after_close: quiz.answers_after_close,
+            shuffle_questions: quiz.shuffle_questions,
+            shuffle_options: quiz.shuffle_options,
             is_open: !quiz.is_open,
           }),
         });

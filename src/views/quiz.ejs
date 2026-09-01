@@ -180,9 +180,11 @@
       if (question.kind !== 'mcq') {
         return '<textarea class="qz-textarea" data-q="' + question.id + '" placeholder="اكتب إجابتك هنا..."></textarea>';
       }
-      return question.options.map(function (option, optionIndex) {
+      // **القيمة رقم الاختيار الأصلي مش مكانه في القايمة.** الترتيب ممكن يكون متخلط،
+      // والرقم اللي بيتبعت للسيرفر لازم يفضل معناه واحد قبل الخلط وبعده
+      return question.options.map(function (option) {
         return '<label class="qz-option" data-q="' + question.id + '">'
-          + '<input type="radio" name="q' + question.id + '" value="' + optionIndex + '" />'
+          + '<input type="radio" name="q' + question.id + '" value="' + option.index + '" />'
           + '<span>' + (option.text ? esc(option.text) : '')
           + (option.image ? '<img class="qz-option-image" src="' + esc(option.image) + '" alt="" loading="lazy" />' : '')
           + '</span></label>';
