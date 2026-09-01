@@ -864,6 +864,54 @@ async function regradeAttempt(req, res) {
   res.json(result);
 }
 
+// ---------- اعتماد الدرجات ----------
+//
+// **الاعتماد مابيغيّرش درجة — بيقفلها.** `graded_by = 'staff'` معناه إن بني آدم شاف
+// الدرجة دي ووافق عليها، وإعادة التصحيح الآلي بتعدّي عليها من غير ما تلمسها
+// (utils/quizScoring.js). فالمدرّس اللي راجع ورقة ووافق مش هيلاقي حكمه اتمسح لو حد
+// ضغط "أعد تصحيح كل المحاولات" بعدها بشهر.
+//
+// **جملة واحدة مش لوب.** اختبار بعشرين ألف طالب و٢٥ سؤال = نص مليون صف؛ اعتماد كل
+// واحد بنداء لوحده معناه نص مليون رحلة للقاعدة. والاعتماد مابيعيدش حساب الدرجة أصلًا
+// لأنه مابيغيّرش أي رقم — فمفيش داعي لأي شغل بعده.
+//
+// والأسئلة اللي لسه من غير درجة (تصحيح آلي فشل) **مابتتعتمدش**: اعتماد "لا شيء" معناه
+// إن الموظف وافق على درجة مش موجودة، والسؤال يفضل بلا درجة للأبد من غير ما حد ياخد باله
+const APPROVE_SQL = `
+  UPDATE quiz_answers an
+  SET graded_by = 'staff', graded_by_user = $2, graded_at = NOW()
+  FROM quiz_attempts a
+  WHERE an.attempt_id = a.id
+    AND an.awarded_points IS NOT NULL
+    AND an.graded_by <> 'staff'`;
+
+async function approveQuizGrades(req, res) {
+  const quizId = Number(req.params.id);
+  const quiz = await pool.query('SELECT id FROM quizzes WHERE id = $1', [quizId]);
+  if (!quiz.rows.length) return res.status(404).json({ error: 'الاختبار مش موجود' });
+
+  const approved = await pool.query(`${APPROVE_SQL} AND a.quiz_id = $1`, [quizId, req.session.userId]);
+  // اللي فضل من غير درجة بيتقال بالرقم: الموظف اللي وافق على الكل محتاج يعرف إن فيه
+  // أسئلة لسه مستنياه، مش يفتكر إنه خلص
+  const pending = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM quiz_answers an
+     JOIN quiz_attempts a ON a.id = an.attempt_id
+     WHERE a.quiz_id = $1 AND an.awarded_points IS NULL`, [quizId]);
+  res.json({ ok: true, approved: approved.rowCount, still_ungraded: pending.rows[0].count });
+}
+
+async function approveAttemptGrades(req, res) {
+  const attemptId = Number(req.params.attemptId);
+  const attempt = await pool.query('SELECT id FROM quiz_attempts WHERE id = $1', [attemptId]);
+  if (!attempt.rows.length) return res.status(404).json({ error: 'المحاولة مش موجودة' });
+
+  const approved = await pool.query(`${APPROVE_SQL} AND a.id = $1`, [attemptId, req.session.userId]);
+  const pending = await pool.query(
+    'SELECT COUNT(*)::int AS count FROM quiz_answers WHERE attempt_id = $1 AND awarded_points IS NULL',
+    [attemptId]);
+  res.json({ ok: true, approved: approved.rowCount, still_ungraded: pending.rows[0].count });
+}
+
 // ---------- إعادة فتح المحاولة ----------
 //
 // **المحاولة واحدة لكل طالب، ومفيش مسار كان بيفكّها.** الطالب اللي سلّم بالغلط، أو دخل
@@ -932,6 +980,7 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
-  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt, parseDocument, parseDocument,
+  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt, parseDocument,
+  approveQuizGrades, approveAttemptGrades, parseDocument,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
 };

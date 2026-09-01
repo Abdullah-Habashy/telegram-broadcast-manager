@@ -863,6 +863,7 @@
             <div class="row-between" style="margin-bottom:12px; gap:12px; flex-wrap:wrap">
               <b id="quiz-results-title">النتايج</b>
               <div class="row" style="gap:8px; flex-wrap:wrap">
+                <button type="button" class="btn btn-primary btn-sm" id="quiz-approve-btn" style="width:auto">✅ وافق على كل النتايج</button>
                 <button type="button" class="btn btn-primary btn-sm" id="quiz-stats-btn" style="width:auto">📊 إحصائيات الأسئلة</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-missing-btn" style="width:auto">🔎 مين ماحلّش</button>
                 <a class="btn btn-ghost btn-sm" id="quiz-export-btn" style="width:auto; text-decoration:none" href="#">⬇️ تصدير Excel</a>
@@ -9584,9 +9585,11 @@ ${reply.content}` : reply.content;
           const verdict = answer.ai_verdict
             ? `<div class="card-desc" style="margin-top:6px">🤖 ${verdictLabels[answer.ai_verdict] || answer.ai_verdict}: ${escapeHtml(answer.ai_reason)}</div>`
             : '';
+          // الفرق بين "اتعتمدت" و"اتعدّلت" مش باين من graded_by لوحده، بس الاتنين معناهم
+          // إن بني آدم شافها وإن إعادة التصحيح الآلي مش هتلمسها — والعلامة بتقول ده
           const staffMark = answer.graded_by === 'staff'
-            ? `<span class="badge badge-muted">عدّلها ${escapeHtml(answer.graded_by_name || 'موظف')}</span>`
-            : '';
+            ? `<span class="badge badge-success">✔ معتمدة — ${escapeHtml(answer.graded_by_name || 'موظف')}</span>`
+            : '<span class="badge badge-muted">تصحيح آلي</span>';
 
           return `
             <div class="card" style="background:var(--surface-sunken); margin-bottom:10px${answer.is_part ? '; margin-inline-start:18px' : ''}">
@@ -9603,9 +9606,11 @@ ${reply.content}` : reply.content;
               <div class="row" style="gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap">
                 <span class="card-desc">الدرجة:</span>
                 <input type="number" class="compact-input" style="width:90px" min="0" max="${answer.points}" step="0.5"
-                       id="quiz-grade-${answer.question_id}" value="${answer.awarded_points === null ? '' : answer.awarded_points}" />
-                <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
-                        onclick="saveQuizGrade(${attemptId}, ${answer.question_id})">اعتمد الدرجة</button>
+                       id="quiz-grade-${answer.question_id}" value="${answer.awarded_points === null ? '' : answer.awarded_points}"
+                       oninput="clampQuizGrade(this, ${answer.points})" />
+                <span class="card-desc">من ${answer.points}</span>
+                <button type="button" class="btn btn-primary btn-sm" style="width:auto"
+                        onclick="saveQuizGrade(${attemptId}, ${answer.question_id})">✔ اعتمد</button>
                 ${staffMark}
               </div>
             </div>`;
@@ -9617,6 +9622,7 @@ ${reply.content}` : reply.content;
             <b>${escapeHtml(name)} — ${data.attempt.score === null ? '—' : Math.round(data.attempt.score * 100) / 100} / ${data.attempt.max_score === null ? '—' : data.attempt.max_score}</b>
             <div class="row" style="gap:8px">
               ${needsReview ? `<button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="regradeQuizAttempt(${attemptId})">أعد التصحيح الآلي</button>` : ''}
+              <button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="approveQuizAttempt(${attemptId})">✅ وافق على الورقة كلها</button>
               <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="reopenQuizAttempt(${attemptId})">اسمحله يعيد</button>
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="hideQuizAttempt()">إخفاء</button>
             </div>
@@ -9648,6 +9654,49 @@ ${reply.content}` : reply.content;
 
     // إعادة تصحيح الاختبار كله بالإجابة المرجعية الجديدة. التحذير صريح لأن العملية بتكلّف
     // نداء نموذج لكل سؤال مقالي في كل محاولة — مش زرار بيتضغط بالغلط
+    // ---------- اعتماد الدرجات ----------
+    // الاعتماد مابيغيّرش أي درجة — بيقفلها قدام إعادة التصحيح الآلي. التأكيد بيقول
+    // كده بالنص عشان الموظف مايفتكرش إنه بيصحّح
+    async function approveWholeQuiz() {
+      if (!confirm(`هيعتمد كل الدرجات المتصحّحة في الاختبار ده على إنك راجعتها.
+
+الدرجات مش هتتغيّر — بس مش هتتمسح لو حد أعاد التصحيح الآلي بعد كده.
+
+تمام؟`)) return;
+      try {
+        const result = await api(`/api/quizzes/${quizResultsId}/approve`, {
+          method: 'POST', body: JSON.stringify({}),
+        });
+        showToast(result.still_ungraded
+          ? `اتعتمد ${result.approved} — وفاضل ${result.still_ungraded} سؤال من غير درجة`
+          : `اتعتمد ${result.approved} سؤال`);
+        loadQuizAttempts();
+      } catch (error) { showToast(error.message); }
+    }
+
+    async function approveQuizAttempt(attemptId) {
+      try {
+        const result = await api(`/api/quizzes/attempts/${attemptId}/approve`, {
+          method: 'POST', body: JSON.stringify({}),
+        });
+        showToast(result.still_ungraded
+          ? `اتعتمدت — وفاضل ${result.still_ungraded} سؤال من غير درجة`
+          : 'الورقة اتعتمدت');
+        await loadQuizAttempts();
+        await openQuizAttempt(attemptId);
+      } catch (error) { showToast(error.message); }
+    }
+
+    // **الحد الأقصى بيتفرض في الخانة مش عند الحفظ بس.** السيرفر بيرفض الدرجة الأكبر من
+    // درجة السؤال، لكن الموظف اللي كتب ٩ في سؤال من ٣ مش المفروض يعرف ده من رسالة خطأ
+    // بعد ما يدوس — الخانة بترجّعه للحد فورًا
+    function clampQuizGrade(input, max) {
+      const value = Number(input.value);
+      if (!input.value) return;
+      if (!Number.isFinite(value) || value < 0) { input.value = 0; return; }
+      if (value > max) input.value = max;
+    }
+
     async function regradeWholeQuiz() {
       if (!confirm(`هيعيد تصحيح كل المحاولات المسلّمة بالإجابات المرجعية الحالية.
 
@@ -9703,6 +9752,7 @@ ${reply.content}` : reply.content;
     });
     document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);
     document.getElementById('quiz-stats-btn').addEventListener('click', loadQuestionStats);
+    document.getElementById('quiz-approve-btn').addEventListener('click', approveWholeQuiz);
     document.getElementById('quiz-missing-btn').addEventListener('click', loadQuizMissing);
     document.getElementById('preview-grade-btn')?.addEventListener('click', runGradePreview);
     document.getElementById('save-grading-provider-btn')?.addEventListener('click', saveGradingProvider);
