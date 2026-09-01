@@ -72,18 +72,54 @@ body.qz-body {
   background: color-mix(in srgb, var(--qz-danger) 12%, transparent); color: var(--qz-danger);
 }
 
-/* ---------- المؤقت ---------- */
-/* لاصق فوق: الطالب بيسكرول جوه الأسئلة، والوقت لازم يفضل في وشه من غير ما يدوّر عليه */
-.qz-timer {
-  position: sticky; top: 0; z-index: 5; margin: -18px -14px 14px; padding: 11px 14px;
+/* ---------- الشريط العلوي ---------- */
+/* لاصق فوق طول الامتحان: الوقت، والتقدّم، والتنقّل. الطالب بيسكرول في ٢٥ سؤال ولازم
+   يفضل قدامه إجابة سؤالين: فاضلي قد إيه، وأنا فين.
+   الخلفية معتمة مش شفافة — من غيرها نص الأسئلة بيعدّي من ورا الشريط وهو بيتحرّك */
+.qz-bar {
+  position: sticky; top: 0; z-index: 5; margin: -18px -14px 14px; padding: 10px 14px 0;
   background: var(--qz-card); border-bottom: 1px solid var(--qz-line);
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  font-weight: 600; font-size: 15px;
 }
-.qz-timer .qz-clock { font-variant-numeric: tabular-nums; }
-.qz-timer.warn { color: var(--qz-warn); }
-.qz-timer.danger { color: var(--qz-danger); }
+.qz-bar-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  font-weight: 600; font-size: 15px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.qz-timer-text { font-variant-numeric: tabular-nums; }
+.qz-bar.warn .qz-timer-text { color: var(--qz-warn); }
+.qz-bar.danger .qz-timer-text { color: var(--qz-danger); }
+.qz-progress-text { color: var(--qz-muted); font-size: 14px; font-weight: 600; }
 .qz-save-state { font-size: 13px; font-weight: 400; color: var(--qz-muted); }
+
+/* شريط التقدّم: نسبة اللي اتجاوب من إجمالي الأسئلة القابلة للإجابة (الفروع بتتعد
+   واحدة واحدة، والرؤوس لأ — عشان الرقم يطابق تحذير التسليم) */
+.qz-progress {
+  height: 6px; border-radius: 999px; background: var(--qz-bg); overflow: hidden;
+}
+.qz-progress-fill {
+  height: 100%; width: 0; background: var(--qz-accent);
+  transition: width .25s ease;
+}
+
+/* مربعات التنقّل: بتتزحلق أفقيًا لأن امتحان ٥٠ سؤال مش هيبقى في سطر واحد على الموبايل */
+.qz-nav {
+  display: flex; gap: 6px; overflow-x: auto; padding: 9px 0 10px;
+  scrollbar-width: thin;
+}
+.qz-nav:empty { display: none; }
+.qz-nav-item {
+  flex: 0 0 auto; min-width: 34px; height: 34px; padding: 0 8px;
+  border-radius: 9px; border: 1px solid var(--qz-line); background: var(--qz-bg);
+  color: var(--qz-text); font: inherit; font-size: 13.5px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+}
+.qz-nav-item:hover { border-color: var(--qz-accent); }
+/* الأخضر معناه "اتجاوب" مش "صح" — التصحيح لسه ماحصلش */
+.qz-nav-item.answered {
+  background: var(--qz-good-soft); border-color: var(--qz-good); color: var(--qz-good);
+}
+
+/* الشريط بيغطي أول السؤال لما نننط له — المسافة دي بتخلي السؤال يقف تحته مش وراه */
+.qz-card[id^="qz-anchor-"], .qz-part[id^="qz-anchor-"] { scroll-margin-top: 120px; }
 
 /* ---------- الأسئلة ---------- */
 .qz-q-head {

@@ -56,9 +56,18 @@
 
   <%# ===== الاختبار نفسه ===== %>
   <div id="qz-exam" style="display:none">
-    <div class="qz-timer" id="qz-timer" style="display:none">
-      <span>الوقت المتبقي: <span class="qz-clock" id="qz-clock">--:--</span></span>
-      <span class="qz-save-state" id="qz-save-state"></span>
+    <%# شريط واحد ثابت فوق طول الامتحان: الوقت، والتقدّم، والتنقّل بين الأسئلة.
+        قبل كده كان المؤقت لوحده، ومكانش بيظهر أصلًا في الاختبار اللي من غير مدة —
+        فالطالب اللي بيسكرول في ٢٥ سؤال مكانش قدامه أي حاجة ثابتة %>
+    <div class="qz-bar" id="qz-bar">
+      <div class="qz-bar-row">
+        <span class="qz-timer-text" id="qz-timer" style="display:none">⏱️ <span class="qz-clock" id="qz-clock">--:--</span></span>
+        <span class="qz-progress-text" id="qz-progress-text">٠ من ٠</span>
+        <span class="qz-save-state" id="qz-save-state"></span>
+      </div>
+      <div class="qz-progress"><div class="qz-progress-fill" id="qz-progress-fill"></div></div>
+      <%# مربعات الأسئلة: الضغط بينط للسؤال، واللون بيقول اتجاوب ولا لأ %>
+      <div class="qz-nav" id="qz-nav"></div>
     </div>
     <div id="qz-questions"></div>
     <button class="qz-btn" id="qz-submit-btn" type="button">سلّم الإجابات</button>
@@ -221,7 +230,7 @@
         if (question.kind === 'group') {
           return '<div class="qz-card">' + header
             + question.parts.map(function (part) {
-              return '<div class="qz-part">'
+              return '<div class="qz-part" id="qz-anchor-' + part.id + '">'
                 + '<div class="qz-part-head">'
                 + '<span class="qz-part-label">' + esc(part.label || '') + '</span>'
                 + '<span class="qz-q-points">' + part.points + ' درجة</span></div>'
@@ -232,12 +241,76 @@
             }).join('')
             + '</div>';
         }
-        return '<div class="qz-card">' + header + answerField(question) + '</div>';
+        return '<div class="qz-card" id="qz-anchor-' + question.id + '">'
+          + header + answerField(question) + '</div>';
       }).join('');
 
+      buildNav();
       restoreSaved(data.saved || {});
       bindAnswerInputs();
+      updateProgress();
       if (state.deadline) startTimer();
+    }
+
+    // ---------- التنقّل والتقدّم ----------
+    //
+    // **الترقيم في المربعات هو نفسه اللي مكتوب على السؤال.** الرأس بياخد رقم وفروعه
+    // بتاخد رقمه مع حرفها (٣أ، ٣ب)، عشان الطالب اللي بيدوس مربع يلاقي نفسه عند السؤال
+    // اللي شايف رقمه، مش عند سؤال تاني
+    function navItems() {
+      var items = [];
+      state.questions.forEach(function (question, index) {
+        if (question.kind === 'group') {
+          (question.parts || []).forEach(function (part) {
+            items.push({ id: part.id, label: (index + 1) + esc(part.label || '') });
+          });
+        } else {
+          items.push({ id: question.id, label: String(index + 1) });
+        }
+      });
+      return items;
+    }
+
+    function buildNav() {
+      var items = navItems();
+      // سؤال واحد؟ التنقّل مالوش لازمة وبياخد مساحة من غير فايدة
+      el('qz-nav').innerHTML = items.length < 2 ? '' : items.map(function (item) {
+        return '<button type="button" class="qz-nav-item" data-goto="' + item.id + '">'
+          + item.label + '</button>';
+      }).join('');
+      el('qz-nav').addEventListener('click', function (event) {
+        var button = event.target.closest('[data-goto]');
+        if (!button) return;
+        var anchor = document.getElementById('qz-anchor-' + button.getAttribute('data-goto'));
+        if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+
+    // السؤال "متجاوب" بنفس تعريف تحذير التسليم بالظبط: اختيار متحدد أو نص مش فاضي.
+    // تعريفين مختلفين معناهم إن الشريط يقول ٢٥ من ٢٥ والتسليم يقول فيه ٣ فاضيين
+    function answeredIds() {
+      var done = [];
+      answerableQuestions().forEach(function (question) {
+        if (question.kind === 'mcq') {
+          if (document.querySelector('input[name="q' + question.id + '"]:checked')) done.push(question.id);
+          return;
+        }
+        var textarea = document.querySelector('textarea[data-q="' + question.id + '"]');
+        if (textarea && textarea.value.trim()) done.push(question.id);
+      });
+      return done;
+    }
+
+    function updateProgress() {
+      var total = answerableQuestions().length;
+      var done = answeredIds();
+      var map = {};
+      done.forEach(function (id) { map[id] = true; });
+      el('qz-progress-text').textContent = done.length + ' من ' + total;
+      el('qz-progress-fill').style.width = total ? (done.length / total) * 100 + '%' : '0%';
+      Array.prototype.forEach.call(document.querySelectorAll('.qz-nav-item'), function (button) {
+        button.classList.toggle('answered', Boolean(map[button.getAttribute('data-goto')]));
+      });
     }
 
     // استكمال محاولة مفتوحة: الإجابات المحفوظة بترجع في مكانها زي ما سابها بالظبط
@@ -263,10 +336,11 @@
           });
           input.closest('.qz-option').classList.add('picked');
           state.dirty = true;
+          updateProgress();
         });
       });
       Array.prototype.forEach.call(document.querySelectorAll('#qz-questions textarea'), function (textarea) {
-        textarea.addEventListener('input', function () { state.dirty = true; });
+        textarea.addEventListener('input', function () { state.dirty = true; updateProgress(); });
         // الخروج من الخانة أوضح لحظة للحفظ: الطالب خلص السؤال ده وبيروح للي بعده
         textarea.addEventListener('blur', function () { saveProgress(); });
       });
@@ -310,8 +384,12 @@
       var minutes = String(Math.floor(remaining / 60)).padStart(2, '0');
       var seconds = String(remaining % 60).padStart(2, '0');
       el('qz-clock').textContent = minutes + ':' + seconds;
-      var timer = el('qz-timer');
-      timer.className = 'qz-timer' + (remaining <= 60 ? ' danger' : remaining <= 300 ? ' warn' : '');
+      // **التحذير بيتلوّن على الشريط مش على النص.** العنصر بقى جوه qz-bar، وكتابة
+      // className عليه كانت بتمسح كلاسه الأصلي وتلوّن حاجة مالهاش قواعد — تلوين ساكت
+      // مش هيبان غير لما الوقت يقرب يخلص، وساعتها الطالب هو اللي بيدفع التمن
+      var bar = el('qz-bar');
+      bar.classList.toggle('danger', remaining <= 60);
+      bar.classList.toggle('warn', remaining > 60 && remaining <= 300);
       if (remaining === 0) {
         clearInterval(state.timer);
         submit(true);
