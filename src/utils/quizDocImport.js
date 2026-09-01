@@ -38,14 +38,28 @@ const SEPARATOR = '[)\\.:\\-–—\\]}]';
 const MARKER = new RegExp(
   `^\\s*([سجدت])\\s*([0-9٠-٩۰-۹]+)(?:([أ-ي])(?=\\s|${SEPARATOR}|$))?\\s*${SEPARATOR}?\\s*(.*)$`);
 
-// اختيار = حرف واحد + فاصل. الفاصل مطلوب عشان "أحمد كان" ماتتقريش على إنها اختيار
+// اختيار بفاصل: حرف + فاصل + نص. الشكل ده مقبول في أي مكان في القايمة
 const OPTION = new RegExp(`^\\s*([أ-ي])\\s*${SEPARATOR}\\s*(.+)$`);
+
+// **اختيار من غير فاصل: حرف + مسافة + نص.** الشكل ده لوحده خطر — سطر زي "و الناتج
+// بيكون الجلوكوز" جوه سؤال كان هيتقري اختيار. عشان كده مابيتقبلش إلا لو الحرف هو
+// **الحرف اللي جاي في الدور**: أول اختيار لازم "أ"، واللي بعده "ب"، وهكذا. الكلمة
+// اللي بتبدأ الجملة بالصدفة نادرًا ما تكون هي الحرف المنتظر بالظبط
+const BARE_OPTION = /^\s*([أ-ي])\s+(.+)$/;
+const OPTION_LETTERS = ['أ', 'ب', 'ج', 'د', 'ه', 'و', 'ز', 'ح', 'ط', 'ي'];
+
+// **ثلاث نجمات في آخر الاختيار = ده الصح.** بديل عن سطر `ج1` للاختياري: المدرّس
+// بيعلّم الإجابة وهو بيكتبها، مش بيرجع يكتب حرفها تحت — والرجوع ده هو اللي بيغلط فيه
+const STAR = /\s*\*{1,}\s*$/;
+
+// الرقم لوحده بعد رقم السؤال هو الدرجة: `س1 3`. أي حاجة تانية نص السؤال
+const BARE_NUMBER = /^[0-9]+(?:\.[0-9]+)?$/;
 
 const PART_LETTERS = ['أ', 'ب', 'ج', 'د', 'هـ', 'ه', 'و', 'ز', 'ح', 'ط', 'ي'];
 
 function blank(number, label) {
   return {
-    number, label: label || null, text: '', options: [], optionLetters: [],
+    number, label: label || null, text: '', options: [], optionLetters: [], starred: [],
     answer: '', points: null, notes: '', parts: [],
   };
 }
@@ -107,7 +121,13 @@ function parseQuizDocument(raw) {
           current = parent;
         }
         field = 'text';
-        if (rest) appendLine(current, 'text', rest);
+        // `س1 3` — الرقم لوحده بعد رقم السؤال درجته، مش نصه. النص بيجي في السطر اللي
+        // بعده. أي حاجة غير رقم بتفضل نص زي الأول
+        if (rest && BARE_NUMBER.test(toAsciiDigits(rest).trim())) {
+          readPoints(current, rest, warnings);
+        } else if (rest) {
+          appendLine(current, 'text', rest);
+        }
         continue;
       }
 
@@ -139,16 +159,29 @@ function parseQuizDocument(raw) {
       continue;
     }
 
-    // اختيار: بس لو إحنا جوه نص سؤال. جوه الإجابة المرجعية السطر اللي شكله "أ) كذا"
-    // جزء من الإجابة مش اختيار جديد
-    const option = current && field === 'text' && trimmed.match(OPTION);
-    if (option) {
-      current.optionLetters.push(option[1]);
-      current.options.push({ text: option[2].trim(), image: null });
-      continue;
+    // اختيار: بس لو إحنا جوه سؤال أو في نص قايمة اختياراته. جوه الإجابة المرجعية
+    // السطر اللي شكله "أ) كذا" جزء من الإجابة مش اختيار جديد
+    if (current && (field === 'text' || field === 'options')) {
+      const withSeparator = trimmed.match(OPTION);
+      const bare = withSeparator ? null : trimmed.match(BARE_OPTION);
+      const expected = OPTION_LETTERS[current.optionLetters.length];
+      const option = withSeparator || (bare && bare[1] === expected ? bare : null);
+      if (option) {
+        const body = option[2].trim();
+        if (STAR.test(body)) current.starred.push(current.options.length);
+        current.optionLetters.push(option[1]);
+        current.options.push({ text: body.replace(STAR, '').trim(), image: null });
+        // **بعد أول اختيار، السطر اللي مش اختيار ولا علامة بيتسقط.** نص السؤال بييجي
+        // قبل اختياراته دايمًا، فأي سطر بعدها (عنوان، فاصل، كلام سايب) لو اتضاف للنص
+        // كان هيروح للطالب في ورقة الامتحان من غير ما حد ياخد باله
+        field = 'options';
+        continue;
+      }
     }
 
-    if (current && field) appendLine(current, field, trimmed);
+    if (current && (field === 'text' || field === 'answer' || field === 'notes')) {
+      appendLine(current, field, trimmed);
+    }
   }
 
   // ---------- التحويل لشكل المحرر ----------
@@ -176,17 +209,26 @@ function parseQuizDocument(raw) {
     if (item.points === null) warnings.push(`السؤال ${name} مالوش درجة — اتحطّت ١.`);
 
     if (hasOptions) {
-      // الإجابة حرف (ب) أو نص الاختيار نفسه — الاتنين مقبولين
-      const letter = answer.replace(new RegExp(SEPARATOR, 'g'), '').trim();
-      let index = item.optionLetters.indexOf(letter);
-      if (index < 0) {
-        index = item.options.findIndex((choice) => choice.text === answer);
+      // **النجمة بتكسب سطر `ج`.** لو الاتنين موجودين، اللي المدرّس علّمه جنب الاختيار
+      // نفسه أقرب لقصده من حرف كتبه تحت — والحرف هو اللي بيتنسى يتحدّث لما الترتيب يتغيّر
+      if (item.starred.length) {
+        if (item.starred.length > 1) {
+          warnings.push(`السؤال ${name} فيه ${item.starred.length} اختيارات متعلّمين بنجمة — اتاخد الأول فيهم.`);
+        }
+        shaped.correct_option = item.starred[0];
+      } else {
+        // الإجابة حرف (ب) أو نص الاختيار نفسه — الاتنين مقبولين
+        const letter = answer.replace(new RegExp(SEPARATOR, 'g'), '').trim();
+        let index = item.optionLetters.indexOf(letter);
+        if (index < 0) {
+          index = item.options.findIndex((choice) => choice.text === answer);
+        }
+        if (index < 0) {
+          warnings.push(`السؤال ${name} اختياري ومفيش اختيار متعلّم بـ *** ولا إجابة مطابقة — اتحطّ الأول.`);
+          index = 0;
+        }
+        shaped.correct_option = index;
       }
-      if (index < 0) {
-        warnings.push(`السؤال ${name} اختياري والإجابة "${answer || '—'}" مش مطابقة أي اختيار — اتحطّ الأول.`);
-        index = 0;
-      }
-      shaped.correct_option = index;
     } else if (!answer) {
       warnings.push(`السؤال ${name} مالوش إجابة مرجعية — التصحيح الآلي مش هيشتغل عليه.`);
     }
