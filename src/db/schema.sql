@@ -1105,6 +1105,15 @@ ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS result_notified_at TIMESTAMPT
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_pending_notify
     ON quiz_attempts (id) WHERE result_notified_at IS NULL;
 
+-- المحاولات اللي اتصحّحت قبل الميزة دي بتتعلّم كإنها اتبعتت. من غير السطر ده، أول تشغيل
+-- بعد النشر كان هيبعت لكل طالب حلّ من أسابيع إشعار بدرجة هو شايفها خلاص.
+-- **الشرط بتاريخ ثابت مش IS NULL** عشان الجملة تنفّذ مرة واحدة فعليًا: الشرط المفتوح كان
+-- هيسكّت إشعار أي محاولة مستنية لو حد شغّل migrate تاني في أي وقت بعدين
+UPDATE quiz_attempts SET result_notified_at = NOW()
+WHERE result_notified_at IS NULL
+  AND submitted_at IS NOT NULL
+  AND submitted_at < TIMESTAMPTZ '2026-09-01 04:00:00+00';
+
 -- إعادة فتح المحاولة: مين فتحها وامتى وكام مرة. **مفيش Audit Log في المشروع**، والعملية
 -- دي بتمسح إجابات طالب فعليًا — فالتسجيل هنا هو الأثر الوحيد لو حد سأل بعدين
 ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMPTZ;

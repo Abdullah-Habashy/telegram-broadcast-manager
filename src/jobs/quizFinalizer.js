@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const pool = require('../config/db');
 const { finalizeAttempt, processRegradeQueue, queueLength } = require('../utils/quizScoring');
+const { sendPendingResults } = require('./quizResultNotifier');
 
 // ---------- إقفال المحاولات اللي وقتها خلص ----------
 //
@@ -54,6 +55,11 @@ async function finalizeExpiredAttempts() {
     if (drained) {
       console.log(`🔁 Graded ${drained} queued quiz attempt(s); ${await queueLength()} left in the queue.`);
     }
+
+    // الإشعار في نفس التشغيلة بعد التصحيح مباشرة — مش كرون تاني. الدرجة بتخلص هنا،
+    // فأقرب لحظة يوصل فيها الإشعار هي اللي بعدها على طول، والعلم running فوق بيمنع
+    // التداخل. فشله مابيوقفش التصحيح — الدرجة متسجّلة والطالب يقدر يفتح الرابط بنفسه
+    await sendPendingResults();
   } catch (error) {
     console.error('❌ Failed to run the quiz finalizer:', error.message);
   } finally {
