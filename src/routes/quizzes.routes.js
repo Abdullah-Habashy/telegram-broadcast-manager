@@ -34,10 +34,13 @@ const uploadQuizImage = multer({
 router.use(requireQuizAccessApi);
 
 // ملف الأسئلة بيتقرا من الذاكرة — محتاجين نصه بس، ومفيش سبب نكتبه على القرص.
-// الحد الأقصى ٥ ميجا: ملف أسئلة نصّي أصغر من كده بكتير، والأكبر منه غالبًا صور
+//
+// **٢٥ ميجا مش ٥.** الحد القديم كان مبني على إن الملف نصّي، و"الأكبر منه غالبًا صور" —
+// والصور بقت هي المطلوبة. ورقة أسئلة بصور من كاميرا موبايل بتوصل ١٥–٣٠ ميجا بسهولة،
+// واللي فوق كده مستند تاني مش ورقة أسئلة
 const uploadQuizDocument = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, callback) => {
     const isDocx = file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       || /\.docx$/i.test(file.originalname || '');
@@ -47,14 +50,28 @@ const uploadQuizDocument = multer({
 });
 
 // قبل /:id عن قصد: "grade-preview" مش رقم، بس ترتيب المسارات أوضح من الاعتماد على ده
-router.post('/image', uploadQuizImage.single('image'), controller.uploadQuestionImage);
+// **رسالة الرفض لازم توصل.** multer بيرمي الخطأ زي أي خطأ تاني، فبيروح للمعالج العام
+// في server.js ويرجع ٥٠٠ "حصل خطأ في السيرفر" — والموظف مش عارف إن ملفه كبير ولا إن
+// صيغته غلط. ومع رفع الحد لـ٢٥ ميجا، احتمال الوصول للحد **بيزيد** مش بيقل
+function reportUploadError(err, req, res, next) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'الملف أكبر من ٢٥ ميجا. صغّر الصور اللي جواه أو قسّمه لملفين.' });
+    }
+    return res.status(400).json({ error: 'مشكلة في رفع الملف — جرّب تاني.' });
+  }
+  if (err && err.message) return res.status(400).json({ error: err.message });
+  return next(err);
+}
+
+router.post('/image', uploadQuizImage.single('image'), reportUploadError, controller.uploadQuestionImage);
 // اعتماد المصحّح الآلي وتجريبه: **الأدمن بس**. القرار على مستوى المنصة كلها — نموذج
 // واحد بيصحّح كل الاختبارات لكل الطلاب — والتيم العلمي شغله الأسئلة ومراجعة الدرجات.
 // الكارتين متخفيين من اللوحة كمان، والقفل هنا هو اللي بيعمل الحماية فعلًا
 router.get('/grading-provider', requireAdminApi, controller.getGradingProviders);
 router.post('/grading-provider', requireAdminApi, controller.setGradingProvider);
 router.post('/grade-preview', requireAdminApi, controller.gradePreview);
-router.post('/parse-document', uploadQuizDocument.single('document'), controller.parseDocument);
+router.post('/parse-document', uploadQuizDocument.single('document'), reportUploadError, controller.parseDocument);
 // قبل /:id عشان "bootcamps" مش رقم
 router.get('/bootcamps', controller.listBootcamps);
 router.get('/', controller.listQuizzes);

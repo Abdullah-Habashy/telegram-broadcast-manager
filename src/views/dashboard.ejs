@@ -827,11 +827,16 @@
                 <li><b>المقالي:</b> <code>ج</code> + رقم السؤال، والإجابة النموذجية في السطر اللي تحته. و<code>ت</code> لتعليمات تصحيح إضافية.</li>
                 <li><b>الفروع:</b> <code>س3أ</code> ثم <code>س3ب</code> — الحرف ملزوق بالرقم من غير مسافة، وكل فرع بدرجته وإجابته.</li>
                 <li>الأرقام العربية والإنجليزية الاتنين شغّالين، والشكل القديم بالأقواس وحروف الاختيارات لسه شغّال زي ما هو.</li>
+                <li><b>الصور بتتقرا من الملف نفسه</b> — الزق الصورة في سطر لوحدها تحت السؤال، والصورة اللي بين سؤال والسؤال اللي بعده بتروح للسؤال اللي فوقها. مش محتاج ترفعها لوحدها.</li>
+                <li><b>صورة واحدة لكل سؤال.</b> لو سؤال فيه صورتين الاستيراد بيترفض ويقولك رقمه. والصورة اللي تحت <code>ج</code> مابتتاخدش — دي إجابة، والطالب مالوش يشوفها قبل ما يجاوب.</li>
+                <li><b>وأي صورة قبل أول سؤال بتوقّف الاستيراد</b> — مالهاش سؤال تتنسب له. يعني لوجو فوق الملف لازم يتشال.</li>
+                <li>المعادلات والرسوم المرسومة جوه Word مش صور — هتتقالك تنسخها وتلزقها PNG عشان تظهر للطالب.</li>
                 <li><b>حط أي كلام شرح فوق قبل أول <code>س</code>.</b> السطور اللي قبل أول سؤال بتتسقط، لكن اللي بين الأسئلة ممكن يتقري اختيار زيادة.</li>
               </ul>
             </details>
             <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
               <input type="file" id="quiz-doc-file" accept=".docx" style="max-width:280px" />
+              <span class="card-desc">لحد ٢٥ ميجا بصوره</span>
               <button type="button" class="btn btn-primary btn-sm" id="quiz-doc-file-btn" style="width:auto">اقرا الملف</button>
               <%# ملف جاهز فيه الأنواع التلاتة — أسرع من إن الموظف يقرا الشرح ويجرّب %>
               <a class="btn btn-ghost btn-sm" style="width:auto; text-decoration:none"
@@ -8835,22 +8840,35 @@ ${reply.content}` : reply.content;
       quizEditorQuestions = quizEditorQuestions.concat(payload.questions.map(shape));
       renderQuizQuestions();
 
+      // عدّ الصور بيتحسب هنا مش على السيرفر: الموظف محتاج يشوف إنها وصلت فعلًا —
+      // ولو الرقم أقل من اللي في ملفه، التحذيرات تحت بتقوله ليه
+      const countImages = (question) => (question.image ? 1 : 0)
+        + (question.parts || []).reduce((sum, part) => sum + countImages(part), 0);
+      const imageCount = payload.questions.reduce((sum, question) => sum + countImages(question), 0);
+
       const warnings = (payload.warnings || []).length
         ? `<ul style="margin:8px 0 0; padding-inline-start:18px; line-height:1.9">
             ${payload.warnings.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
         : '';
       box.innerHTML = `
         <div class="card" style="background:var(--surface-sunken); margin:0">
-          <b>اتقرا ${payload.questions.length} سؤال واتحطوا في المحرر تحت ⬇️</b>
+          <b>اتقرا ${payload.questions.length} سؤال${imageCount ? ` و${imageCount} صورة` : ''} واتحطوا في المحرر تحت ⬇️</b>
           <div class="card-desc" style="margin-top:4px">راجعهم واضغط <b>حفظ الاختبار</b> — لسه مافيش حاجة اتسجّلت.</div>
           ${warnings ? `<div class="card-desc" style="margin-top:8px">⚠️ حاجات تشوفها:${warnings}</div>` : ''}
         </div>`;
       showToast(`${payload.questions.length} سؤال اتضافوا للمحرر`);
     }
 
-    function showDocError(message) {
+    // **التحذيرات بتتعرض مع الرفض برضه.** الملف اللي اترفض عشان سؤال فيه صورتين ممكن
+    // يكون معاه عشر ملاحظات تانية — وعرض سطر الخطأ لوحده بيخلي الموظف يصلّح حاجة
+    // ويرفع تاني ويترفض من حاجة تانية
+    function showDocError(message, warnings) {
+      const list = (warnings || []).length
+        ? `<ul style="margin:8px 0 0; padding-inline-start:18px; line-height:1.9">
+            ${warnings.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+        : '';
       document.getElementById('quiz-doc-result').innerHTML =
-        `<div class="card" style="background:var(--surface-sunken); margin:0">${escapeHtml(message)}</div>`;
+        `<div class="card" style="background:var(--surface-sunken); margin:0">${escapeHtml(message)}${list}</div>`;
     }
 
     async function importQuizDocumentFile() {
@@ -8865,11 +8883,15 @@ ${reply.content}` : reply.content;
         formData.append('document', file);
         const response = await fetch('/api/quizzes/parse-document', { method: 'POST', body: formData });
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || 'مقدرناش نقرا الملف');
+        if (!response.ok) {
+          const failure = new Error(result.error || 'مقدرناش نقرا الملف');
+          failure.warnings = result.warnings;
+          throw failure;
+        }
         await applyParsedQuestions(result);
         input.value = '';
       } catch (error) {
-        showDocError(error.message);
+        showDocError(error.message, error.warnings);
       } finally {
         button.disabled = false;
       }
@@ -8884,7 +8906,7 @@ ${reply.content}` : reply.content;
         });
         await applyParsedQuestions(result);
       } catch (error) {
-        showDocError(error.message);
+        showDocError(error.message, error.data && error.data.warnings);
       }
     }
 

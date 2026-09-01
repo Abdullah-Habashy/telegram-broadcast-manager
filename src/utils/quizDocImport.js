@@ -55,6 +55,21 @@ const STAR = /\s*\*{1,}\s*$/;
 // الرقم لوحده بعد رقم السؤال هو الدرجة: `س1 3`. أي حاجة تانية نص السؤال
 const BARE_NUMBER = /^[0-9]+(?:\.[0-9]+)?$/;
 
+// ---------- علامة الصورة ----------
+//
+// **بحرف تحكّم مش بنص عادي.** المحلّل ده بيخدم مسارين: ملف Word، و"الصق النص" اللي
+// الموظف بيكتب فيه بإيده. أي علامة من حروف عادية كان الموظف يقدر يكتبها — بالصدفة أو
+// بالقصد — ويحط صورة في سؤال من غير ما يرفع صورة أصلًا. U+0000 مستحيل يتكتب من كيبورد
+// ولا يطلع من مستند Word.
+//
+// الشكل والتعرّف في نفس المكان عشان الوحدة اللي بتحوّل ملف الـWord تستعمل نفس التعريف —
+// نسختين معناهما إن الصورة تتعلّم بشكل والقراءة تدوّر على شكل تاني
+const IMAGE_MARKER = /^\u0000IMG:(\d+)\u0000$/;
+
+function imageMarker(index) {
+  return `\u0000IMG:${index}\u0000`;
+}
+
 const PART_LETTERS = ['أ', 'ب', 'ج', 'د', 'هـ', 'ه', 'و', 'ز', 'ح', 'ط', 'ي'];
 
 // **النص بيتخزّن أسطر مش نص واحد.** السؤال الاختياري بيتكتب "نص السؤال" وتحته
@@ -65,6 +80,9 @@ function blank(number, label) {
     number, label: label || null,
     lines: { text: [], answer: [], notes: [] },
     options: [], optionLetters: [], starred: [],
+    // أرقام الصور اللي في **نص** السؤال. الصور اللي تحت الإجابة بتتسجّل على جنب
+    // (answerImages) لأنها غالبًا رسم الإجابة النموذجية
+    images: [], answerImages: [],
     points: null, parts: [],
   };
 }
@@ -99,6 +117,9 @@ function parseQuizDocument(raw) {
   const lines = String(raw || '').replace(/\r\n?/g, '\n').split('\n');
   const byNumber = new Map();
   const warnings = [];
+  // صور قبل أول سؤال: مالهاش صاحب. القارئ بيسقط كل سطر قبل أول `س` عن قصد (مكان
+  // الشرح في النموذج)، فالصورة هنا مش هيكون ليها سؤال تتحط فيه
+  const orphanImages = [];
 
   let current = null;   // السؤال أو الفرع اللي بنكتب فيه دلوقتي
   let field = null;     // آخر علامة اتفتحت: text · answer · notes
@@ -111,6 +132,23 @@ function parseQuizDocument(raw) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+
+    // **علامة الصورة بتتمسك هنا وبتعدّي — قبل أي فحص تاني.**
+    // القارئ ده بياخد أول سطر على إنه نص السؤال و**كل اللي بعده اختيارات**، فسطر
+    // العلامة لو نزل في نص السؤال بيتحسب **اختيار خامس فاضي بيظهر للطالب**.
+    // وأي مكان تاني بيغلط بشكل مختلف: بعد فحص الدرجة بتتاكل على إنها درجة، وبعد فحص
+    // الاختيارات بتتقري اختيار اسمه "أ". والتعدية مش اختيارية — من غيرها بترجع للنص
+    const image = trimmed.match(IMAGE_MARKER);
+    if (image) {
+      const index = Number(image[1]);
+      // **الصورة تحت `ج` أو `د` أو `ت` مش صورة سؤال.** دي غالبًا رسم الإجابة
+      // النموذجية، وصفحة الطالب بتعرض صورة السؤال **فوق خانة الإجابة** — يعني كان
+      // هيشوف الحل قبل ما يحل
+      if (!current) orphanImages.push(index);
+      else if (field === 'text' || field === 'options') current.images.push(index);
+      else current.answerImages.push(index);
+      continue;
+    }
 
     const marker = trimmed.match(MARKER);
     if (marker) {
@@ -233,6 +271,12 @@ function parseQuizDocument(raw) {
     const shaped = {
       kind: hasOptions ? 'mcq' : 'essay',
       label: label || '',
+      // الاسم زي ما الموظف بيشوفه في التحذيرات: "3أ"
+      name,
+      // **أرقام مش مسارات.** القارئ مابيعرفش حاجة عن حفظ الملفات — بيقول الصورة رقم
+      // كام في السؤال ده بس، واللي بينده هو اللي بيقرر يحفظ ولا يرفض
+      image_indexes: item.images.slice(),
+      answer_image_indexes: item.answerImages.slice(),
       text: positional ? positional.text : joined(item, 'text'),
       image: null,
       points,
@@ -286,7 +330,9 @@ function parseQuizDocument(raw) {
         warnings.push(`السؤال ${number} ليه فروع، فالإجابة والدرجة بتاعته اتجاهلوا — كل فرع ليه إجابته ودرجته.`);
       }
       questions.push({
-        kind: 'group', label: '', text: joined(item, 'text'), image: null, points: 0,
+        kind: 'group', label: '', name: String(number),
+        image_indexes: item.images.slice(), answer_image_indexes: item.answerImages.slice(),
+        text: joined(item, 'text'), image: null, points: 0,
         options: [], correct_option: null, reference_answer: '', grading_notes: '',
         parts: item.parts
           .slice()
@@ -298,7 +344,7 @@ function parseQuizDocument(raw) {
     questions.push(finish(item, null));
   }
 
-  return { questions, warnings };
+  return { questions, warnings, orphan_images: orphanImages };
 }
 
-module.exports = { parseQuizDocument, toAsciiDigits };
+module.exports = { parseQuizDocument, toAsciiDigits, imageMarker, IMAGE_MARKER };

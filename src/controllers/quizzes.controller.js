@@ -6,6 +6,7 @@ const { listProviders, PROVIDERS } = require('../utils/aiProviders');
 const { streamQuizWorkbook } = require('../utils/quizExport');
 const { queueLength, attemptConcurrency, MAX_CONCURRENCY } = require('../utils/quizScoring');
 const { parseQuizDocument } = require('../utils/quizDocImport');
+const quizDocImages = require('../utils/quizDocImages');
 const { storeFile } = require('../utils/objectStorage');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
@@ -580,26 +581,50 @@ async function getAttempt(req, res) {
 
 // ---------- استيراد أسئلة من ملف Word ----------
 //
-// **بيقرا ومابيكتبش.** الناتج بيرجع للمحرر عشان الموظف يشوفه ويحفظ بنفسه — ملف فيه
-// غلطة في علامة واحدة بيبوّظ اختبار كامل لو دخل القاعدة على طول، والتحذيرات اللي
-// بترجع معاه هي اللي بتخلّي الغلطة دي تبان قبل الحفظ.
+// **بيقرا ومابيكتبش في القاعدة.** الناتج بيرجع للمحرر عشان الموظف يشوفه ويحفظ بنفسه —
+// ملف فيه غلطة في علامة واحدة بيبوّظ اختبار كامل لو دخل القاعدة على طول، والتحذيرات
+// اللي بترجع معاه هي اللي بتخلّي الغلطة دي تبان قبل الحفظ.
 //
-// الملف بيتقرا من الذاكرة مش من القرص: إحنا محتاجين نصه بس، والاحتفاظ بيه بعد القراءة
-// معناه مجلد بيكبر بملفات محدش هيفتحها تاني
+// **والصور بتتحفظ في آخر خطوة بس.** الترتيب: نقرا ← نتحقق ← نحفظ. لو اتعكس، كل محاولة
+// استيراد مرفوضة كانت هتسيب صور مالهاش صاحب على السيرفر.
+
+// بتمشي على السؤال وفروعه — التحقق والصور بيتعاملوا مع الاتنين بنفس الطريقة
+function walkParsed(questions, visit) {
+  for (const question of questions) {
+    visit(question);
+    walkParsed(question.parts || [], visit);
+  }
+}
+
 async function parseDocument(req, res) {
   let text = String(req.body?.text || '');
+  let handles = [];
+
   if (req.file) {
-    // mammoth بيفك الـ docx ويطلّع النص. لو الملف مش docx صالح بيرمي، والرسالة
+    // mammoth بيفك الـdocx ويطلّع النص والصور. لو الملف مش docx صالح بيرمي، والرسالة
     // بتوصل للموظف زي ما هي عشان يعرف إن المشكلة في الملف مش في الصيغة
-    const mammoth = require('mammoth');
     try {
-      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-      text = result.value;
+      const document = await quizDocImages.readDocument(req.file.buffer);
+      text = document.text;
+      handles = document.handles;
     } catch (error) {
       return res.status(400).json({ error: 'مقدرناش نقرا الملف — لازم يكون .docx (مش .doc القديم ولا PDF)' });
     }
   }
   if (!text.trim()) return res.status(400).json({ error: 'ارفع ملف Word أو الصق النص' });
+
+  if (handles.length > quizDocImages.MAX_IMAGES) {
+    return res.status(400).json({
+      error: `الملف فيه ${handles.length} صورة — ده مش ورقة أسئلة. راجعه وشيل الصور الزيادة.`,
+    });
+  }
+
+  const { usable, drawings, unsupported } = quizDocImages.classify(handles);
+  if (unsupported.length) {
+    return res.status(400).json({
+      error: 'فيه صورة في الملف بصيغة مابتتعرضش في المتصفح. افتحها واحفظها PNG والزقها تاني.',
+    });
+  }
 
   const parsed = parseQuizDocument(text);
   if (!parsed.questions.length) {
@@ -608,6 +633,58 @@ async function parseDocument(req, res) {
       warnings: parsed.warnings,
     });
   }
+
+  // **الرسومات بتتشال قبل العد.** المعادلة المكتوبة في Word بتوصلنا على إنها صورة، فلو
+  // اتحسبت كانت ورقة كيمياء فيها ٦ معادلات هتترفض كلها برسالة عن "صورتين" المدرّس
+  // مش فاهمها. بتتحوّل لتحذير بيقوله يعمل إيه
+  const crowded = [];
+  const used = [];
+  walkParsed(parsed.questions, (question) => {
+    const mine = question.image_indexes || [];
+    if (mine.some((index) => drawings.has(index))) {
+      parsed.warnings.push(`في السؤال ${question.name} فيه معادلة أو رسم مرسوم جوه Word — انسخه والصقه كصورة PNG عشان يظهر للطالب.`);
+    }
+    if ((question.answer_image_indexes || []).length) {
+      // صفحة الطالب بتعرض صورة السؤال **فوق خانة الإجابة**، فصورة تحت `ج` كانت هتوريه
+      // الحل قبل ما يحل
+      parsed.warnings.push(`صورة تحت إجابة السؤال ${question.name} اتجاهلت — الصورة بتتاخد من نص السؤال بس، عشان متروحش للطالب قبل ما يجاوب.`);
+    }
+    const own = mine.filter((index) => usable.has(index));
+    if (own.length > 1) crowded.push(question.name);
+    if (own.length) used.push(own[0]);
+    question.image_index = own.length ? own[0] : null;
+    delete question.image_indexes;
+    delete question.answer_image_indexes;
+    delete question.name;
+  });
+
+  if (crowded.length) {
+    const named = crowded.slice(0, 3).join(' و');
+    const rest = crowded.length > 3 ? ' وغيرهم' : '';
+    return res.status(400).json({
+      error: `السؤال ${named}${rest} فيه أكتر من صورة. صورة واحدة لكل سؤال — شيل الزيادة أو اعملهم أسئلة منفصلة، وارفع الملف تاني.`,
+      warnings: parsed.warnings,
+    });
+  }
+
+  // الصورة قبل أول سؤال مالهاش صاحب. الرسومات مستثناة — لوجو مرسوم في Word مش سبب
+  // كافي إن الملف كله يترفض
+  const orphans = (parsed.orphan_images || []).filter((index) => usable.has(index));
+  if (orphans.length) {
+    return res.status(400).json({
+      error: 'فيه صورة قبل أول سؤال في الملف. الصورة بتتنسب للسؤال اللي فوقها، فالصورة دي مالهاش سؤال — شيلها أو حطها تحت سؤالها.',
+      warnings: parsed.warnings,
+    });
+  }
+
+  // كل التحقق عدّى — دلوقتي بس بنكتب
+  const stored = await quizDocImages.persistImages(handles, used, parsed.warnings);
+  walkParsed(parsed.questions, (question) => {
+    question.image = question.image_index === null ? null : (stored.get(question.image_index) || null);
+    delete question.image_index;
+  });
+
+  delete parsed.orphan_images;
   res.json(parsed);
 }
 
