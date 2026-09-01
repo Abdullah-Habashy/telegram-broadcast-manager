@@ -1048,6 +1048,11 @@ ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS show_answers_to_student BOOLEAN NOT
 -- تصحيح، أول ما يتقفل يبان للكل مرة واحدة. بيشتغل فوق show_answers_to_student مش بدالها
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS answers_after_close BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- **عدد المحاولات المسموحة للطالب الواحد.** ١ = المحاولة الواحدة اللي كانت هي القاعدة
+-- الوحيدة قبل كده، وهي الافتراضي — فأي اختبار قديم أو جديد بيفضل بمحاولة واحدة لحد ما
+-- حد يغيّرها بإيده
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS max_attempts SMALLINT NOT NULL DEFAULT 1;
+
 -- ترتيب عشوائي. **الاختيارات بتتخلط في العرض بس** — قيمة كل اختيار بتفضل رقمه الأصلي في
 -- المصفوفة، عشان selected_option المتخزّن يفضل معناه واحد قبل الخلط وبعده. من غير كده كل
 -- الإجابات القديمة كانت هتبقى غلط
@@ -1132,8 +1137,16 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
 -- COALESCE مش عمود عادي: NULL في Postgres مابيتعارضش مع NULL، فبدونها كان أي واحد رقمه مش
 -- على المنصة يقدر يعيد الامتحان عدد ما يحب. و٦٩ رقم على المنصة متكرر بين إخوات، فالمفتاح
 -- بيشمل معرّف الطالب عشان الأخ التاني مايتمنعش
-CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_attempts_one_per_student
-    ON quiz_attempts (quiz_id, phone, COALESCE(tafra_student_id, 0));
+-- رقم المحاولة: ١ للأولى، ٢ للإعادة، وهكذا. الصفوف القديمة كلها ١ بالافتراضي
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS attempt_no SMALLINT NOT NULL DEFAULT 1;
+
+-- **الفهرس الفريد بقى يشمل رقم المحاولة.** من غيره الطالب مايقدرش يعيد أصلًا — الصف
+-- التاني بيترفض. وهو لسه بيمنع تكرار **نفس** المحاولة: سباق تابين بيرجّع للي كسبت زي
+-- ما كان بالظبط.
+-- الاسم جديد والقديم بيتشال بعده: نفس الاسم كان معناه إعادة بناء الفهرس مع كل migrate
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_attempts_one_per_attempt
+    ON quiz_attempts (quiz_id, phone, COALESCE(tafra_student_id, 0), attempt_no);
+DROP INDEX IF EXISTS idx_quiz_attempts_one_per_student;
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz ON quiz_attempts (quiz_id, submitted_at DESC NULLS LAST);
 
 -- **مفتاح المحاولة هو أكتر عمود بيتبحث بيه في الاختبار كله.** كل حفظ تلقائي، وكل تسليم،

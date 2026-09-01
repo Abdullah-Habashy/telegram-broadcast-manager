@@ -737,6 +737,10 @@
             <div class="row" style="gap:16px; flex-wrap:wrap">
               <div class="field" style="flex:2; min-width:240px"><label>عنوان الاختبار</label><input type="text" id="quiz-title" /></div>
               <div class="field" style="flex:1; min-width:160px"><label>المدة بالدقايق</label><input type="number" min="1" id="quiz-time-limit" placeholder="فاضية = من غير مؤقت" /></div>
+              <%# ١ = محاولة واحدة، وهي القاعدة اللي كانت الوحيدة قبل كده %>
+              <div class="field" style="flex:1; min-width:150px"><label>عدد المحاولات
+                <span class="card-desc">الطالب يقدر يعيد كام مرة</span></label>
+                <input type="number" min="1" max="10" step="1" id="quiz-max-attempts" value="1" /></div>
             </div>
             <div class="field"><label>الرابط المختصر
               <span class="card-desc">آخر جزء من الرابط اللي الطالب بيفتحه: <code>/q/</code><span id="quiz-slug-preview">bio-1</span> — إنجليزي وأرقام وشرطة بس. سيبها فاضية وهيتولّد كود قصير لوحده.</span></label>
@@ -8898,6 +8902,7 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-show-answers').checked = true;
       activeQuizQuestion = 0;
       document.getElementById('quiz-bootcamp').value = '';
+      document.getElementById('quiz-max-attempts').value = 1;
       document.getElementById('quiz-answers-after-close').checked = false;
       document.getElementById('quiz-shuffle-questions').checked = false;
       document.getElementById('quiz-shuffle-options').checked = false;
@@ -8936,6 +8941,7 @@ ${reply.content}` : reply.content;
         document.getElementById('quiz-show-score').checked = quiz.show_score_to_student;
         document.getElementById('quiz-show-answers').checked = quiz.show_answers_to_student;
         document.getElementById('quiz-bootcamp').value = quiz.target_bootcamp_id || '';
+        document.getElementById('quiz-max-attempts').value = quiz.max_attempts || 1;
         document.getElementById('quiz-answers-after-close').checked = quiz.answers_after_close;
         document.getElementById('quiz-shuffle-questions').checked = quiz.shuffle_questions;
         document.getElementById('quiz-shuffle-options').checked = quiz.shuffle_options;
@@ -9345,6 +9351,7 @@ ${reply.content}` : reply.content;
         answers_after_close: document.getElementById('quiz-answers-after-close').checked,
         shuffle_questions: document.getElementById('quiz-shuffle-questions').checked,
         shuffle_options: document.getElementById('quiz-shuffle-options').checked,
+        max_attempts: Number(document.getElementById('quiz-max-attempts').value) || 1,
         is_open: true,
       };
 
@@ -9388,6 +9395,7 @@ ${reply.content}` : reply.content;
             answers_after_close: quiz.answers_after_close,
             shuffle_questions: quiz.shuffle_questions,
             shuffle_options: quiz.shuffle_options,
+            max_attempts: quiz.max_attempts,
             is_open: !quiz.is_open,
           }),
         });
@@ -9607,7 +9615,7 @@ ${reply.content}` : reply.content;
                 : '<span class="badge badge-success">اتصحّح</span>';
           const score = attempt.score === null ? '—' : `${Math.round(attempt.score * 100) / 100} / ${attempt.max_score}`;
           return `<tr>
-            <td>${escapeHtml(name)}${attempt.matched ? '' : ' <span class="badge badge-muted">مش مطابق للمنصة</span>'}</td>
+            <td>${escapeHtml(name)}${attempt.matched ? '' : ' <span class="badge badge-muted">مش مطابق للمنصة</span>'}${attempt.attempt_no > 1 ? ` <span class="badge badge-muted">محاولة ${attempt.attempt_no}</span>` : ''}</td>
             <td>${escapeHtml(attempt.phone)}</td>
             <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}</td>
             <td>${score}</td>

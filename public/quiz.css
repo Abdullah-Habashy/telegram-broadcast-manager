@@ -246,3 +246,9 @@ body.qz-body {
 
 /* علامة الدرجة بتروح لآخر السطر جنب حرف الفرع */
 .qz-rv-part .qz-part-head { justify-content: space-between; }
+
+/* عدد المحاولات المتبقية تحت الدرجة — الرقم ده بيمنع الطالب من إنه يفضل يفتح الرابط
+   يجرّب، وبيخليه ياخد قراره وهو عارف */
+.qz-attempts-left {
+  margin: 14px 0 10px; color: var(--qz-muted); font-size: 14.5px; font-weight: 600;
+}

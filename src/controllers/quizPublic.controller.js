@@ -34,7 +34,7 @@ async function loadQuizByRef(ref) {
   const { rows } = await pool.query(
     `SELECT id, title, description, time_limit_minutes, is_open,
             show_score_to_student, show_answers_to_student, answers_after_close,
-            shuffle_questions, shuffle_options
+            shuffle_questions, shuffle_options, max_attempts
      FROM quizzes WHERE LOWER(slug) = LOWER($1) OR token = $1`, [ref]);
   return rows[0] || null;
 }
@@ -226,6 +226,10 @@ async function renderQuiz(req, res) {
 // بترجع شكل موحّد للواجهة في كل الحالات: محاولة جديدة، استكمال محاولة مفتوحة، أو نتيجة
 // محاولة اتسلّمت خلاص
 function attemptPayload(attempt, quiz, questions, review) {
+  // المتبقي بيتحسب من رقم المحاولة الحالية: الطالب في محاولته التانية من تلاتة فاضله
+  // واحدة. بيترجع دايمًا عشان الصفحة توري "محاولة ٢ من ٣" حتى وهو بيحل
+  const used = Number(attempt.attempt_no) || 1;
+  const allowed = Math.max(1, Number(quiz.max_attempts) || 1);
   // اتسلّمت ولسه في الطابور: 'grading' مش 'submitted' — الصفحة وقتها بتوري "بنصحّح"
   // وتسأل عن الدرجة، بدل ما توري صفر على إنه نتيجته
   const grading = Boolean(attempt.submitted_at)
@@ -244,6 +248,12 @@ function attemptPayload(attempt, quiz, questions, review) {
     score_hidden: Boolean(attempt.submitted_at && !quiz.show_score_to_student),
     // ورقة التصحيح: سؤال سؤال، إجابته والصح. null = مش متاحة (لسه بتتصحّح أو الموظف قافلها)
     review: review || null,
+    attempt_no: used,
+    max_attempts: allowed,
+    // **الإعادة متاحة لو فاضل محاولات والاختبار لسه مفتوح.** الاتنين شرط: الاختبار
+    // المقفول رابطه مابيفتحش أصلًا، فزرار إعادة فيه بيوعد بحاجة مش هتحصل
+    can_retry: Boolean(attempt.submitted_at && used < allowed && quiz.is_open),
+    attempts_left: Math.max(0, allowed - used),
   };
 }
 
@@ -299,10 +309,15 @@ async function startAttempt(req, res) {
 
   // محاولة موجودة؟ الرجوع ليها أهم من منعها: الطالب ممكن يكون قفل الصفحة بالغلط، والمؤقت
   // بيفضل ماشي من وقت الدخول الأول فمفيش استفادة من إعادة الفتح
+  // **أحدث محاولة مش المحاولة الوحيدة.** بعد ما الإعادة بقت ممكنة، الطالب ممكن يكون
+  // عنده أكتر من صف — واللي بيهمه هو آخر واحد: بيكمّله لو مفتوح، أو بيشوف نتيجته
+  // ويعيد منه
   const existing = await pool.query(
-    `SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status
+    `SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score,
+            grading_status, attempt_no
      FROM quiz_attempts
-     WHERE quiz_id = $1 AND phone = $2 AND COALESCE(tafra_student_id, 0) = $3`,
+     WHERE quiz_id = $1 AND phone = $2 AND COALESCE(tafra_student_id, 0) = $3
+     ORDER BY attempt_no DESC LIMIT 1`,
     [quiz.id, phone, studentId || 0]);
 
   if (existing.rows.length) {
@@ -316,9 +331,18 @@ async function startAttempt(req, res) {
       return res.json(attemptPayload(refreshed.rows[0], quiz, [],
         await reviewIfReady(refreshed.rows[0], quiz)));
     }
-    // **ده المسار اللي الطالب بيرجع بيه يشوف تصحيحه**: نفس الرابط ونفس الرقم في أي وقت.
-    // مافيش محاولة تانية بتتفتح — الفهرس الفريد بيمنعها — فالرجوع بيوري الورقة بس
+    // **ده المسار اللي الطالب بيرجع بيه يشوف تصحيحه**: نفس الرابط ونفس الرقم في أي وقت
     if (attempt.submitted_at) {
+      const used = Number(attempt.attempt_no) || 1;
+      const allowed = Math.max(1, Number(quiz.max_attempts) || 1);
+      // طلب إعادة صريح: الطالب شاف نتيجته ودوس "إعادة المحاولة". الشروط بتتفحص هنا
+      // تاني مش في الواجهة بس — الزرار ممكن يتضغط بعد ما الاختبار يتقفل
+      if (req.body?.retry === true && used < allowed && quiz.is_open) {
+        const next = await createAttempt(quiz, studentId, studentName, phone, used + 1);
+        next.saved = {};
+        const questions = await loadQuestionsForStudent(quiz.id, shuffleFor(quiz, next));
+        return res.json(attemptPayload(next, quiz, questions));
+      }
       return res.json(attemptPayload(attempt, quiz, [], await reviewIfReady(attempt, quiz)));
     }
     if (!quiz.is_open) return res.status(403).json({ error: 'الاختبار اتقفل' });
@@ -342,31 +366,37 @@ async function startAttempt(req, res) {
 
   if (!quiz.is_open) return res.status(403).json({ error: 'الاختبار اتقفل' });
 
-  const attemptKey = crypto.randomBytes(24).toString('hex');
-  const deadline = quiz.time_limit_minutes
-    ? new Date(Date.now() + quiz.time_limit_minutes * 60 * 1000) : null;
-  let created;
-  try {
-    created = await pool.query(
-      `INSERT INTO quiz_attempts (quiz_id, tafra_student_id, student_name, phone, attempt_key, deadline_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status`,
-      [quiz.id, studentId, studentName, phone, attemptKey, deadline]);
-  } catch (error) {
-    // سباق: نفس الطالب فتح الرابط في تابين في نفس اللحظة. الفهرس الفريد بيمسكها،
-    // وبنرجع للمحاولة اللي كسبت بدل ما نرمي خطأ في وش الطالب
-    if (error.code !== '23505') throw error;
-    const raced = await pool.query(
-      `SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status
-       FROM quiz_attempts WHERE quiz_id = $1 AND phone = $2 AND COALESCE(tafra_student_id, 0) = $3`,
-      [quiz.id, phone, studentId || 0]);
-    created = raced;
-  }
-
-  const attempt = created.rows[0];
+  const attempt = await createAttempt(quiz, studentId, studentName, phone, 1);
   attempt.saved = await loadSavedAnswers(attempt.id);
   const questions = await loadQuestionsForStudent(quiz.id, shuffleFor(quiz, attempt));
   res.json(attemptPayload(attempt, quiz, questions));
+}
+
+// إنشاء محاولة برقمها. اتفصلت في دالة لأنها بقت بتتنادى من مكانين: أول دخول، وإعادة
+// المحاولة — والسباق لازم يتعامل معاه بنفس الطريقة في الاتنين
+async function createAttempt(quiz, studentId, studentName, phone, attemptNo) {
+  const attemptKey = crypto.randomBytes(24).toString('hex');
+  const deadline = quiz.time_limit_minutes
+    ? new Date(Date.now() + quiz.time_limit_minutes * 60 * 1000) : null;
+  const columns = `id, attempt_key, student_name, deadline_at, submitted_at, score, max_score,
+                   grading_status, attempt_no`;
+  try {
+    const created = await pool.query(
+      `INSERT INTO quiz_attempts (quiz_id, tafra_student_id, student_name, phone, attempt_key, deadline_at, attempt_no)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING ${columns}`,
+      [quiz.id, studentId, studentName, phone, attemptKey, deadline, attemptNo]);
+    return created.rows[0];
+  } catch (error) {
+    // سباق: نفس الطالب فتح الرابط في تابين في نفس اللحظة، أو دوس "إعادة" مرتين.
+    // الفهرس الفريد بيمسكها، وبنرجع للمحاولة اللي كسبت بدل ما نرمي خطأ في وشه
+    if (error.code !== '23505') throw error;
+    const raced = await pool.query(
+      `SELECT ${columns} FROM quiz_attempts
+       WHERE quiz_id = $1 AND phone = $2 AND COALESCE(tafra_student_id, 0) = $3 AND attempt_no = $4`,
+      [quiz.id, phone, studentId || 0, attemptNo]);
+    return raced.rows[0];
+  }
 }
 
 // المحاولة بتتعرف بمفتاحها مش بالتليفون: الرقم مش سر، والمفتاح بيتولّد مرة واحدة ومابيتعرضش
@@ -533,5 +563,5 @@ async function getResult(req, res) {
 
 module.exports = {
   renderQuiz, startAttempt, saveProgress, submitAttempt, getResult,
-  normalizePhone, seededShuffle, gradingIsInstant,
+  normalizePhone, seededShuffle, gradingIsInstant, attemptPayload,
 };

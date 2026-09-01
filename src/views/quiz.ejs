@@ -80,6 +80,12 @@
     <h2 id="qz-result-title">تم استلام إجاباتك ✅</h2>
     <div class="qz-score" id="qz-result-score" style="display:none"></div>
     <p id="qz-result-note"></p>
+    <%# الإعادة: بتظهر لما يكون فاضل محاولات والاختبار لسه مفتوح — السيرفر هو اللي
+        بيقرر، والزرار بيعرض قراره %>
+    <div id="qz-retry-box" style="display:none">
+      <p class="qz-attempts-left" id="qz-attempts-left"></p>
+      <button class="qz-btn ghost" id="qz-retry-btn" type="button">إعادة المحاولة</button>
+    </div>
   </div>
 
   <%# ===== ورقة التصحيح =====
@@ -519,7 +525,48 @@
           : 'إجاباتك وصلت والفريق بيصحّحها.';
       }
       renderReview(data.review);
+      renderRetry(data);
     }
+
+    // **المتبقي بيتقال في الحالتين.** الطالب اللي فاضله محاولة محتاج يعرف قبل ما يدوس،
+    // واللي خلصت محاولاته محتاج يعرف ليه مفيش زرار — السكوت بيخليه يفضل يفتح الرابط
+    function renderRetry(data) {
+      var box = el('qz-retry-box');
+      var allowed = Number(data.max_attempts) || 1;
+      if (allowed < 2) { box.style.display = 'none'; return; }
+      box.style.display = '';
+      var left = Number(data.attempts_left) || 0;
+      el('qz-attempts-left').textContent = left
+        ? 'فاضلك ' + left + ' محاولة من ' + allowed
+        : 'خلّصت محاولاتك (' + allowed + ' من ' + allowed + ').';
+      el('qz-retry-btn').style.display = data.can_retry ? '' : 'none';
+    }
+
+    // الإعادة بتعدّي على نفس مسار الدخول بعلم retry: الهوية بتتحدد بنفس الطريقة
+    // بالظبط (رقم، واختيار بين إخوات، واسم لو مش على المنصة) — مسار تاني كان معناه
+    // تكرار كل ده واحتمال يفترقوا
+    el('qz-retry-btn').addEventListener('click', function () {
+      var button = el('qz-retry-btn');
+      button.disabled = true;
+      button.textContent = 'بنجهّز المحاولة...';
+      post('/start', {
+        phone: el('qz-phone').value,
+        student_id: pickedStudentId,
+        name: el('qz-name').value,
+        retry: true,
+      }).then(function (data) {
+        if (data.state !== 'open') { renderResult(data); return; }
+        el('qz-result').style.display = 'none';
+        el('qz-review').innerHTML = '';
+        startExam(data);
+      }).catch(function (error) {
+        showError('qz-gate-error', error.message);
+        el('qz-gate').style.display = '';
+      }).finally(function () {
+        button.disabled = false;
+        button.textContent = 'إعادة المحاولة';
+      });
+    });
 
     // ---------- ورقة التصحيح ----------
     //

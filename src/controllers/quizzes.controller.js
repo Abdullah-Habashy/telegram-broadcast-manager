@@ -41,7 +41,7 @@ async function listQuizzes(req, res) {
   const { rows } = await pool.query(
     `SELECT q.id, q.title, q.description, q.token, q.slug, q.time_limit_minutes, q.is_open,
             q.show_score_to_student, q.show_answers_to_student, q.answers_after_close,
-            q.shuffle_questions, q.shuffle_options, q.target_bootcamp_id, q.created_at,
+            q.shuffle_questions, q.shuffle_options, q.target_bootcamp_id, q.max_attempts, q.created_at,
             (SELECT COUNT(*)::int FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS question_count,
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NOT NULL) AS submitted_count,
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NULL) AS in_progress_count,
@@ -73,6 +73,14 @@ async function getQuiz(req, res) {
 
 // المعسكر اختياري: القايمة بتبعت "" لما الموظف مايختارش، والفراغ ده لازم يبقى NULL
 // مش صفر — صفر معرّف معسكر مش موجود وبيرجّع قايمة متخلّفين فاضية من غير أي رسالة
+// **المحاولات بين ١ و١٠.** الصفر بيقفل الاختبار على الكل من غير ما حد يقصد، والرقم
+// المفتوح بيخلي الامتحان تمرين مش قياس. الافتراضي ١ — نفس السلوك اللي كان
+function normalizeMaxAttempts(raw) {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(Math.max(Math.floor(value), 1), 10);
+}
+
 function normalizeBootcampId(raw) {
   if (raw === null || raw === undefined || raw === '') return null;
   const value = Number(raw);
@@ -163,9 +171,9 @@ async function createQuiz(req, res) {
     normalizeBootcampId(req.body?.target_bootcamp_id),
     req.body?.answers_after_close === true,
     req.body?.shuffle_questions === true, req.body?.shuffle_options === true,
-    req.session.userId];
-  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, show_answers_to_student, target_bootcamp_id, answers_after_close, shuffle_questions, shuffle_options, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`;
+    normalizeMaxAttempts(req.body?.max_attempts), req.session.userId];
+  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, show_answers_to_student, target_bootcamp_id, answers_after_close, shuffle_questions, shuffle_options, max_attempts, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`;
 
   // الموظف اختار الرابط بنفسه؟ التعارض بيترد عليه برسالة. مااخترش؟ بنولّد كود ونعيد
   // المحاولة لحد ما يعدّي — الاحتمال ضعيف بس السكوت عنه معناه اختبار من غير رابط مختصر
@@ -205,9 +213,9 @@ async function updateQuiz(req, res) {
       `UPDATE quizzes SET title = $1, description = $2, time_limit_minutes = $3,
               is_open = $4, show_score_to_student = $5, show_answers_to_student = $6,
               target_bootcamp_id = $7, answers_after_close = $8,
-              shuffle_questions = $9, shuffle_options = $10,
-              slug = COALESCE($11, slug), updated_at = NOW()
-       WHERE id = $12 RETURNING *`,
+              shuffle_questions = $9, shuffle_options = $10, max_attempts = $11,
+              slug = COALESCE($12, slug), updated_at = NOW()
+       WHERE id = $13 RETURNING *`,
       [title, String(req.body?.description || '').trim() || null,
         Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
         req.body?.is_open !== false, req.body?.show_score_to_student !== false,
@@ -215,7 +223,7 @@ async function updateQuiz(req, res) {
         normalizeBootcampId(req.body?.target_bootcamp_id),
         req.body?.answers_after_close === true,
         req.body?.shuffle_questions === true, req.body?.shuffle_options === true,
-        requested, quizId]));
+        normalizeMaxAttempts(req.body?.max_attempts), requested, quizId]));
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'الرابط المختصر ده مستخدم في اختبار تاني — اختار غيره' });
     throw error;
@@ -512,7 +520,7 @@ async function listAttempts(req, res) {
   const { rows } = await pool.query(
     `SELECT a.id, a.student_name, a.phone, a.tafra_student_id, a.started_at, a.deadline_at,
             a.submitted_at, a.is_late, a.score, a.max_score, a.grading_status, a.grading_error,
-            s.name AS platform_name
+            a.attempt_no, s.name AS platform_name
      FROM quiz_attempts a
      LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
      WHERE a.quiz_id = $1
