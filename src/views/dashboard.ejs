@@ -729,6 +729,13 @@
               <span class="card-desc">آخر جزء من الرابط اللي الطالب بيفتحه: <code>/q/</code><span id="quiz-slug-preview">bio-1</span> — إنجليزي وأرقام وشرطة بس. سيبها فاضية وهيتولّد كود قصير لوحده.</span></label>
               <input type="text" id="quiz-slug" placeholder="مثال: bio-1" dir="ltr" style="text-align:left" /></div>
             <div class="field"><label>وصف مختصر (اختياري)</label><textarea id="quiz-description" rows="2"></textarea></div>
+            <%# الربط بباب اختياري. من غيره إحنا عارفين مين دخل بس — ومعاه بنعرف مين كان
+                المفروض يدخل وماحلّش، وده الرقم اللي بيتصرّف فيه %>
+            <div class="field"><label>الباب اللي الاختبار موجّه له (اختياري)
+              <span class="card-desc">لما تختاره، صفحة النتايج بتوريك مين من المشتركين لسه ماحلّش — بأرقامهم.</span></label>
+              <select id="quiz-bootcamp" class="compact-select" style="width:100%">
+                <option value="">مش مربوط بباب</option>
+              </select></div>
             <label class="row" style="gap:8px; cursor:pointer; margin-top:4px">
               <input type="checkbox" id="quiz-show-score" checked />
               <span>الطالب يشوف درجته بعد التسليم</span>
@@ -765,6 +772,7 @@
               <b id="quiz-results-title">النتايج</b>
               <div class="row" style="gap:8px; flex-wrap:wrap">
                 <button type="button" class="btn btn-primary btn-sm" id="quiz-stats-btn" style="width:auto">📊 إحصائيات الأسئلة</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="quiz-missing-btn" style="width:auto">🔎 مين ماحلّش</button>
                 <a class="btn btn-ghost btn-sm" id="quiz-export-btn" style="width:auto; text-decoration:none" href="#">⬇️ تصدير Excel</a>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-regrade-all-btn" style="width:auto">أعد تصحيح كل المحاولات</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
@@ -776,6 +784,8 @@
                مقلوب شاشة المحاولة: دي بتقول "السؤال ده عمل إيه في الكل" مش "الطالب ده
                عمل إيه" — والترتيب من الأصعب عشان اللي محتاج يتشرح تاني يبان فورًا -->
           <div class="card" id="quiz-stats" style="display:none"></div>
+          <!-- ===== المتخلّفين عن الاختبار ===== -->
+          <div class="card" id="quiz-missing" style="display:none"></div>
           <div class="card" id="quiz-attempt-detail" style="display:none"></div>
         </div>
       </section>
@@ -8488,9 +8498,25 @@ ${reply.content}` : reply.content;
     let quizResultsId = null;
     let quizRegradeTimer = null;
 
+    // قايمة الأبواب بتتحمّل مرة واحدة وبتتخزّن — بتتعرض في محرر كل اختبار
+    let quizBootcamps = [];
+
+    async function loadQuizBootcamps() {
+      try {
+        quizBootcamps = await api('/api/quizzes/bootcamps');
+      } catch (error) {
+        // فشل القايمة مايمنعش المحرر من الشغل — الربط بباب اختياري أصلًا
+        quizBootcamps = [];
+      }
+      const select = document.getElementById('quiz-bootcamp');
+      select.innerHTML = '<option value="">مش مربوط بباب</option>'
+        + quizBootcamps.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
+    }
+
     function initQuizzes() {
       showQuizView('list');
       loadQuizzes();
+      loadQuizBootcamps();
       // كارت النموذج وكارت التجريب مش موجودين أصلًا في صفحة غير الأدمن، والنداء بيرجّع
       // ٤٠٣ — فبيتخطى بدل ما يرمي على عناصر مش موجودة
       if (currentUserRole === 'admin') loadGradingProviders();
@@ -8668,6 +8694,7 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-time-limit').value = '';
       document.getElementById('quiz-show-score').checked = true;
       document.getElementById('quiz-show-answers').checked = true;
+      document.getElementById('quiz-bootcamp').value = '';
       document.getElementById('quiz-editor-note').textContent = '';
       renderQuizQuestions();
       showQuizView('editor');
@@ -8699,6 +8726,7 @@ ${reply.content}` : reply.content;
         document.getElementById('quiz-time-limit').value = quiz.time_limit_minutes || '';
         document.getElementById('quiz-show-score').checked = quiz.show_score_to_student;
         document.getElementById('quiz-show-answers').checked = quiz.show_answers_to_student;
+        document.getElementById('quiz-bootcamp').value = quiz.target_bootcamp_id || '';
         // الحذف بيمسح إجابات الطلاب معاه، فبيتقفل خالص أول ما حد يحل — والموظف لازم يعرف
         // ليه الزرار مش موجود قبل ما يدوّر عليه
         document.getElementById('quiz-editor-note').textContent = quizEditorHasAttempts
@@ -9009,6 +9037,7 @@ ${reply.content}` : reply.content;
         time_limit_minutes: document.getElementById('quiz-time-limit').value || null,
         show_score_to_student: document.getElementById('quiz-show-score').checked,
         show_answers_to_student: document.getElementById('quiz-show-answers').checked,
+        target_bootcamp_id: document.getElementById('quiz-bootcamp').value || null,
         is_open: true,
       };
 
@@ -9048,6 +9077,7 @@ ${reply.content}` : reply.content;
             // من غير السطر ده القفل والفتح كان بيرجّع عرض التصحيح لافتراضيه — الحقل
             // اللي مش في الطلب بياخد الافتراضي عند السيرفر مش قيمته الحالية
             show_answers_to_student: quiz.show_answers_to_student,
+            target_bootcamp_id: quiz.target_bootcamp_id || null,
             is_open: !quiz.is_open,
           }),
         });
@@ -9087,6 +9117,7 @@ ${reply.content}` : reply.content;
       // لوحة الإحصائيات بتتقفل مع كل اختبار جديد — أرقام اختبار معروضة في صفحة اختبار
       // تاني غلط مابيبانش، لأن الشكل هو الشكل
       document.getElementById('quiz-stats').style.display = 'none';
+      document.getElementById('quiz-missing').style.display = 'none';
       showQuizView('results');
       loadQuizAttempts();
     }
@@ -9174,6 +9205,71 @@ ${reply.content}` : reply.content;
             <span class="card-desc">${data.submitted} سلّموا · متوسط الورقة ${average}</span>
           </div>
           ${cards}`;
+      } catch (error) {
+        panel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    // ---------- مين ماحلّش ----------
+    // الأرقام هي المنتج هنا: القايمة بتتنسخ وتروح لتيم المكالمات أو لرسالة جماعية.
+    // اللي مربوط بتيليجرام بيتعلّم، عشان اللي مش مربوط يتعرف إنه محتاج مكالمة مش رسالة
+    function copyMissingPhones() {
+      const phones = (quizMissingList || []).map((student) => student.phone).filter(Boolean);
+      if (!phones.length) return showToast('مفيش أرقام تتنسخ');
+      navigator.clipboard.writeText(phones.join('\n'))
+        .then(() => showToast(`${phones.length} رقم اتنسخوا`))
+        .catch(() => showToast('مقدرناش ننسخ — حدّد الأرقام بإيدك'));
+    }
+
+    let quizMissingList = [];
+
+    async function loadQuizMissing() {
+      const panel = document.getElementById('quiz-missing');
+      if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+      panel.style.display = '';
+      panel.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const data = await api(`/api/quizzes/${quizResultsId}/coverage`);
+        if (!data.configured) {
+          panel.innerHTML = `<div class="empty-state">
+            الاختبار ده مش مربوط بباب، فمش عارفين مين كان المفروض يحلّه.<br />
+            افتح <b>تعديل</b> واختار الباب من "الباب اللي الاختبار موجّه له".</div>`;
+          quizMissingList = [];
+          return;
+        }
+        quizMissingList = data.missing;
+        const rows = data.missing.map((student) => `
+          <div class="row-between" style="gap:10px; padding:7px 0; border-bottom:1px solid var(--border)">
+            <span>${escapeHtml(student.name || '—')}</span>
+            <span class="row" style="gap:8px; align-items:center">
+              <span class="card-desc" dir="ltr">${escapeHtml(student.phone || '—')}</span>
+              ${student.reachable
+                ? '<span class="badge badge-success">على البوت</span>'
+                : '<span class="badge badge-muted">مكالمة</span>'}
+            </span>
+          </div>`).join('');
+        const truncated = data.missing_count > data.missing.length
+          ? `<div class="card-desc" style="margin-top:8px">القايمة بتعرض أول ${data.missing.length} — الباقي في التصدير.</div>`
+          : '';
+        // اللي حلّ برقم مش على المنصة مابيتحسبش في "حلّوا" لأن مفيش طريقة نربطه بمشترك.
+        // السكوت عن الرقم ده بيخلي المدرّس يفتكر إن فيه طلاب ماحلّوش وهم حلّوا
+        const unmatched = data.unmatched_submitted
+          ? `<div class="card-desc" style="margin-top:6px">⚠️ ${data.unmatched_submitted} سلّموا برقم مش على المنصة — مش محسوبين فوق لأننا مش عارفين هم مين.</div>`
+          : '';
+        panel.innerHTML = `
+          <div class="row-between" style="margin-bottom:6px; gap:12px; flex-wrap:wrap">
+            <b>🔎 ${escapeHtml(data.bootcamp_name || 'الباب')}</b>
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="copyMissingPhones()">انسخ أرقام المتخلّفين</button>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px">
+            <span class="badge badge-muted">${data.enrolled} مشترك</span>
+            <span class="badge badge-success">${data.submitted} حلّوا</span>
+            ${data.in_progress ? `<span class="badge badge-warning">${data.in_progress} بدأوا وماكملوش</span>` : ''}
+            <span class="badge badge-danger">${data.missing_count} ماحلّوش</span>
+          </div>
+          ${unmatched}
+          ${rows || '<div class="empty-state">كل المشتركين حلّوا 🎉</div>'}
+          ${truncated}`;
       } catch (error) {
         panel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
       }
@@ -9366,6 +9462,7 @@ ${reply.content}` : reply.content;
     });
     document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);
     document.getElementById('quiz-stats-btn').addEventListener('click', loadQuestionStats);
+    document.getElementById('quiz-missing-btn').addEventListener('click', loadQuizMissing);
     document.getElementById('preview-grade-btn')?.addEventListener('click', runGradePreview);
     document.getElementById('save-grading-provider-btn')?.addEventListener('click', saveGradingProvider);
     document.getElementById('preview-clear-btn')?.addEventListener('click', () => {

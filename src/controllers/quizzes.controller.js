@@ -67,6 +67,14 @@ async function getQuiz(req, res) {
   });
 }
 
+// المعسكر اختياري: القايمة بتبعت "" لما الموظف مايختارش، والفراغ ده لازم يبقى NULL
+// مش صفر — صفر معرّف معسكر مش موجود وبيرجّع قايمة متخلّفين فاضية من غير أي رسالة
+function normalizeBootcampId(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 const SLUG_HELP = 'الرابط المختصر يبقى إنجليزي وأرقام وشرطة بس، من حرفين لأربعين — زي bio-1 أو olom5';
 
 // ---------- صور الأسئلة ----------
@@ -145,9 +153,9 @@ async function createQuiz(req, res) {
   const params = (slug) => [title, String(req.body?.description || '').trim() || null, token, slug,
     Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
     req.body?.show_score_to_student !== false, req.body?.show_answers_to_student !== false,
-    req.session.userId];
-  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, show_answers_to_student, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`;
+    normalizeBootcampId(req.body?.target_bootcamp_id), req.session.userId];
+  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, show_answers_to_student, target_bootcamp_id, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`;
 
   // الموظف اختار الرابط بنفسه؟ التعارض بيترد عليه برسالة. مااخترش؟ بنولّد كود ونعيد
   // المحاولة لحد ما يعدّي — الاحتمال ضعيف بس السكوت عنه معناه اختبار من غير رابط مختصر
@@ -186,12 +194,13 @@ async function updateQuiz(req, res) {
     ({ rows } = await pool.query(
       `UPDATE quizzes SET title = $1, description = $2, time_limit_minutes = $3,
               is_open = $4, show_score_to_student = $5, show_answers_to_student = $6,
-              slug = COALESCE($7, slug), updated_at = NOW()
-       WHERE id = $8 RETURNING *`,
+              target_bootcamp_id = $7, slug = COALESCE($8, slug), updated_at = NOW()
+       WHERE id = $9 RETURNING *`,
       [title, String(req.body?.description || '').trim() || null,
         Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
         req.body?.is_open !== false, req.body?.show_score_to_student !== false,
-        req.body?.show_answers_to_student !== false, requested, quizId]));
+        req.body?.show_answers_to_student !== false,
+        normalizeBootcampId(req.body?.target_bootcamp_id), requested, quizId]));
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'الرابط المختصر ده مستخدم في اختبار تاني — اختار غيره' });
     throw error;
@@ -517,6 +526,86 @@ async function getAttempt(req, res) {
   });
 }
 
+// ---------- مين حلّ ومين ماحلّش ----------
+//
+// الاختبار ممكن يتربط بمعسكر (target_bootcamp_id). من غير الربط ده إحنا عارفين بس مين
+// دخل — ومش عارفين **مين كان المفروض يدخل**، وده الرقم اللي بيتصرّف فيه: قايمة أرقام
+// تروح لتيم المكالمات أو لرسالة جماعية.
+//
+// القايمة بتتقفل عند حد أعلى: معسكر فيه ٣٠٠٠ طالب مالوش لازمة يتحمّل كله في صفحة —
+// العدد هو اللي بيتقري، والقايمة للتصرّف
+const MISSING_LIMIT = 500;
+
+// **الربط بمعرّف الطالب على المنصة مش بالتليفون.** الطالب اللي رقمه مش على المنصة
+// بيتسجّل tafra_student_id = NULL، فمابيتحسبش إنه حلّ حتى لو حلّ فعلًا — وعشان كده
+// بنرجّع عدده لوحده بدل ما نسكت عنه ونخلي الأرقام تبان ناقصة من غير سبب
+async function getQuizCoverage(req, res) {
+  const quizId = Number(req.params.id);
+  const quizResult = await pool.query(
+    `SELECT q.id, q.target_bootcamp_id, b.name AS bootcamp_name
+     FROM quizzes q
+     LEFT JOIN tafra_bootcamps b ON b.tafra_bootcamp_id = q.target_bootcamp_id
+     WHERE q.id = $1`, [quizId]);
+  const quiz = quizResult.rows[0];
+  if (!quiz) return res.status(404).json({ error: 'الاختبار مش موجود' });
+  if (!quiz.target_bootcamp_id) {
+    return res.json({ configured: false });
+  }
+
+  const [counts, missing, unmatched] = await Promise.all([
+    // EXISTS مش جوين: الطالب ممكن يكون عنده محاولتين برقمين مختلفين (الفهرس الفريد
+    // بيسمح بده)، والجوين وقتها بيعدّه مرتين
+    pool.query(
+      `SELECT COUNT(*)::int AS enrolled,
+              COUNT(*) FILTER (WHERE EXISTS (
+                SELECT 1 FROM quiz_attempts a WHERE a.quiz_id = $2
+                  AND a.tafra_student_id = e.tafra_student_id AND a.submitted_at IS NOT NULL))::int AS submitted,
+              COUNT(*) FILTER (WHERE EXISTS (
+                SELECT 1 FROM quiz_attempts a WHERE a.quiz_id = $2
+                  AND a.tafra_student_id = e.tafra_student_id AND a.submitted_at IS NULL))::int AS in_progress
+       FROM tafra_enrollments e
+       WHERE e.tafra_bootcamp_id = $1 AND e.enrollment_type = 'enroll'`,
+      [quiz.target_bootcamp_id, quizId]),
+    pool.query(
+      `SELECT s.tafra_student_id, s.name, s.phone, s.telegram_chat_id
+       FROM tafra_enrollments e
+       JOIN tafra_students s ON s.tafra_student_id = e.tafra_student_id
+       WHERE e.tafra_bootcamp_id = $1 AND e.enrollment_type = 'enroll'
+         AND NOT EXISTS (SELECT 1 FROM quiz_attempts a
+                         WHERE a.quiz_id = $2 AND a.tafra_student_id = s.tafra_student_id)
+       ORDER BY s.name
+       LIMIT $3`,
+      [quiz.target_bootcamp_id, quizId, MISSING_LIMIT]),
+    pool.query(
+      `SELECT COUNT(*)::int AS count FROM quiz_attempts
+       WHERE quiz_id = $1 AND tafra_student_id IS NULL AND submitted_at IS NOT NULL`, [quizId]),
+  ]);
+
+  const totals = counts.rows[0];
+  res.json({
+    configured: true,
+    bootcamp_name: quiz.bootcamp_name,
+    ...totals,
+    missing_count: totals.enrolled - totals.submitted - totals.in_progress,
+    unmatched_submitted: unmatched.rows[0].count,
+    limit: MISSING_LIMIT,
+    missing: missing.rows.map((row) => ({
+      ...row,
+      // الطالب اللي مربوط بتيليجرام تقدر توصله برسالة، واللي لأ محتاج مكالمة
+      reachable: row.telegram_chat_id !== null,
+      telegram_chat_id: undefined,
+    })),
+  });
+}
+
+// قايمة الأبواب لقايمة الاختيار في محرر الاختبار. موجودة هنا مش تحت /api/tafra عشان
+// التيم العلمي يقدر يوصلها — صلاحياته على الاختبارات مش على شاشات طفرة
+async function listBootcamps(req, res) {
+  const { rows } = await pool.query(
+    'SELECT tafra_bootcamp_id AS id, name FROM tafra_bootcamps WHERE is_available = TRUE ORDER BY name');
+  res.json(rows);
+}
+
 // ---------- تصدير النتايج ----------
 //
 // تلات استعلامات مش جوين واحد: الجوين بين المحاولات والأسئلة والإجابات بيرجّع
@@ -718,6 +807,6 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
-  getQuestionStats, exportAttempts,
+  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
 };

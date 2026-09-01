@@ -41,6 +41,8 @@ router.post('/image', uploadQuizImage.single('image'), controller.uploadQuestion
 router.get('/grading-provider', requireAdminApi, controller.getGradingProviders);
 router.post('/grading-provider', requireAdminApi, controller.setGradingProvider);
 router.post('/grade-preview', requireAdminApi, controller.gradePreview);
+// قبل /:id عشان "bootcamps" مش رقم
+router.get('/bootcamps', controller.listBootcamps);
 router.get('/', controller.listQuizzes);
 router.post('/', controller.createQuiz);
 router.get('/:id', controller.getQuiz);
@@ -51,6 +53,7 @@ router.post('/:id/regrade', controller.regradeQuiz);
 router.get('/:id/attempts', controller.listAttempts);
 router.get('/:id/question-stats', controller.getQuestionStats);
 router.get('/:id/export', controller.exportAttempts);
+router.get('/:id/coverage', controller.getQuizCoverage);
 router.get('/attempts/:attemptId', controller.getAttempt);
 router.put('/attempts/:attemptId/answers/:questionId', controller.gradeAnswer);
 router.post('/attempts/:attemptId/regrade', controller.regradeAttempt);
