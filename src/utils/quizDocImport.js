@@ -50,6 +50,22 @@ function blank(number, label) {
   };
 }
 
+function nameOf(number, label) {
+  return `${number}${label || ''}`;
+}
+
+// الدرجة ممكن تتكتب جنب العلامة (`د1 3`) أو في السطر اللي بعدها (`د1` وتحتها `3`).
+// الاتنين بيعدّوا من هنا عشان مايبقاش فيه تفسيرين لنفس الرقم
+function readPoints(target, raw, warnings) {
+  const points = Number(toAsciiDigits(raw).replace(/[^0-9.]/g, ''));
+  if (Number.isFinite(points) && points > 0) {
+    target.points = points;
+    return true;
+  }
+  warnings.push(`درجة السؤال ${nameOf(target.number, target.label)} مش رقم مفهوم — اتحطّت ١.`);
+  return false;
+}
+
 // النص بيتجمّع على أسطر: السؤال ممكن يكون فقرتين، والإجابة المرجعية ممكن تكون خمس سطور
 function appendLine(current, field, line) {
   if (!current) return;
@@ -102,15 +118,24 @@ function parseQuizDocument(raw) {
       current = target;
 
       if (kind === 'د') {
-        const points = Number(toAsciiDigits(rest).replace(/[^0-9.]/g, ''));
-        if (Number.isFinite(points) && points > 0) target.points = points;
-        else warnings.push(`درجة السؤال ${number}${partLetter || ''} مش رقم مفهوم — اتحطّت ١.`);
+        // **العلامة لوحدها في سطر والرقم في السطر اللي بعدها.** الشكل ده طبيعي في Word
+        // لما المدرّس يعمل قايمة، وقبل كده كان الرقم بيضيع والدرجة ترجع ١ من غير ما حد
+        // ياخد باله. field = 'points' بيخلي السطر الجاي يتقري درجة مش نص
+        if (!rest.trim()) { field = 'points'; continue; }
+        readPoints(target, rest, warnings);
         field = null;
         continue;
       }
 
       field = kind === 'ج' ? 'answer' : 'notes';
       if (rest) appendLine(target, field, rest);
+      continue;
+    }
+
+    // السطر اللي بعد `د1` لوحدها هو الدرجة — مش نص يتضاف لأي حاجة
+    if (current && field === 'points') {
+      readPoints(current, trimmed, warnings);
+      field = null;
       continue;
     }
 
@@ -146,7 +171,7 @@ function parseQuizDocument(raw) {
       grading_notes: item.notes.trim(),
       parts: [],
     };
-    const name = `${item.number}${label ? label : ''}`;
+    const name = nameOf(item.number, label);
     if (!shaped.text) warnings.push(`السؤال ${name} مالوش نص.`);
     if (item.points === null) warnings.push(`السؤال ${name} مالوش درجة — اتحطّت ١.`);
 
