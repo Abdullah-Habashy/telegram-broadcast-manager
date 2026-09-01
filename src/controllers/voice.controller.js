@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const pool = require('../config/db');
+const { storeFile } = require('../utils/objectStorage');
 const botManager = require('../bot/botManager');
 const { prepareVoiceForTelegram } = require('../utils/voiceNote');
 
@@ -47,7 +48,9 @@ async function sendVoiceNote(req, res) {
     );
     telegramSent = true;
 
-    const storedPath = `uploads/support/${path.basename(preparedPath)}`;
+    // بعد ما الصوت وصل الطالب: الملف بقى أرشيف، فبيروح السحابة لو متظبّطة
+    const localVoicePath = `uploads/support/${path.basename(preparedPath)}`;
+    const storedPath = await storeFile(preparedPath, localVoicePath);
     const result = await pool.query(
       `INSERT INTO support_messages (ticket_id, sent_by, content, voice_path, telegram_message_id)
        VALUES ($1, $2, '', $3, $4) RETURNING *`,

@@ -6,6 +6,7 @@ const { listProviders, PROVIDERS } = require('../utils/aiProviders');
 const { streamQuizWorkbook } = require('../utils/quizExport');
 const { queueLength, attemptConcurrency, MAX_CONCURRENCY } = require('../utils/quizScoring');
 const { parseQuizDocument } = require('../utils/quizDocImport');
+const { storeFile } = require('../utils/objectStorage');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -85,7 +86,10 @@ const SLUG_HELP = 'الرابط المختصر يبقى إنجليزي وأرق�
 // Storage في المشروع، وده مقيّد معروف مش قرار جديد
 async function uploadQuestionImage(req, res) {
   if (!req.file) return res.status(400).json({ error: 'مفيش صورة مرفوعة' });
-  res.json({ path: `/uploads/${req.file.filename}` });
+  // صورة السؤال بتتعرض في متصفح الطالب بس — مفيش حاجة بتقراها من القرص بعد كده،
+  // فالرفع بيحصل فورًا. الشرطة في الأول بتفضل للمسار المحلي عشان يتخدم من public
+  const stored = await storeFile(req.file.path, `uploads/${req.file.filename}`);
+  res.json({ path: stored.startsWith('http') ? stored : `/${stored}` });
 }
 
 // الاختيار بقى كائن {text, image} بدل نص. بنقبل الشكلين وقت القراءة عشان أي صف قديم

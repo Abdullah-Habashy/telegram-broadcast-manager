@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { storeFile } = require('../utils/objectStorage');
 const { setUrgentFlag } = require('../utils/urgentFlag');
 const { buildTafraStudentFilters, getCredentials: getTafraCredentials } = require('./tafra.controller');
 const { fetchStudentLessonViews } = require('../utils/lessonViews');
@@ -784,15 +785,20 @@ async function replyToTicket(req, res) {
     const replyOptions = replyToTelegramMessageId
       ? { reply_parameters: { message_id: Number(replyToTelegramMessageId), allow_sending_without_reply: true } }
       : {};
-    const imagePath = req.file ? `uploads/support/${req.file.filename}` : null;
+    const localImagePath = req.file ? `uploads/support/${req.file.filename}` : null;
+    let imagePath = localImagePath;
     const telegramMessage = req.file
       ? await bot.telegram.sendPhoto(
           ticketResult.rows[0].chat_id,
-          { source: path.join(__dirname, '..', '..', 'public', imagePath) },
+          { source: path.join(__dirname, '..', '..', 'public', localImagePath) },
           content ? { caption: content, ...replyOptions } : replyOptions
         )
       : await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, content, replyOptions);
     telegramSent = true;
+
+    // **الرفع بعد الإرسال مش قبله.** تيليجرام بياخد الملف من القرص، فنقله قبل الإرسال
+    // بيكسر الإرسال نفسه. وبعد ما الرسالة وصلت الطالب، الصورة بقت أرشيف — مكانها سحابة
+    if (localImagePath) imagePath = await storeFile(path.join(__dirname, '..', '..', 'public', localImagePath), localImagePath);
     const result = await pool.query(
       `INSERT INTO support_messages (ticket_id, sent_by, content, image_path, telegram_message_id, reply_to_incoming_message_id)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
