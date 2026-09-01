@@ -417,6 +417,24 @@
       return { key: 'wrong', icon: '❌', label: 'إجابة غلط' };
     }
 
+    // كل سطر في الورقة جملة موجّهة للطالب — الهدف إنه يقرا ورقته كأن حد بيراجعها معاه،
+    // مش يفك جدول فيه "إجابتك" و"الإجابة المرجعية". نفس المعلومة بالظبط، صيغة مختلفة
+    function say(text, kind) {
+      return '<p class="qz-rv-say' + (kind ? ' ' + kind : '') + '">' + text + '</p>';
+    }
+
+    // جملة الحكم فوق كل سؤال. الدرجة نفسها في الشارة جنبها، فالجملة بتقول المعنى بس
+    function verdictLine(answer, verdict) {
+      if (verdict.key === 'pending') {
+        return answer.answered
+          ? 'الفريق لسه بيراجع السؤال ده — الدرجة ممكن تتغيّر.'
+          : 'السؤال ده مالوش تصحيح في ورقتك.';
+      }
+      if (verdict.key === 'correct') return 'إجابتك صح ✅';
+      if (verdict.key === 'partial') return 'إجابتك ناقصة شوية 🟡';
+      return 'إجابتك مش صح ❌';
+    }
+
     function reviewMark(answer, verdict) {
       var points = answer.awarded_points === null || answer.awarded_points === undefined
         ? '—' : Math.round(answer.awarded_points * 100) / 100;
@@ -424,44 +442,57 @@
         + verdict.icon + ' ' + points + ' / ' + answer.points + '</span>';
     }
 
-    // الاختياري: الاختيارات كلها بتتعرض ومعلّم عليها — الصح فين، وهو اختار إيه. عرض
-    // القايمة كلها بدل سطرين نص بيخلي الطالب يلاقي اختياره من غير ما يدوّر
+    // الاختيار ممكن يكون صورة من غير نص، وساعتها مافيش اسم نقوله في الجملة — الصورة
+    // نفسها بتتعرض تحت السطر
+    function optionName(option) {
+      return option && option.text ? '«' + esc(option.text) + '»' : 'الاختيار ده';
+    }
+
+    function optionPicture(option) {
+      return option && option.image
+        ? '<img class="qz-option-image" src="' + esc(option.image) + '" alt="" loading="lazy" />' : '';
+    }
+
+    // الاختياري: بدل ما نرصّ الاختيارات الأربعة ونحطّ علامات، بنقوله هو اختار إيه والصح
+    // إيه في جملتين. السؤال اللي جاوبه صح بياخد جملة واحدة — مافيش لازمة "والصح كان"
+    // لما يكون هو نفسه اللي اختاره
     function reviewOptions(answer) {
-      var body = answer.options.map(function (option, optionIndex) {
-        var isCorrect = answer.correct_option !== null && answer.correct_option !== undefined
-          && Number(answer.correct_option) === optionIndex;
-        var isPicked = answer.selected_option === optionIndex;
-        var tag = isCorrect ? '<span class="qz-rv-tag correct">الإجابة الصح</span>'
-          : (isPicked ? '<span class="qz-rv-tag wrong">اختيارك</span>' : '');
-        return '<div class="qz-rv-option' + (isCorrect ? ' correct' : '')
-          + (isPicked && !isCorrect ? ' wrong' : '') + '">'
-          + '<span>' + (option.text ? esc(option.text) : '')
-          + (option.image ? '<img class="qz-option-image" src="' + esc(option.image) + '" alt="" loading="lazy" />' : '')
-          + '</span>' + tag + '</div>';
-      }).join('');
-      if (answer.selected_option === null || answer.selected_option === undefined) {
-        body += '<div class="qz-rv-empty">ماخترتش إجابة</div>';
+      var picked = answer.selected_option === null || answer.selected_option === undefined
+        ? null : answer.options[answer.selected_option];
+      var right = answer.correct_option === null || answer.correct_option === undefined
+        ? null : answer.options[answer.correct_option];
+      var gotIt = picked && right && Number(answer.correct_option) === Number(answer.selected_option);
+
+      var body = '';
+      if (!picked) body += say('إنت ماخترتش إجابة للسؤال ده.');
+      else if (gotIt) body += say('إنت اخترت ' + optionName(picked) + ' وده الصح.') + optionPicture(picked);
+      else body += say('إنت اخترت ' + optionName(picked) + '.') + optionPicture(picked);
+
+      if (right && !gotIt) body += say('والصح ' + optionName(right) + '.', 'right') + optionPicture(right);
+      return body;
+    }
+
+    // المقالي: كلامه هو، وبعده الصح. الطالب محتاج يقارن بنفسه — الدرجة لوحدها
+    // مابتعلّمهوش حاجة
+    function reviewEssay(answer, verdict) {
+      var body = answer.essay_text
+        ? say('إنت كتبت:') + '<div class="qz-rv-text">' + esc(answer.essay_text) + '</div>'
+        : say('إنت سيبت السؤال ده فاضي.');
+      if (answer.reference_answer) {
+        // اللي جاوب صح بياخدها كـ"إجابة نموذجية" مش "الصح" — هو أصلًا كان صح، والعنوان
+        // اللي بيقول "الصح" فوق إجابة اتحسبت كاملة بيلخبطه
+        body += say(verdict.key === 'correct' ? 'والإجابة النموذجية:' : 'والصح:', 'right')
+          + '<div class="qz-rv-text model">' + esc(answer.reference_answer) + '</div>';
       }
       return body;
     }
 
-    // المقالي: إجابته وجنبها الإجابة النموذجية. الطالب محتاج يقارن بنفسه — الدرجة لوحدها
-    // مابتعلّمهوش حاجة
-    function reviewEssay(answer) {
-      var written = answer.essay_text
-        ? '<div class="qz-rv-text">' + esc(answer.essay_text) + '</div>'
-        : '<div class="qz-rv-empty">سيبت السؤال فاضي</div>';
-      var model = answer.reference_answer
-        ? '<div class="qz-rv-block"><span class="qz-rv-label">الإجابة النموذجية</span>'
-          + '<div class="qz-rv-text model">' + esc(answer.reference_answer) + '</div></div>'
-        : '';
-      return '<div class="qz-rv-block"><span class="qz-rv-label">إجابتك</span>' + written + '</div>' + model;
-    }
-
-    function reviewBody(answer) {
-      var body = answer.kind === 'mcq' ? reviewOptions(answer) : reviewEssay(answer);
-      // سبب المصحّح الآلي بييجي للمقالي بس. الموظف اللي عدّل الدرجة بإيده بيوصل سببه
-      // فاضي من السيرفر عن قصد — السبب القديم بيناقض الدرجة الجديدة
+    function reviewBody(answer, verdict) {
+      var body = say(verdictLine(answer, verdict), 'verdict ' + verdict.key)
+        + (answer.kind === 'mcq' ? reviewOptions(answer) : reviewEssay(answer, verdict));
+      // كلام المصحّح الآلي بييجي للمقالي بس، ومكتوب بصيغة المخاطب من النموذج نفسه.
+      // الموظف اللي عدّل الدرجة بإيده بيوصل كلامه فاضي من السيرفر عن قصد — الكلام
+      // القديم بيناقض الدرجة الجديدة
       if (answer.reason) {
         body += '<div class="qz-rv-reason">' + esc(answer.reason) + '</div>';
       }
@@ -476,8 +507,8 @@
 
       var number = 0;
       var open = false;
-      var html = '<div class="qz-card qz-rv-head"><h2>ورقتك بعد التصحيح</h2>'
-        + '<p>كل سؤال ومعاه إجابتك والإجابة الصح. الأسئلة المقالية ممكن الفريق يراجعها ويعدّل درجتها.</p></div>';
+      var html = '<div class="qz-card qz-rv-head"><h2>يلا نراجع ورقتك مع بعض</h2>'
+        + '<p>هنعدّي على كل سؤال: إنت قلت إيه، وإيه الصح، وليه. الأسئلة المقالية ممكن الفريق يراجعها ويعدّل درجتها.</p></div>';
 
       review.forEach(function (answer) {
         if (answer.kind === 'group') {
@@ -496,7 +527,7 @@
             + '<div class="qz-part-head"><span class="qz-part-label">' + esc(answer.label || '') + '</span>'
             + reviewMark(answer, verdict) + '</div>'
             + (answer.text ? '<div class="qz-part-text">' + esc(answer.text) + '</div>' : '')
-            + questionImage(answer) + reviewBody(answer) + '</div>';
+            + questionImage(answer) + reviewBody(answer, verdict) + '</div>';
           return;
         }
         if (open) { html += '</div>'; open = false; }
@@ -505,7 +536,7 @@
           + '<div class="qz-q-head"><span class="qz-q-num">سؤال ' + number + '</span>'
           + reviewMark(answer, verdict) + '</div>'
           + (answer.text ? '<div class="qz-q-text">' + esc(answer.text) + '</div>' : '')
-          + questionImage(answer) + reviewBody(answer) + '</div>';
+          + questionImage(answer) + reviewBody(answer, verdict) + '</div>';
       });
       if (open) html += '</div>';
       box.innerHTML = html;

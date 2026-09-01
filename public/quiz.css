@@ -166,40 +166,28 @@ body.qz-body {
 .qz-rv-mark.wrong { background: color-mix(in srgb, var(--qz-danger) 12%, transparent); color: var(--qz-danger); }
 .qz-rv-mark.pending { background: var(--qz-accent-soft); color: var(--qz-accent); }
 
-/* الاختيارات في المراجعة مش قابلة للضغط — بلاش cursor ولا hover يوحيوا إنه لسه بيحل */
-.qz-rv-option {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-  padding: 11px 13px; margin-bottom: 8px; border-radius: 12px;
-  border: 1px solid var(--qz-line); font-size: 15.5px; line-height: 1.8;
+/* الورقة بتتقري كجُمل موجّهة للطالب: "إنت اخترت كذا" وبعدها "والصح كذا". السطر التاني
+   بلون الصح عشان العين تمسكه من غير ما نحتاج نكتب عليه عنوان */
+.qz-rv-say {
+  margin: 0 0 7px; font-size: 15.5px; line-height: 1.9; color: var(--qz-text);
 }
-.qz-rv-option.correct { border-color: var(--qz-good); background: var(--qz-good-soft); }
-.qz-rv-option.wrong {
-  border-color: var(--qz-danger);
-  background: color-mix(in srgb, var(--qz-danger) 8%, transparent);
-}
-.qz-rv-tag {
-  flex-shrink: 0; padding: 3px 9px; border-radius: 999px;
-  font-size: 12px; font-weight: 700; white-space: nowrap;
-}
-.qz-rv-tag.correct { background: var(--qz-good); color: #fff; }
-.qz-rv-tag.wrong { background: var(--qz-danger); color: #fff; }
+.qz-rv-say + .qz-rv-text, .qz-rv-say + .qz-option-image { margin-bottom: 12px; }
+.qz-rv-say.right { color: var(--qz-good); font-weight: 600; }
 
-.qz-rv-block { margin-bottom: 12px; }
-.qz-rv-block:last-child { margin-bottom: 0; }
-.qz-rv-label {
-  display: block; font-size: 13px; font-weight: 700;
-  color: var(--qz-muted); margin-bottom: 5px;
-}
+/* جملة الحكم فوق كل سؤال — أوضح سطر في الكارت، هو اللي الطالب بيدوّر عليه */
+.qz-rv-say.verdict { font-weight: 700; font-size: 16px; margin-bottom: 12px; }
+.qz-rv-say.verdict.correct { color: var(--qz-good); }
+.qz-rv-say.verdict.partial { color: var(--qz-warn); }
+.qz-rv-say.verdict.wrong { color: var(--qz-danger); }
+.qz-rv-say.verdict.pending { color: var(--qz-muted); font-weight: 600; }
+
 .qz-rv-text {
   padding: 11px 13px; border-radius: 12px; border: 1px solid var(--qz-line);
   background: var(--qz-bg); font-size: 15.5px; line-height: 1.9; white-space: pre-wrap;
 }
 /* الإجابة النموذجية بلون الصح دايمًا — هي المرجع مش حكم على إجابته */
 .qz-rv-text.model { border-color: var(--qz-good); background: var(--qz-good-soft); }
-.qz-rv-empty {
-  padding: 11px 13px; border-radius: 12px; border: 1px dashed var(--qz-line);
-  color: var(--qz-muted); font-size: 14.5px;
-}
+/* كلام المصحّح الآلي — مكتوب بصيغة المخاطب من النموذج نفسه، فبياخد شكل فقاعة كلام */
 .qz-rv-reason {
   margin-top: 10px; padding: 10px 13px; border-radius: 12px;
   background: var(--qz-accent-soft); color: var(--qz-text);
