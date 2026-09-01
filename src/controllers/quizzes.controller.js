@@ -3,7 +3,7 @@ const pool = require('../config/db');
 const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue } = require('../utils/quizScoring');
 const { gradeEssayAnswer } = require('../utils/quizGrading');
 const { listProviders, PROVIDERS } = require('../utils/aiProviders');
-const { buildQuizBuffer } = require('../utils/quizExport');
+const { streamQuizWorkbook } = require('../utils/quizExport');
 const { queueLength } = require('../utils/quizScoring');
 const { parseQuizDocument } = require('../utils/quizDocImport');
 
@@ -669,41 +669,48 @@ async function listBootcamps(req, res) {
 
 // ---------- تصدير النتايج ----------
 //
-// تلات استعلامات مش جوين واحد: الجوين بين المحاولات والأسئلة والإجابات بيرجّع
-// (طلاب × أسئلة) صف، وبناء الشيت بيحتاجهم متجمّعين برضه — فالتجميع في الجافاسكريبت
-// أرخص من تكرار بيانات كل طالب على كل سؤال في الشبكة
+// **الملف بيتكتب على الرد مباشرة، مش بيتبني في الذاكرة الأول.** امتحان بعشرين ألف طالب
+// و٢٥ سؤال = نص مليون صف في شيت الإجابات؛ تحميلهم كلهم عشان نبني Buffer بياكل أكتر من
+// جيجا على سيرفر ٢ جيجا ويقتل العملية — ومعاها كل الطلاب اللي بيحلّوا في نفس اللحظة.
+//
+// المحاولات بتتقرا على دفعات، وإجابات كل دفعة بتتجاب معاها. الترتيب `a.id` مش الدرجة:
+// الترقيم لازم يبقى ثابت بين الدفعات، والترتيب بعمود ممكن يتغيّر (الدرجة بتتحدّث وقت
+// التصحيح) بيخلي صف يتكرر في دفعة ويختفي من التانية
 async function exportAttempts(req, res) {
   const quizId = Number(req.params.id);
   const quizResult = await pool.query('SELECT id, title FROM quizzes WHERE id = $1', [quizId]);
   const quiz = quizResult.rows[0];
   if (!quiz) return res.status(404).json({ error: 'الاختبار مش موجود' });
 
-  const [questions, attempts, answers] = await Promise.all([
-    pool.query(
-      `SELECT q.id, q.parent_id, q.label, q.kind, q.text, q.points, q.options
-       FROM quiz_questions q
-       LEFT JOIN quiz_questions p ON p.id = q.parent_id
-       WHERE q.quiz_id = $1
-       ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
-      [quizId]),
-    pool.query(
+  const questions = await pool.query(
+    `SELECT q.id, q.parent_id, q.label, q.kind, q.text, q.points, q.options
+     FROM quiz_questions q
+     LEFT JOIN quiz_questions p ON p.id = q.parent_id
+     WHERE q.quiz_id = $1
+     ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
+    [quizId]);
+
+  const fetchAttempts = async (offset, limit) => {
+    const { rows } = await pool.query(
       `SELECT a.id, a.student_name, a.phone, a.tafra_student_id, a.started_at, a.submitted_at,
               a.is_late, a.score, a.max_score, a.grading_status, s.name AS platform_name
        FROM quiz_attempts a
        LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
        WHERE a.quiz_id = $1
-       ORDER BY a.score DESC NULLS LAST, a.submitted_at`, [quizId]),
-    pool.query(
+       ORDER BY a.id
+       LIMIT $2 OFFSET $3`, [quizId, limit, offset]);
+    return rows;
+  };
+
+  const fetchAnswers = async (attemptIds) => {
+    if (!attemptIds.length) return [];
+    const { rows } = await pool.query(
       `SELECT an.attempt_id, an.question_id, an.selected_option, an.essay_text,
               an.awarded_points, an.ai_reason
        FROM quiz_answers an
-       JOIN quiz_attempts a ON a.id = an.attempt_id
-       WHERE a.quiz_id = $1`, [quizId]),
-  ]);
-
-  const buffer = await buildQuizBuffer({
-    quiz, questions: questions.rows, attempts: attempts.rows, answers: answers.rows,
-  });
+       WHERE an.attempt_id = ANY($1::int[])`, [attemptIds]);
+    return rows;
+  };
 
   // اسم الملف بيتنضّف من كل حاجة ممكن تكسر ترويسة HTTP أو اسم ملف على ويندوز — عنوان
   // الاختبار بيكتبه الموظف وممكن يكون فيه أي حاجة
@@ -711,7 +718,17 @@ async function exportAttempts(req, res) {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition',
     `attachment; filename*=UTF-8''${encodeURIComponent(safeTitle)}.xlsx`);
-  res.send(buffer);
+
+  try {
+    await streamQuizWorkbook({
+      stream: res, questions: questions.rows, fetchAttempts, fetchAnswers,
+    });
+  } catch (error) {
+    // الترويسات راحت خلاص، فمفيش رسالة خطأ ممكن تتبعت — الوصلة بتتقطع والمتصفح بيوري
+    // "التنزيل فشل"، وهو أصدق من ملف ناقص بيتفتح ويبان سليم
+    console.error('❌ Failed to stream the quiz export:', error.message);
+    res.destroy(error);
+  }
 }
 
 // ---------- إحصائيات على مستوى السؤال ----------
