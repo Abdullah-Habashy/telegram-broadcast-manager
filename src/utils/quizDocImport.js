@@ -57,11 +57,20 @@ const BARE_NUMBER = /^[0-9]+(?:\.[0-9]+)?$/;
 
 const PART_LETTERS = ['أ', 'ب', 'ج', 'د', 'هـ', 'ه', 'و', 'ز', 'ح', 'ط', 'ي'];
 
+// **النص بيتخزّن أسطر مش نص واحد.** السؤال الاختياري بيتكتب "نص السؤال" وتحته
+// الاختيارات من غير حروف، فالتفرقة بينهم مابتتعرفش غير بعد ما البلوك يخلص — ولو
+// لزقناهم في نص واحد وقتها مافيش طريقة نفصلهم تاني
 function blank(number, label) {
   return {
-    number, label: label || null, text: '', options: [], optionLetters: [], starred: [],
-    answer: '', points: null, notes: '', parts: [],
+    number, label: label || null,
+    lines: { text: [], answer: [], notes: [] },
+    options: [], optionLetters: [], starred: [],
+    points: null, parts: [],
   };
+}
+
+function joined(item, field) {
+  return item.lines[field].join('\n').trim();
 }
 
 function nameOf(number, label) {
@@ -82,8 +91,8 @@ function readPoints(target, raw, warnings) {
 
 // النص بيتجمّع على أسطر: السؤال ممكن يكون فقرتين، والإجابة المرجعية ممكن تكون خمس سطور
 function appendLine(current, field, line) {
-  if (!current) return;
-  current[field] = current[field] ? `${current[field]}\n${line}` : line;
+  if (!current || !current.lines[field]) return;
+  current.lines[field].push(line);
 }
 
 function parseQuizDocument(raw) {
@@ -117,7 +126,9 @@ function parseQuizDocument(raw) {
           if (!part) { part = blank(number, partLetter); parent.parts.push(part); }
           current = part;
         } else {
-          if (parent.text) warnings.push(`السؤال ${number} مكرّر في الملف — اتاخد آخر نص ليه.`);
+          if (parent.lines.text.length) {
+            warnings.push(`السؤال ${number} مكرّر في الملف — اتاخد آخر نص ليه.`);
+          }
           current = parent;
         }
         field = 'text';
@@ -188,40 +199,72 @@ function parseQuizDocument(raw) {
   const numbers = [...byNumber.keys()].sort((a, b) => a - b);
   const questions = [];
 
+  // **الاختيارات من غير حروف: النجمة هي اللي بتقول إن البلوك ده اختياري.**
+  // المدرّس بيكتب نص السؤال وتحته أربع سطور من غير أ ب ج د، فمافيش أي حاجة في السطر
+  // نفسه بتفرّقه عن سطر تاني من نص السؤال. اللي بيفرّق إن سطر واحد فيهم متعلّم بـ ***
+  // — يعني البلوك فيه إجابة صح، يعني هو اختياري. من غير النجمة بيتقري مقالي.
+  //
+  // أول سطر بيفضل نص السؤال دايمًا، والباقي اختيارات بالترتيب أ ب ج د
+  const splitPositionalOptions = (item, name) => {
+    if (item.options.length) return null;
+    const lines = item.lines.text;
+    const starIndex = lines.findIndex((line) => STAR.test(line));
+    if (starIndex < 0) return null;
+    if (starIndex === 0) {
+      warnings.push(`السؤال ${name} أول سطر بعد رقمه متعلّم بـ *** — نص السؤال لازم يجي قبل الاختيارات.`);
+      return null;
+    }
+    const body = lines.slice(1);
+    return {
+      text: lines[0].trim(),
+      options: body.map((line) => ({ text: line.replace(STAR, '').trim(), image: null })),
+      starred: body.reduce((found, line, index) => (STAR.test(line) ? found.concat(index) : found), []),
+    };
+  };
+
   const finish = (item, label) => {
-    const hasOptions = item.options.length >= 2;
-    const answer = item.answer.trim();
+    const name = nameOf(item.number, label);
+    const positional = splitPositionalOptions(item, name);
+    const options = positional ? positional.options : item.options;
+    const starredAt = positional ? positional.starred : item.starred;
+    const hasOptions = options.length >= 2;
+    const answer = joined(item, 'answer');
     const points = item.points === null ? 1 : item.points;
     const shaped = {
       kind: hasOptions ? 'mcq' : 'essay',
       label: label || '',
-      text: item.text.trim(),
+      text: positional ? positional.text : joined(item, 'text'),
       image: null,
       points,
-      options: hasOptions ? item.options : [],
+      options: hasOptions ? options : [],
       correct_option: null,
       reference_answer: hasOptions ? '' : answer,
-      grading_notes: item.notes.trim(),
+      grading_notes: joined(item, 'notes'),
       parts: [],
     };
-    const name = nameOf(item.number, label);
     if (!shaped.text) warnings.push(`السؤال ${name} مالوش نص.`);
     if (item.points === null) warnings.push(`السؤال ${name} مالوش درجة — اتحطّت ١.`);
+    // مقالي من غير إجابة وتحته تلات سطور قصيرة أو أكتر: الأغلب اختياري ونُسيت نجمته.
+    // التخمين ده تحذير بس — مابيغيّرش نوع السؤال، عشان مايتصرّفش من ورا المدرّس
+    if (!hasOptions && !answer && item.lines.text.length >= 4
+        && item.lines.text.slice(1).every((line) => line.trim().length <= 80)) {
+      warnings.push(`السؤال ${name} شكله اختياري — لو كده، حط *** بعد الإجابة الصح.`);
+    }
 
     if (hasOptions) {
       // **النجمة بتكسب سطر `ج`.** لو الاتنين موجودين، اللي المدرّس علّمه جنب الاختيار
       // نفسه أقرب لقصده من حرف كتبه تحت — والحرف هو اللي بيتنسى يتحدّث لما الترتيب يتغيّر
-      if (item.starred.length) {
-        if (item.starred.length > 1) {
-          warnings.push(`السؤال ${name} فيه ${item.starred.length} اختيارات متعلّمين بنجمة — اتاخد الأول فيهم.`);
+      if (starredAt.length) {
+        if (starredAt.length > 1) {
+          warnings.push(`السؤال ${name} فيه ${starredAt.length} اختيارات متعلّمين بنجمة — اتاخد الأول فيهم.`);
         }
-        shaped.correct_option = item.starred[0];
+        shaped.correct_option = starredAt[0];
       } else {
         // الإجابة حرف (ب) أو نص الاختيار نفسه — الاتنين مقبولين
         const letter = answer.replace(new RegExp(SEPARATOR, 'g'), '').trim();
         let index = item.optionLetters.indexOf(letter);
         if (index < 0) {
-          index = item.options.findIndex((choice) => choice.text === answer);
+          index = options.findIndex((choice) => choice.text === answer);
         }
         if (index < 0) {
           warnings.push(`السؤال ${name} اختياري ومفيش اختيار متعلّم بـ *** ولا إجابة مطابقة — اتحطّ الأول.`);
@@ -239,11 +282,11 @@ function parseQuizDocument(raw) {
     const item = byNumber.get(number);
     if (item.parts.length) {
       // رأس وفروع: الرأس عنوان بس، وأي إجابة أو درجة اتكتبت له مالهاش مكان
-      if (item.answer.trim() || item.points !== null) {
+      if (joined(item, 'answer') || item.points !== null) {
         warnings.push(`السؤال ${number} ليه فروع، فالإجابة والدرجة بتاعته اتجاهلوا — كل فرع ليه إجابته ودرجته.`);
       }
       questions.push({
-        kind: 'group', label: '', text: item.text.trim(), image: null, points: 0,
+        kind: 'group', label: '', text: joined(item, 'text'), image: null, points: 0,
         options: [], correct_option: null, reference_answer: '', grading_notes: '',
         parts: item.parts
           .slice()
