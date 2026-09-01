@@ -117,6 +117,13 @@ body.qz-body {
 .qz-nav-item.answered {
   background: var(--qz-good-soft); border-color: var(--qz-good); color: var(--qz-good);
 }
+/* **المتعلّم بيكسب الأخضر.** السؤال اللي إنت واقف عنده لازم يبان مهما كانت حالته —
+   مكانك في الورقة أهم من إنك جاوبته، وحالته بترجع تبان أول ما تسيبه */
+.qz-nav-item.active,
+.qz-nav-item.active.answered {
+  background: var(--qz-accent); border-color: var(--qz-accent); color: #fff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--qz-accent) 25%, transparent);
+}
 
 /* الشريط بيغطي أول السؤال لما نننط له — المسافة دي بتخلي السؤال يقف تحته مش وراه */
 .qz-card[id^="qz-anchor-"], .qz-part[id^="qz-anchor-"] { scroll-margin-top: 120px; }

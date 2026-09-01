@@ -1146,3 +1146,27 @@ th.perf-sorted { color: var(--primary); }
   background: var(--surface); border-bottom: 1px solid var(--border);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
+
+/* مربعات التنقّل في محرر الاختبار — نفس فكرة اللي عند الطالب.
+   بتتزحلق أفقيًا لأن ٥٠ سؤال مش هيبقوا في سطر */
+.quiz-editor-nav {
+  flex-basis: 100%; display: flex; gap: 6px; overflow-x: auto;
+  padding-top: 10px; scrollbar-width: thin;
+}
+.quiz-editor-nav:empty { display: none; }
+.quiz-nav-chip {
+  flex: 0 0 auto; min-width: 32px; height: 32px; padding: 0 8px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--surface-sunken);
+  color: var(--text); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.quiz-nav-chip:hover { border-color: var(--primary); }
+/* أصفر = ناقص حاجة تمنع الحفظ أو تعطّل التصحيح الآلي، مش غلط */
+.quiz-nav-chip.incomplete { border-color: var(--warning); color: var(--warning); }
+/* **المتعلّم بيكسب اللونين.** لو السؤال اللي إنت واقف فيه ناقص برضه، اللون الأزرق
+   المصمت هو اللي بيبان — مكانك في القايمة أهم من التنبيه، والتنبيه راجع لما تسيبه */
+.quiz-nav-chip.active,
+.quiz-nav-chip.active.incomplete {
+  background: var(--primary); border-color: var(--primary); color: #fff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+}

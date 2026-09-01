@@ -281,8 +281,25 @@
       el('qz-nav').addEventListener('click', function (event) {
         var button = event.target.closest('[data-goto]');
         if (!button) return;
-        var anchor = document.getElementById('qz-anchor-' + button.getAttribute('data-goto'));
+        var id = button.getAttribute('data-goto');
+        markActiveQuestion(id);
+        var anchor = document.getElementById('qz-anchor-' + id);
         if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+
+      // الوقوف في خانة إجابة بيعلّم مربعها كمان — الطالب اللي بيكتب في سؤال ١٢ عايز
+      // يشوف إنه في ١٢، مش يفضل المربع الأول متعلّم من أول الامتحان
+      el('qz-questions').addEventListener('focusin', function (event) {
+        var anchor = event.target.closest('[id^="qz-anchor-"]');
+        if (anchor) markActiveQuestion(anchor.id.replace('qz-anchor-', ''));
+      });
+    }
+
+    // المربع المتعلّم = السؤال اللي الطالب واقف عنده دلوقتي. **منفصل عن الأخضر**
+    // (اللي معناه "اتجاوب") — الاتنين ممكن يجتمعوا على نفس المربع
+    function markActiveQuestion(id) {
+      Array.prototype.forEach.call(document.querySelectorAll('.qz-nav-item'), function (button) {
+        button.classList.toggle('active', button.getAttribute('data-goto') === String(id));
       });
     }
 

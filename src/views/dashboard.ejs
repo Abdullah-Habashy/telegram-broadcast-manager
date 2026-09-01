@@ -857,6 +857,9 @@
                 <button type="button" class="btn btn-ghost btn-sm" id="add-group-btn" style="width:auto">+ رأس وفروع</button>
                 <button type="button" class="btn btn-primary btn-sm" id="save-quiz-btn" style="width:auto">💾 حفظ الاختبار</button>
               </div>
+              <!-- مربعات الأسئلة: الضغط بينط للسؤال في المحرر. نفس فكرة اللي عند
+                   الطالب — محرر ٢٥ سؤال مستحيل تتنقل فيه بالسكرول -->
+              <div class="quiz-editor-nav" id="quiz-editor-nav"></div>
             </div>
             <div id="quiz-questions-editor"><div class="empty-state">ضيف أول سؤال</div></div>
             <div class="row" style="margin-top:14px">
@@ -8893,6 +8896,7 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-time-limit').value = '';
       document.getElementById('quiz-show-score').checked = true;
       document.getElementById('quiz-show-answers').checked = true;
+      activeQuizQuestion = 0;
       document.getElementById('quiz-bootcamp').value = '';
       document.getElementById('quiz-answers-after-close').checked = false;
       document.getElementById('quiz-shuffle-questions').checked = false;
@@ -8998,9 +9002,81 @@ ${reply.content}` : reply.content;
         : 'مفيش أسئلة';
     }
 
+    // ---------- مربعات التنقّل في المحرر ----------
+    //
+    // **الأصفر معناه "ناقص" مش "غلط".** السؤال اللي مالوش نص، أو مقالي من غير إجابة
+    // مرجعية (يعني التصحيح الآلي مش هيشتغل عليه)، أو اختياري بأقل من اختيارين — كلهم
+    // بيتعلّموا. ده بيخلي الغلطة تبان قبل الحفظ بدل ما تظهر في ورقة طالب
+    function quizQuestionIsIncomplete(question) {
+      const hasText = Boolean(String(question.text || '').trim() || question.image);
+      if (question.kind === 'group') {
+        return !hasText || !(question.parts || []).length
+          || (question.parts || []).some((part) => quizQuestionIsIncomplete(part));
+      }
+      if (!hasText) return true;
+      if (question.kind === 'mcq') {
+        const filled = (question.options || []).filter((option) => option && (option.text || option.image));
+        return filled.length < 2;
+      }
+      return !String(question.reference_answer || '').trim();
+    }
+
+    // السؤال اللي الأدمن واقف عنده. بيتخزّن هنا مش في الـDOM عشان يفضل بعد إعادة الرسم —
+    // إضافة سؤال أو نقله بتعيد كتابة المربعات كلها
+    let activeQuizQuestion = 0;
+
+    function renderQuizEditorNav() {
+      const nav = document.getElementById('quiz-editor-nav');
+      // سؤال واحد؟ المربعات مالهاش لازمة وبتاخد سطر من غير فايدة
+      if (quizEditorQuestions.length < 2) { nav.innerHTML = ''; return; }
+      nav.innerHTML = quizEditorQuestions.map((question, index) => {
+        const kind = question.kind === 'group' ? 'رأس وفروع'
+          : question.kind === 'mcq' ? 'اختياري' : 'مقالي';
+        const incomplete = quizQuestionIsIncomplete(question);
+        const active = index === activeQuizQuestion;
+        return `<button type="button" class="quiz-nav-chip${incomplete ? ' incomplete' : ''}${active ? ' active' : ''}"
+                  data-goto="${index}" title="${kind}${incomplete ? ' — ناقص' : ''}">${index + 1}</button>`;
+      }).join('');
+    }
+
+    function setActiveQuizQuestion(index) {
+      if (activeQuizQuestion === index) return;
+      activeQuizQuestion = index;
+      document.querySelectorAll('#quiz-editor-nav .quiz-nav-chip').forEach((chip) => {
+        chip.classList.toggle('active', Number(chip.dataset.goto) === index);
+      });
+    }
+
+    // مفوّض على الحاوية مش على كل مربع: المربعات بتتعاد كتابتها مع كل رسم، والمستمع
+    // على كل واحد فيهم كان معناه إعادة ربط في كل مرة
+    document.getElementById('quiz-editor-nav').addEventListener('click', (event) => {
+      const chip = event.target.closest('[data-goto]');
+      if (!chip) return;
+      const index = Number(chip.dataset.goto);
+      setActiveQuizQuestion(index);
+      const card = document.querySelector(`.quiz-question[data-path="${index}"]`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    // الوقوف جوه خانة بيعلّم سؤالها كمان — الأدمن اللي بيكتب في سؤال ١٢ عايز يشوف إنه
+    // في ١٢، مش يفضل المربع الأول متعلّم من ساعة ما فتح المحرر
+    document.getElementById('quiz-questions-editor').addEventListener('focusin', (event) => {
+      const card = event.target.closest('.quiz-question[data-path]');
+      if (card) setActiveQuizQuestion(Number(card.dataset.path));
+    });
+
+    // وهو بيكتب: بنقرا الحالة ونحدّث المربعات **من غير إعادة رسم الأسئلة** — إعادة
+    // الرسم بتضيّع مكان المؤشر جوه الخانة اللي هو كاتب فيها
+    document.getElementById('quiz-questions-editor').addEventListener('input', () => {
+      readQuizEditor();
+      updateQuizEditorCount();
+      renderQuizEditorNav();
+    });
+
     function renderQuizQuestions() {
       // قبل الخروج المبكر: المحرر الفاضي محتاج يوري "مفيش أسئلة" برضه
       updateQuizEditorCount();
+      renderQuizEditorNav();
       const box = document.getElementById('quiz-questions-editor');
       if (!quizEditorQuestions.length) {
         box.innerHTML = '<div class="empty-state">ضيف أول سؤال</div>';
