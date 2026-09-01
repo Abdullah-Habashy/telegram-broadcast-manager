@@ -681,6 +681,21 @@ CREATE TABLE IF NOT EXISTS tafra_students (
 CREATE INDEX IF NOT EXISTS idx_tafra_students_chat_id ON tafra_students (telegram_chat_id)
     WHERE telegram_chat_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tafra_students_phone ON tafra_students (phone);
+
+-- **فهرس على آخر ١٠ أرقام من التليفون — مش على التليفون نفسه.**
+-- تلات مسارات بتدوّر بيه: دخول الطالب للاختبار، وربط الرقم من البوت، وتقرير الطالب.
+-- وكلهم بيستخدموا نفس التعبير (utils/phone.js → SQL_TRANSLATE_DIGITS) لأن الرقم متخزّن
+-- على المنصة بأشكال مختلفة (+٢٠، ٠٠٢٠، بأرقام عربية أو فارسية).
+--
+-- الفهرس العادي على (phone) **مابينفعش معاهم**: الشرط على ناتج دالة مش على العمود، فالخطة
+-- بتبقى Seq Scan. اتقاس على الإنتاج: **١٢٥ مللي لكل بحث على ٢٤٦٠٤ طالب** — يعني نص ثانية
+-- على ١٠٠ ألف، لكل طالب بيدخل الاختبار. امتحان بآلاف الطلاب في نفس الساعة معناه إن
+-- بوابة الدخول لوحدها بتاكل السيرفر.
+--
+-- التعبير هنا لازم يطابق الاستعلامات **حرف بحرف** — أي فرق في قايمة الأرقام المترجمة
+-- بيخلي الفهرس موجود ومش مستخدم، وده أسوأ من إنه مش موجود لأنه بيبان في القايمة
+CREATE INDEX IF NOT EXISTS idx_tafra_students_phone_last10
+    ON tafra_students (RIGHT(REGEXP_REPLACE(translate(phone, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'), '[^0-9]', '', 'g'), 10));
 -- نوع الطالب (ولد/بنت) متخمّن من اسمه على المنصة بالاعتماد على التسمية الشائعة في مصر (src/utils/genderInference.js)
 -- — تخمين وليس بيانات مؤكدة من المنصة نفسها، وممكن يفضل NULL لو الاسم غامض أو أجنبي غير معروف
 ALTER TABLE tafra_students ADD COLUMN IF NOT EXISTS gender VARCHAR(10);
@@ -1112,6 +1127,18 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_attempts_one_per_student
     ON quiz_attempts (quiz_id, phone, COALESCE(tafra_student_id, 0));
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz ON quiz_attempts (quiz_id, submitted_at DESC NULLS LAST);
+
+-- **مفتاح المحاولة هو أكتر عمود بيتبحث بيه في الاختبار كله.** كل حفظ تلقائي، وكل تسليم،
+-- وكل سؤال عن الدرجة (كل ٤ ثواني لمدة دقيقتين بعد التسليم) بيدوّر بيه. من غير فهرس، كل
+-- نداء فيهم بيمسح جدول المحاولات كله — وامتحان بعشرين ألف طالب معناه عشرين ألف صف
+-- بيتمسحوا آلاف المرات في الثانية.
+-- UNIQUE مش عادي: المفتاح بيتولّد بـcrypto.randomBytes(24) فهو فريد أصلًا، والفهرس
+-- بيثبّت الشرط ده بدل ما يفضل افتراض
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_attempts_key ON quiz_attempts (attempt_key);
+
+-- طابور التصحيح بيتقرا كل دقيقة من الكرون، وqueueLength بيتعرض في لوحة الأدمن. الفهرس
+-- بيخلي الاتنين يقروا الصفوف المستنية بس بدل الجدول كله
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_grading_status ON quiz_attempts (grading_status);
 
 -- إشعار الدرجة على تيليجرام: الوقت مش علم منطقي عشان نعرف امتى اتبعت، والفهرس الجزئي
 -- بيخلي استعلام "مين لسه مستني إشعار" يمشي على الصفوف المستنية بس مهما كبر الجدول
