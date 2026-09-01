@@ -1434,7 +1434,9 @@ async function syncStudents(req, res) {
 // بيتنادى من جدولة دورية — بيبدأ مزامنة تلقائية بس لو فات على آخر مزامنة ناجحة مدة الفاصل الزمني
 // المحدد في الإعدادات (tafra_auto_sync_interval_hours)، ومفيش مزامنة تانية شغالة أصلًا
 async function triggerAutoSyncIfDue() {
-  if (syncRunning) return;
+  // بنتخطّى كمان لو الاختبارات أو الاشتراكات شغّالة — مزامنتين تقال على API طفرة في نفس
+  // الوقت بتقرّبنا من حد المعدل، والمتخطّية بتلحق في الفحص اللي بعده بـ١٥ دقيقة
+  if (syncRunning || examSyncRunning || enrollmentSyncRunning) return;
   try {
     const [credentials, settingsResult, statusResult] = await Promise.all([
       getCredentials(),
@@ -1654,7 +1656,7 @@ async function performExamSync(credentials) {
 // الكرون كل 15 دقيقة. بنتخطّى لو مزامنة الطلاب شغّالة عشان مانضربش على API طفرة بعمليتين
 // تقيلتين في نفس الوقت ونقع في حدود المعدل — الاختبارات هتلحق في الفحص اللي بعده بـ15 دقيقة
 async function triggerExamAutoSyncIfDue() {
-  if (examSyncRunning || syncRunning) return;
+  if (examSyncRunning || syncRunning || enrollmentSyncRunning) return;
   try {
     const [credentials, settingsResult, statusResult] = await Promise.all([
       getCredentials(),
@@ -1674,6 +1676,39 @@ async function triggerExamAutoSyncIfDue() {
     await performExamSync(credentials);
   } catch (error) {
     console.error('❌ Failed to run automatic Tafra exam sync:', error.message);
+  }
+}
+
+// ---------- مزامنة الاشتراكات التلقائية ----------
+//
+// **دي كانت الحلقة الناقصة.** الجدولة كانت بتغطي الطلاب والاختبارات بس، والاشتراكات
+// بتتشغّل بإيد الموظف من اللوحة — يعني ممكن تقعد أيام من غير ما تتحدّث. ووقتها
+// `jobs/whatsappRouting.js` بيشتغل كل ٥ دقايق على بيانات قديمة: الطالب اللي اشترك
+// امبارح لسه "مش مشترك" وبيتحوّل لموظف الواتساب وهو دافع.
+//
+// نفس نمط triggerExamAutoSyncIfDue بالحرف: فاصل زمني مستقل في الإعدادات، وتخطّي لو فيه
+// مزامنة تانية شغّالة
+async function triggerEnrollmentAutoSyncIfDue() {
+  if (enrollmentSyncRunning || syncRunning || examSyncRunning) return;
+  try {
+    const [credentials, settingsResult, statusResult] = await Promise.all([
+      getCredentials(),
+      pool.query("SELECT value FROM settings WHERE key = 'tafra_enrollment_auto_sync_interval_hours'"),
+      pool.query('SELECT completed_at, status FROM tafra_enrollment_sync_status WHERE id = 1'),
+    ]);
+    if (!credentials) return;
+
+    const intervalHours = Math.max(1, Number(settingsResult.rows[0]?.value) || 6);
+    const status = statusResult.rows[0];
+    const dueTime = status?.completed_at
+      ? new Date(status.completed_at).getTime() + intervalHours * 60 * 60 * 1000
+      : 0;
+    if (Date.now() < dueTime) return;
+
+    console.log(`⏰ Enrollment auto-sync interval reached (${intervalHours}h); starting background Tafra enrollment sync.`);
+    await performEnrollmentSync(credentials);
+  } catch (error) {
+    console.error('❌ Failed to run automatic Tafra enrollment sync:', error.message);
   }
 }
 
@@ -1707,7 +1742,8 @@ async function getExamSyncStatus(req, res) {
 module.exports = {
   getStatus, saveCredentials, syncStudents, syncEnrollments, syncBootcampNames, listStudents, getStudentFilters,
   syncExams, getExamSyncStatus, exportStudentsReport, listStudentContactIds, buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL,
-  triggerAutoSyncIfDue, triggerExamAutoSyncIfDue, syncSelectedBootcamps, getSelectiveSyncStatus,
+  triggerAutoSyncIfDue, triggerExamAutoSyncIfDue, triggerEnrollmentAutoSyncIfDue,
+  syncSelectedBootcamps, getSelectiveSyncStatus,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
   syncNewBotReachability, getNewBotReachabilitySyncStatus, getFollowUpBotStartLog,
   searchStudentsForLink, linkContactToStudent, unlinkContactFromStudent,

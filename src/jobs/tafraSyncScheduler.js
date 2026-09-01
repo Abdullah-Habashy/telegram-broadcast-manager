@@ -13,8 +13,13 @@ function startTafraSyncScheduler() {
     tafraController.triggerExamAutoSyncIfDue().catch((error) =>
       console.error('❌ Unexpected error while checking Tafra exam auto-sync schedule:', error.message)
     );
+    // الاشتراكات: بيتبني عليها توجيه الطلاب غير المشتركين لموظف الواتساب كل ٥ دقايق،
+    // فقِدَمها بيتحوّل لتذاكر متحوّلة غلط. فاصلها الافتراضي ٦ ساعات — أقصر من التانيين
+    tafraController.triggerEnrollmentAutoSyncIfDue().catch((error) =>
+      console.error('❌ Unexpected error while checking Tafra enrollment auto-sync schedule:', error.message)
+    );
   });
-  console.log('✅ Tafra auto-sync scheduler started; checking students and exams every 15 minutes.');
+  console.log('✅ Tafra auto-sync scheduler started; checking students, exams and enrollments every 15 minutes.');
 }
 
 module.exports = { startTafraSyncScheduler };
