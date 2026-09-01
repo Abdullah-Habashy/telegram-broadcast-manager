@@ -516,6 +516,103 @@ async function getAttempt(req, res) {
   });
 }
 
+// ---------- إحصائيات على مستوى السؤال ----------
+//
+// **ده مقلوب شاشة المحاولة.** المحاولة بتقول "الطالب ده عمل إيه"، ودي بتقول "السؤال ده
+// عمل إيه في الكل" — وهي دي اللي بتفيد في التدريس: السؤال اللي وقّع نص الفصل معناه إن
+// المعلومة نفسها محتاجة تتشرح تاني، مش إن الطلاب مذاكروش.
+//
+// المحاولات اللي لسه بتتحل مابتتحسبش (EXISTS على submitted_at) — نص ورقة بتحرّف النسبة.
+// ورؤوس الأسئلة مستبعدة: الأب مالوش إجابة ولا درجة، فروعه هي اللي بتتصحّح
+const QUESTION_STATS_SQL = `
+  SELECT q.id AS question_id, q.parent_id, q.label, q.kind, q.text, q.points,
+         COUNT(an.id)::int AS answered,
+         COUNT(*) FILTER (WHERE an.awarded_points >= q.points)::int AS full_marks,
+         COUNT(*) FILTER (WHERE an.awarded_points > 0 AND an.awarded_points < q.points)::int AS partial,
+         COUNT(*) FILTER (WHERE an.awarded_points = 0)::int AS zero,
+         COUNT(*) FILTER (WHERE an.id IS NOT NULL AND an.awarded_points IS NULL)::int AS ungraded,
+         AVG(an.awarded_points / NULLIF(q.points, 0)) AS avg_ratio
+  FROM quiz_questions q
+  LEFT JOIN quiz_questions p ON p.id = q.parent_id
+  LEFT JOIN quiz_answers an ON an.question_id = q.id
+    AND EXISTS (SELECT 1 FROM quiz_attempts a
+                WHERE a.id = an.attempt_id AND a.submitted_at IS NOT NULL)
+  WHERE q.quiz_id = $1 AND q.kind <> 'group'
+  GROUP BY q.id, p.position
+  ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`;
+
+// توزيع الاختيارات: أنهي اختيار غلط شدّ أكتر الطلاب. ده أنفع من نسبة الغلط لوحدها —
+// اختيار غلط واحد ماشي عليه ٤٠٪ معناه إن فيه فهم غلط بعينه، مش تخمين عشوائي
+const OPTION_STATS_SQL = `
+  SELECT an.question_id, an.selected_option, COUNT(*)::int AS picks
+  FROM quiz_answers an
+  JOIN quiz_attempts a ON a.id = an.attempt_id
+  JOIN quiz_questions q ON q.id = an.question_id
+  WHERE q.quiz_id = $1 AND q.kind = 'mcq' AND a.submitted_at IS NOT NULL
+  GROUP BY an.question_id, an.selected_option`;
+
+async function getQuestionStats(req, res) {
+  const quizId = Number(req.params.id);
+  const quiz = await pool.query('SELECT id, title FROM quizzes WHERE id = $1', [quizId]);
+  if (!quiz.rows.length) return res.status(404).json({ error: 'الاختبار مش موجود' });
+
+  const [questions, options, attempts] = await Promise.all([
+    pool.query(QUESTION_STATS_SQL, [quizId]),
+    pool.query(OPTION_STATS_SQL, [quizId]),
+    pool.query(
+      `SELECT COUNT(*)::int AS submitted, AVG(score / NULLIF(max_score, 0)) AS avg_ratio
+       FROM quiz_attempts WHERE quiz_id = $1 AND submitted_at IS NOT NULL`, [quizId]),
+  ]);
+
+  // الاختيارات بتترجع من استعلام تاني وبتتلمّ هنا حسب السؤال — أرخص من جوين بيكرّر
+  // صفوف الأسئلة على كل اختيار
+  const picksByQuestion = new Map();
+  for (const row of options.rows) {
+    if (!picksByQuestion.has(row.question_id)) picksByQuestion.set(row.question_id, []);
+    picksByQuestion.get(row.question_id).push({
+      option: row.selected_option, picks: row.picks,
+    });
+  }
+
+  // نص السؤال والاختيارات محتاجين يتعرضوا جنب الأرقام — الموظف مش هيفتكر سؤال ٧ إيه.
+  // **والترتيب هنا مقصود**: الرقم اللي بيتحسب منه لازم يطابق الرقم اللي الطالب شافه في
+  // ورقته، وده بيعُد الرؤوس كمان — فلو استبعدناها زي استعلام الإحصائيات، سؤال ٥ عند
+  // الموظف يبقى سؤال ٦ عند الطالب ومحدش ياخد باله
+  const texts = await pool.query(
+    `SELECT q.id, q.parent_id, q.kind, q.label, q.options, q.correct_option, q.image_path
+     FROM quiz_questions q
+     LEFT JOIN quiz_questions p ON p.id = q.parent_id
+     WHERE q.quiz_id = $1
+     ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`, [quizId]);
+  const byId = new Map(texts.rows.map((row) => [row.id, row]));
+
+  const numbers = new Map();
+  let counter = 0;
+  for (const row of texts.rows) {
+    if (row.parent_id === null) counter += 1;
+    numbers.set(row.id, counter);
+  }
+
+  res.json({
+    submitted: attempts.rows[0].submitted,
+    avg_ratio: attempts.rows[0].avg_ratio === null ? null : Number(attempts.rows[0].avg_ratio),
+    questions: questions.rows.map((row) => {
+      const source = byId.get(row.question_id) || {};
+      return {
+        ...row,
+        points: Number(row.points),
+        is_part: row.parent_id !== null,
+        number: numbers.get(row.question_id) || null,
+        avg_ratio: row.avg_ratio === null ? null : Number(row.avg_ratio),
+        options: normalizeOptions(source.options),
+        correct_option: source.correct_option,
+        image: source.image_path || null,
+        picks: picksByQuestion.get(row.question_id) || [],
+      };
+    }),
+  });
+}
+
 // الموظف بيعدّل درجة سؤال. graded_by = 'staff' بيقفل السؤال ده قدام أي إعادة تصحيح آلي —
 // حكم بني آدم مابيتمسحش بنداء نموذج
 async function gradeAnswer(req, res) {
@@ -573,5 +670,6 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
+  getQuestionStats,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
 };

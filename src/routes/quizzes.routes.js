@@ -49,6 +49,7 @@ router.delete('/:id', controller.deleteQuiz);
 router.put('/:id/questions', controller.saveQuestions);
 router.post('/:id/regrade', controller.regradeQuiz);
 router.get('/:id/attempts', controller.listAttempts);
+router.get('/:id/question-stats', controller.getQuestionStats);
 router.get('/attempts/:attemptId', controller.getAttempt);
 router.put('/attempts/:attemptId/answers/:questionId', controller.gradeAnswer);
 router.post('/attempts/:attemptId/regrade', controller.regradeAttempt);

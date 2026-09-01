@@ -1006,6 +1006,22 @@ UPDATE quizzes SET slug = SUBSTRING(MD5(RANDOM()::text || id::text) FROM 1 FOR 6
 -- التصحيح مابيتبعتش قبل ما المحاولة تتسلّم وتتصحّح — الطالب اللي لسه بيحل مابيشوفش حاجة
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS show_answers_to_student BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- التصحيح مايبانش غير لما الاختبار يتقفل. ده الحل الوسط بين "الطالب يتعلّم من غلطه"
+-- و"الرابط بيتحل على مدى أيام وأول واحد يشوف الإجابات ينشرها": الاختبار مفتوح = مفيش
+-- تصحيح، أول ما يتقفل يبان للكل مرة واحدة. بيشتغل فوق show_answers_to_student مش بدالها
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS answers_after_close BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ترتيب عشوائي. **الاختيارات بتتخلط في العرض بس** — قيمة كل اختيار بتفضل رقمه الأصلي في
+-- المصفوفة، عشان selected_option المتخزّن يفضل معناه واحد قبل الخلط وبعده. من غير كده كل
+-- الإجابات القديمة كانت هتبقى غلط
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS shuffle_questions BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS shuffle_options BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- المعسكر اللي الاختبار موجّه له. اختياري: من غيره الاختبار شغّال زي ما هو، ومعاه بنعرف
+-- **مين ماحلّش** (المشتركين ناقص اللي دخلوا) — وده اللي بيتبعت لتيم المكالمات
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS target_bootcamp_id BIGINT
+    REFERENCES tafra_bootcamps(tafra_bootcamp_id) ON DELETE SET NULL;
+
 -- الأسئلة نوعين في نفس الجدول: عمود kind هو الفارق، والأعمدة الخاصة بكل نوع NULL في التاني.
 -- جدولين منفصلين كان هيخلي ترتيب الأسئلة في الصفحة (position) موزّع على جدولين
 CREATE TABLE IF NOT EXISTS quiz_questions (
@@ -1082,6 +1098,18 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_quiz_attempts_one_per_student
     ON quiz_attempts (quiz_id, phone, COALESCE(tafra_student_id, 0));
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz ON quiz_attempts (quiz_id, submitted_at DESC NULLS LAST);
+
+-- إشعار الدرجة على تيليجرام: الوقت مش علم منطقي عشان نعرف امتى اتبعت، والفهرس الجزئي
+-- بيخلي استعلام "مين لسه مستني إشعار" يمشي على الصفوف المستنية بس مهما كبر الجدول
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS result_notified_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_pending_notify
+    ON quiz_attempts (id) WHERE result_notified_at IS NULL;
+
+-- إعادة فتح المحاولة: مين فتحها وامتى وكام مرة. **مفيش Audit Log في المشروع**، والعملية
+-- دي بتمسح إجابات طالب فعليًا — فالتسجيل هنا هو الأثر الوحيد لو حد سأل بعدين
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMPTZ;
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS reopened_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS reopen_count SMALLINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS quiz_answers (
     id SERIAL PRIMARY KEY,

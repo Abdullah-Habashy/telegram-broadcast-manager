@@ -764,12 +764,17 @@
             <div class="row-between" style="margin-bottom:12px; gap:12px; flex-wrap:wrap">
               <b id="quiz-results-title">النتايج</b>
               <div class="row" style="gap:8px; flex-wrap:wrap">
+                <button type="button" class="btn btn-primary btn-sm" id="quiz-stats-btn" style="width:auto">📊 إحصائيات الأسئلة</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-regrade-all-btn" style="width:auto">أعد تصحيح كل المحاولات</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
               </div>
             </div>
             <div id="quiz-attempts-table"><div class="empty-state">بيتحمّل...</div></div>
           </div>
+          <!-- ===== إحصائيات الأسئلة =====
+               مقلوب شاشة المحاولة: دي بتقول "السؤال ده عمل إيه في الكل" مش "الطالب ده
+               عمل إيه" — والترتيب من الأصعب عشان اللي محتاج يتشرح تاني يبان فورًا -->
+          <div class="card" id="quiz-stats" style="display:none"></div>
           <div class="card" id="quiz-attempt-detail" style="display:none"></div>
         </div>
       </section>
@@ -9075,8 +9080,99 @@ ${reply.content}` : reply.content;
       const quiz = quizList.find((item) => item.id === id);
       document.getElementById('quiz-results-title').textContent = quiz ? `نتايج: ${quiz.title}` : 'النتايج';
       document.getElementById('quiz-attempt-detail').style.display = 'none';
+      // لوحة الإحصائيات بتتقفل مع كل اختبار جديد — أرقام اختبار معروضة في صفحة اختبار
+      // تاني غلط مابيبانش، لأن الشكل هو الشكل
+      document.getElementById('quiz-stats').style.display = 'none';
       showQuizView('results');
       loadQuizAttempts();
+    }
+
+    // ---------- إحصائيات الأسئلة ----------
+    // النسبة اللي بيتترتب بيها: متوسط (درجة الطالب ÷ درجة السؤال). السؤال اللي متوسطه
+    // ٣٠٪ معناه إن تلت الفصل بس فهمه — وده اللي المدرّس محتاج يشوفه الأول
+    function statsBar(ratio) {
+      const percent = ratio === null ? 0 : Math.round(ratio * 100);
+      const tone = ratio === null ? 'var(--border)'
+        : percent >= 75 ? 'var(--success)' : percent >= 40 ? 'var(--warning)' : 'var(--danger)';
+      return `<div style="height:8px; border-radius:999px; background:var(--surface-sunken); overflow:hidden; margin:8px 0">
+        <div style="height:100%; width:${percent}%; background:${tone}"></div></div>`;
+    }
+
+    // للاختياري: أنهي اختيار شدّ الطلاب. الاختيار الغلط اللي ماشي عليه ٤٠٪ بيقول إن فيه
+    // فهم غلط بعينه — مش تخمين عشوائي — وده بيتشرح في الحصة مش بيتعاد بنفس الكلام
+    function statsPicks(question) {
+      if (question.kind !== 'mcq' || !question.picks.length) return '';
+      const total = question.picks.reduce((sum, pick) => sum + pick.picks, 0) || 1;
+      const rows = question.picks
+        .slice()
+        .sort((a, b) => b.picks - a.picks)
+        .map((pick) => {
+          const option = pick.option === null || pick.option === undefined
+            ? null : question.options[pick.option];
+          const isRight = pick.option !== null && Number(question.correct_option) === Number(pick.option);
+          const name = pick.option === null || pick.option === undefined
+            ? '<i>ماختاروش</i>'
+            : escapeHtml((option && option.text) || `اختيار ${pick.option + 1}`);
+          return `<div class="row-between" style="gap:10px; padding:3px 0">
+            <span>${isRight ? '✅ ' : ''}${name}</span>
+            <span class="card-desc">${pick.picks} (${Math.round((pick.picks / total) * 100)}%)</span>
+          </div>`;
+        }).join('');
+      return `<div style="margin-top:8px">${rows}</div>`;
+    }
+
+    async function loadQuestionStats() {
+      const panel = document.getElementById('quiz-stats');
+      // الزرار بيفتح ويقفل — الضغطة التانية بتخفيه بدل ما تعيد التحميل
+      if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+      panel.style.display = '';
+      panel.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      try {
+        const data = await api(`/api/quizzes/${quizResultsId}/question-stats`);
+        if (!data.submitted) {
+          panel.innerHTML = '<div class="empty-state">لسه محدش سلّم الاختبار ده.</div>';
+          return;
+        }
+        // الترتيب من الأصعب: السؤال اللي مالوش إجابات خالص بيروح الآخر مش الأول —
+        // نسبته null مش صفر، والفرق بين "محدش جاوبه" و"كلهم غلطوا فيه" مهم
+        const ordered = data.questions.slice().sort((a, b) => {
+          if (a.avg_ratio === null) return 1;
+          if (b.avg_ratio === null) return -1;
+          return a.avg_ratio - b.avg_ratio;
+        });
+        const cards = ordered.map((question) => {
+          const heading = question.is_part
+            ? `سؤال ${question.number} (${escapeHtml(question.label || '')})`
+            : `سؤال ${question.number}`;
+          const percent = question.avg_ratio === null ? '—' : `${Math.round(question.avg_ratio * 100)}%`;
+          const counts = [
+            `صح ${question.full_marks}`,
+            question.partial ? `ناقص ${question.partial}` : '',
+            `غلط ${question.zero}`,
+            question.ungraded ? `مستني مراجعة ${question.ungraded}` : '',
+          ].filter(Boolean).join(' · ');
+          return `
+            <div class="card" style="background:var(--surface-sunken); margin-bottom:10px">
+              <div class="row-between" style="gap:10px; flex-wrap:wrap">
+                <b>${heading}</b>
+                <span class="badge badge-muted">${percent} من الدرجة</span>
+              </div>
+              <div class="card-desc" style="margin-top:4px">${escapeHtml((question.text || '').slice(0, 160))}</div>
+              ${statsBar(question.avg_ratio)}
+              <div class="card-desc">${counts} — من ${question.answered} جاوبوا</div>
+              ${statsPicks(question)}
+            </div>`;
+        }).join('');
+        const average = data.avg_ratio === null ? '—' : `${Math.round(data.avg_ratio * 100)}%`;
+        panel.innerHTML = `
+          <div class="row-between" style="margin-bottom:10px; gap:12px; flex-wrap:wrap">
+            <b>📊 الأسئلة من الأصعب للأسهل</b>
+            <span class="card-desc">${data.submitted} سلّموا · متوسط الورقة ${average}</span>
+          </div>
+          ${cards}`;
+      } catch (error) {
+        panel.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
     }
 
     async function loadQuizAttempts() {
@@ -9265,6 +9361,7 @@ ${reply.content}` : reply.content;
       showQuizView('list');
     });
     document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);
+    document.getElementById('quiz-stats-btn').addEventListener('click', loadQuestionStats);
     document.getElementById('preview-grade-btn')?.addEventListener('click', runGradePreview);
     document.getElementById('save-grading-provider-btn')?.addEventListener('click', saveGradingProvider);
     document.getElementById('preview-clear-btn')?.addEventListener('click', () => {
