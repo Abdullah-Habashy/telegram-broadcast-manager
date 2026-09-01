@@ -9397,6 +9397,7 @@ ${reply.content}` : reply.content;
             <b>${escapeHtml(name)} — ${data.attempt.score === null ? '—' : Math.round(data.attempt.score * 100) / 100} / ${data.attempt.max_score === null ? '—' : data.attempt.max_score}</b>
             <div class="row" style="gap:8px">
               ${needsReview ? `<button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="regradeQuizAttempt(${attemptId})">أعد التصحيح الآلي</button>` : ''}
+              <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="reopenQuizAttempt(${attemptId})">اسمحله يعيد</button>
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="hideQuizAttempt()">إخفاء</button>
             </div>
           </div>
@@ -9438,6 +9439,26 @@ ${reply.content}` : reply.content;
         showToast(result.attempts
           ? `${result.attempts} محاولة دخلت طابور إعادة التصحيح`
           : 'مفيش محاولات مسلّمة تتصحّح');
+        document.getElementById('quiz-attempt-detail').style.display = 'none';
+        loadQuizAttempts();
+      } catch (error) { showToast(error.message); }
+    }
+
+    // بيمسح إجابات الطالب. التأكيد بيقول كده بالنص — الموظف اللي بيدوس الزرار ده
+    // بيحل مشكلة طالب، مش بيجرّب
+    async function reopenQuizAttempt(attemptId) {
+      if (!confirm(`هيمسح إجابات الطالب في الاختبار ده ويسيبه يدخل من الأول بنفس رقمه.
+
+مفيش رجوع في الخطوة دي.
+
+تمام؟`)) return;
+      try {
+        const result = await api(`/api/quizzes/attempts/${attemptId}/reopen`, {
+          method: 'POST', body: JSON.stringify({}),
+        });
+        showToast(result.quiz_is_open
+          ? 'اتفتحت — قوله يفتح نفس الرابط بنفس رقمه'
+          : 'اتفتحت، بس الاختبار نفسه مقفول — افتحه عشان يقدر يدخل');
         document.getElementById('quiz-attempt-detail').style.display = 'none';
         loadQuizAttempts();
       } catch (error) { showToast(error.message); }

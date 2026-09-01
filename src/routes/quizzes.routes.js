@@ -57,5 +57,6 @@ router.get('/:id/coverage', controller.getQuizCoverage);
 router.get('/attempts/:attemptId', controller.getAttempt);
 router.put('/attempts/:attemptId/answers/:questionId', controller.gradeAnswer);
 router.post('/attempts/:attemptId/regrade', controller.regradeAttempt);
+router.post('/attempts/:attemptId/reopen', controller.reopenAttempt);
 
 module.exports = router;

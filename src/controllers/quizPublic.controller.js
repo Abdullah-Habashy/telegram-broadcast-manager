@@ -262,6 +262,19 @@ async function startAttempt(req, res) {
       return res.json(attemptPayload(attempt, quiz, [], await reviewIfReady(attempt, quiz)));
     }
     if (!quiz.is_open) return res.status(403).json({ error: 'الاختبار اتقفل' });
+
+    // محاولة اتفتحت له من تاني: الموظف سابها من غير ميعاد عن قصد، والمؤقت بيبدأ من
+    // اللحظة اللي بيرجع فيها هو — مش من لحظة ما الموظف ضغط الزرار. الشرط في UPDATE
+    // بيمنع دخولين في نفس اللحظة من إنهم يكتبوا ميعادين مختلفين
+    if (!attempt.deadline_at && quiz.time_limit_minutes) {
+      const fresh = new Date(Date.now() + quiz.time_limit_minutes * 60 * 1000);
+      const timed = await pool.query(
+        `UPDATE quiz_attempts SET deadline_at = $1, started_at = NOW()
+         WHERE id = $2 AND deadline_at IS NULL
+         RETURNING deadline_at`, [fresh, attempt.id]);
+      attempt.deadline_at = timed.rows.length ? timed.rows[0].deadline_at : attempt.deadline_at;
+    }
+
     const questions = await loadQuestionsForStudent(quiz.id);
     attempt.saved = await loadSavedAnswers(attempt.id);
     return res.json(attemptPayload(attempt, quiz, questions));

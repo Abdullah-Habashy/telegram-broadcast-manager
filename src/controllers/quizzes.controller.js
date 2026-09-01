@@ -786,6 +786,53 @@ async function regradeAttempt(req, res) {
   res.json(result);
 }
 
+// ---------- إعادة فتح المحاولة ----------
+//
+// **المحاولة واحدة لكل طالب، ومفيش مسار كان بيفكّها.** الطالب اللي سلّم بالغلط، أو دخل
+// برقم غلط، أو النت قطع عليه في النص — مقفول نهائيًا ومحدش يقدر يساعده، وده بيتحوّل
+// لتذكرة دعم في كل مرة. الزرار ده بيفكّها.
+//
+// **بيمسح إجابات الطالب فعلًا.** مفيش رجوع، وعشان كده بيتسجّل مين فتحها وامتى وكام مرة —
+// مفيش Audit Log في المشروع، والتلات أعمدة دي هي الأثر الوحيد لو حد سأل بعدين.
+//
+// الوقت بيترجّع NULL مش NOW+المدة: الموظف بيفتحها دلوقتي والطالب ممكن يدخل بكرة، فحساب
+// الميعاد من دلوقتي معناه إنه يلاقي الوقت خلص. startAttempt بيحسبه أول ما يدخل فعلًا
+async function reopenAttempt(req, res) {
+  const attemptId = Number(req.params.attemptId);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(
+      `SELECT a.id, a.quiz_id, q.is_open FROM quiz_attempts a
+       JOIN quizzes q ON q.id = a.quiz_id WHERE a.id = $1 FOR UPDATE`, [attemptId]);
+    if (!existing.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'المحاولة مش موجودة' });
+    }
+    const deleted = await client.query(
+      'DELETE FROM quiz_answers WHERE attempt_id = $1', [attemptId]);
+    await client.query(
+      `UPDATE quiz_attempts
+       SET submitted_at = NULL, score = NULL, max_score = NULL, grading_status = 'pending',
+           grading_error = NULL, is_late = FALSE, deadline_at = NULL, started_at = NOW(),
+           result_notified_at = NULL,
+           reopened_at = NOW(), reopened_by = $2, reopen_count = reopen_count + 1
+       WHERE id = $1`, [attemptId, req.session.userId]);
+    await client.query('COMMIT');
+    res.json({
+      ok: true,
+      deleted_answers: deleted.rowCount,
+      // الاختبار المقفول رابطه مابيفتحش أصلًا، فالمحاولة المفتوحة مالهاش لازمة لحد ما يتفتح
+      quiz_is_open: existing.rows[0].is_open,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // إعادة تصحيح **كل** محاولات الاختبار — بعد ما الموظف يعدّل إجابة مرجعية أو تعليمات تصحيح
 // أو الإجابة الصح في سؤال اختياري. بيرد فورًا بعدد اللي دخل الطابور، والتصحيح بيمشي ورا.
 async function regradeQuiz(req, res) {
@@ -807,6 +854,6 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
-  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps,
+  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
 };
