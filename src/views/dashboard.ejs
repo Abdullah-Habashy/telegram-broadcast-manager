@@ -835,18 +835,25 @@
           </div>
 
           <div class="card">
-            <div class="row-between" style="margin-bottom:12px">
-              <b>الأسئلة</b>
-              <div class="row" style="gap:8px">
-                <button type="button" class="btn btn-ghost btn-sm" id="add-mcq-btn" style="width:auto">+ سؤال اختياري</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="add-essay-btn" style="width:auto">+ سؤال مقالي</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="add-group-btn" style="width:auto">+ سؤال برأس وفروع</button>
+            <!-- ===== شريط أدوات المحرر =====
+                 الإضافة والحفظ في مكان واحد ولاصقين فوق: محرر ٢٥ سؤال بيبقى أطول من
+                 الشاشة بكتير، وقبل كده زراير الإضافة كانت فوق وزرار الحفظ تحت — يعني
+                 كل إضافة سؤال بتحتاج سكرول لفوق، وكل حفظ سكرول لتحت -->
+            <div class="quiz-editor-bar">
+              <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap">
+                <b>الأسئلة</b>
+                <span class="badge badge-muted" id="quiz-question-count">مفيش أسئلة</span>
+              </div>
+              <div class="row" style="gap:8px; flex-wrap:wrap">
+                <button type="button" class="btn btn-ghost btn-sm" id="add-mcq-btn" style="width:auto">+ اختياري</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="add-essay-btn" style="width:auto">+ مقالي</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="add-group-btn" style="width:auto">+ رأس وفروع</button>
+                <button type="button" class="btn btn-primary btn-sm" id="save-quiz-btn" style="width:auto">💾 حفظ الاختبار</button>
               </div>
             </div>
             <div id="quiz-questions-editor"><div class="empty-state">ضيف أول سؤال</div></div>
-            <div class="row-between" style="margin-top:14px; gap:12px; flex-wrap:wrap">
+            <div class="row" style="margin-top:14px">
               <span class="card-desc" id="quiz-editor-note"></span>
-              <button type="button" class="btn btn-primary btn-sm" id="save-quiz-btn" style="width:auto">حفظ الاختبار</button>
             </div>
           </div>
         </div>
@@ -8959,7 +8966,27 @@ ${reply.content}` : reply.content;
       return Number.isInteger(partIndex) ? question.parts[partIndex] : question;
     }
 
+    // العدّاد بيتحدّث مع كل رسم: الدرجة الكلية هي اللي بتفرق للمدرّس، مش عدد الصفوف —
+    // الرأس مالوش درجة وفروعه هي اللي بتتجمع
+    function updateQuizEditorCount() {
+      const totals = quizEditorQuestions.reduce((sum, question) => {
+        if (question.kind === 'group') {
+          return {
+            count: sum.count + (question.parts || []).length,
+            points: sum.points + (question.parts || []).reduce((p, part) => p + (Number(part.points) || 0), 0),
+          };
+        }
+        return { count: sum.count + 1, points: sum.points + (Number(question.points) || 0) };
+      }, { count: 0, points: 0 });
+      const badge = document.getElementById('quiz-question-count');
+      badge.textContent = totals.count
+        ? `${totals.count} سؤال · ${Math.round(totals.points * 100) / 100} درجة`
+        : 'مفيش أسئلة';
+    }
+
     function renderQuizQuestions() {
+      // قبل الخروج المبكر: المحرر الفاضي محتاج يوري "مفيش أسئلة" برضه
+      updateQuizEditorCount();
       const box = document.getElementById('quiz-questions-editor');
       if (!quizEditorQuestions.length) {
         box.innerHTML = '<div class="empty-state">ضيف أول سؤال</div>';

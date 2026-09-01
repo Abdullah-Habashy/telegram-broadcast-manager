@@ -1132,3 +1132,17 @@ th.perf-sorted { color: var(--primary); }
   font-family: inherit; font-size: 11.5px;
 }
 .quick-reply-scope.on { border-style: solid; border-color: var(--primary); color: var(--primary); background: var(--primary-tint); }
+
+/* ---------- شريط أدوات محرر الاختبار ---------- */
+/* لاصق فوق طول المحرر: محرر ٢٥ سؤال أطول من الشاشة بمراحل، وزراير الإضافة فوق وزرار
+   الحفظ تحت معناهم سكرول في الاتجاهين مع كل خطوة.
+   الهوامش السالبة بتساوي padding الكارت (22px) عشان الشريط يوصل لحرف الكارت ويغطي
+   عرضه كله لما يلزق — من غيرها بيفضل فيه شريط أبيض من الجنب والمحتوى بيعدّي منه */
+.quiz-editor-bar {
+  position: sticky; top: 0; z-index: 4;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap;
+  margin: -22px -22px 14px; padding: 14px 22px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
