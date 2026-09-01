@@ -8900,7 +8900,7 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-time-limit').value = '';
       document.getElementById('quiz-show-score').checked = true;
       document.getElementById('quiz-show-answers').checked = true;
-      activeQuizQuestion = 0;
+      activeQuizQuestion = null;
       document.getElementById('quiz-bootcamp').value = '';
       document.getElementById('quiz-max-attempts').value = 1;
       document.getElementById('quiz-answers-after-close').checked = false;
@@ -8941,6 +8941,8 @@ ${reply.content}` : reply.content;
         document.getElementById('quiz-show-score').checked = quiz.show_score_to_student;
         document.getElementById('quiz-show-answers').checked = quiz.show_answers_to_student;
         document.getElementById('quiz-bootcamp').value = quiz.target_bootcamp_id || '';
+        // اختبار موجود بيتفتح على القايمة الكاملة: الموظف جاي يراجع مش يكتب من الأول
+        activeQuizQuestion = null;
         document.getElementById('quiz-max-attempts').value = quiz.max_attempts || 1;
         document.getElementById('quiz-answers-after-close').checked = quiz.answers_after_close;
         document.getElementById('quiz-shuffle-questions').checked = quiz.shuffle_questions;
@@ -9035,7 +9037,11 @@ ${reply.content}` : reply.content;
       const nav = document.getElementById('quiz-editor-nav');
       // سؤال واحد؟ المربعات مالهاش لازمة وبتاخد سطر من غير فايدة
       if (quizEditorQuestions.length < 2) { nav.innerHTML = ''; return; }
-      nav.innerHTML = quizEditorQuestions.map((question, index) => {
+      // **مربع "الكل" لازم يفضل موجود.** العرض الافتراضي سؤال واحد، ومن غير طريقة
+      // ترجع بيها للقايمة الكاملة الموظف مايقدرش يراجع الاختبار قبل ما يحفظه
+      const all = `<button type="button" class="quiz-nav-chip wide${activeQuizQuestion === null ? ' active' : ''}"
+                     data-goto="all" title="اعرض كل الأسئلة">الكل</button>`;
+      nav.innerHTML = all + quizEditorQuestions.map((question, index) => {
         const kind = question.kind === 'group' ? 'رأس وفروع'
           : question.kind === 'mcq' ? 'اختياري' : 'مقالي';
         const incomplete = quizQuestionIsIncomplete(question);
@@ -9045,11 +9051,22 @@ ${reply.content}` : reply.content;
       }).join('');
     }
 
+    // **الإخفاء بالعرض مش بالحذف من الصفحة.** المحرر بيقرا القيم من الـDOM
+    // (readQuizEditor)، فشيل السؤال من الصفحة معناه إن اللي اتكتب فيه يضيع. display:none
+    // بيخفيه وهو لسه موجود، فالحفظ بياخد الأسئلة كلها مش المعروض بس
+    function applyQuizQuestionFilter() {
+      document.querySelectorAll('#quiz-questions-editor .quiz-question').forEach((card) => {
+        const index = Number(card.dataset.path);
+        card.style.display = (activeQuizQuestion === null || index === activeQuizQuestion) ? '' : 'none';
+      });
+    }
+
     function setActiveQuizQuestion(index) {
       if (activeQuizQuestion === index) return;
       activeQuizQuestion = index;
       document.querySelectorAll('#quiz-editor-nav .quiz-nav-chip').forEach((chip) => {
-        chip.classList.toggle('active', Number(chip.dataset.goto) === index);
+        const isAll = chip.dataset.goto === 'all';
+        chip.classList.toggle('active', isAll ? index === null : Number(chip.dataset.goto) === index);
       });
     }
 
@@ -9058,10 +9075,13 @@ ${reply.content}` : reply.content;
     document.getElementById('quiz-editor-nav').addEventListener('click', (event) => {
       const chip = event.target.closest('[data-goto]');
       if (!chip) return;
-      const index = Number(chip.dataset.goto);
-      setActiveQuizQuestion(index);
-      const card = document.querySelector(`.quiz-question[data-path="${index}"]`);
-      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // القيم اللي اتكتبت لازم تتقرا قبل أي إخفاء — الإخفاء نفسه مش بيمسح، بس أي
+      // إعادة رسم بعده بتبني من المصفوفة، ولو مقريناهاش الكتابة الأخيرة بتضيع
+      readQuizEditor();
+      setActiveQuizQuestion(chip.dataset.goto === 'all' ? null : Number(chip.dataset.goto));
+      applyQuizQuestionFilter();
+      // السكرول لفوق مش للسؤال: هو الوحيد الظاهر أصلًا، والشريط لازم يفضل في الوش
+      document.querySelector('.quiz-editor-bar')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
     // الوقوف جوه خانة بيعلّم سؤالها كمان — الأدمن اللي بيكتب في سؤال ١٢ عايز يشوف إنه
@@ -9117,6 +9137,7 @@ ${reply.content}` : reply.content;
             ${parts}
           </div>`;
       }).join('');
+      applyQuizQuestionFilter();
     }
 
     // نفس الدالة بترسم السؤال والفرع — الفرق بس إن الفرع بياخد خانة حرف ورأس أصغر
@@ -9239,6 +9260,8 @@ ${reply.content}` : reply.content;
     function addQuizQuestion(kind) {
       readQuizEditor();
       quizEditorQuestions.push(blankQuestion(kind));
+      // السؤال الجديد هو اللي بيتعرض على طول — الموظف ضغط "ضيف" عشان يكتب فيه
+      activeQuizQuestion = quizEditorQuestions.length - 1;
       renderQuizQuestions();
     }
 
@@ -9251,6 +9274,15 @@ ${reply.content}` : reply.content;
     function removeQuizQuestion(index) {
       readQuizEditor();
       quizEditorQuestions.splice(index, 1);
+      // **الحذف بيزحلق كل الأرقام اللي بعده.** حذف سؤال ٢ والعلامة على ٥ معناه إن ٥
+      // بقى سؤال تاني خالص — فالعلامة لازم تنزل معاه. ولو المحذوف هو المعروض نفسه،
+      // بتفضل مكانها عشان تقع على اللي جه بدله
+      if (activeQuizQuestion !== null) {
+        if (index < activeQuizQuestion) activeQuizQuestion -= 1;
+        if (activeQuizQuestion >= quizEditorQuestions.length) {
+          activeQuizQuestion = quizEditorQuestions.length ? quizEditorQuestions.length - 1 : null;
+        }
+      }
       renderQuizQuestions();
     }
 
@@ -9269,6 +9301,9 @@ ${reply.content}` : reply.content;
       if (target < 0 || target >= quizEditorQuestions.length) return;
       const [moved] = quizEditorQuestions.splice(index, 1);
       quizEditorQuestions.splice(target, 0, moved);
+      // العلامة بتتبع السؤال اللي اتحرّك مش مكانه القديم — غير كده الموظف بينقل سؤال
+      // ويلاقي نفسه بيبص على سؤال تاني
+      if (activeQuizQuestion === index) activeQuizQuestion = target;
       renderQuizQuestions();
     }
 

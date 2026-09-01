@@ -1161,6 +1161,8 @@ th.perf-sorted { color: var(--primary); }
   transition: background .15s, color .15s, border-color .15s;
 }
 .quiz-nav-chip:hover { border-color: var(--primary); }
+/* مربع "الكل" أعرض عشان يبان إنه مش رقم سؤال */
+.quiz-nav-chip.wide { min-width: 48px; }
 /* أصفر = ناقص حاجة تمنع الحفظ أو تعطّل التصحيح الآلي، مش غلط */
 .quiz-nav-chip.incomplete { border-color: var(--warning); color: var(--warning); }
 /* **المتعلّم بيكسب اللونين.** لو السؤال اللي إنت واقف فيه ناقص برضه، اللون الأزرق
