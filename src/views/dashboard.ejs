@@ -765,6 +765,7 @@
               <b id="quiz-results-title">النتايج</b>
               <div class="row" style="gap:8px; flex-wrap:wrap">
                 <button type="button" class="btn btn-primary btn-sm" id="quiz-stats-btn" style="width:auto">📊 إحصائيات الأسئلة</button>
+                <a class="btn btn-ghost btn-sm" id="quiz-export-btn" style="width:auto; text-decoration:none" href="#">⬇️ تصدير Excel</a>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-regrade-all-btn" style="width:auto">أعد تصحيح كل المحاولات</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
               </div>
@@ -9080,6 +9081,9 @@ ${reply.content}` : reply.content;
       const quiz = quizList.find((item) => item.id === id);
       document.getElementById('quiz-results-title').textContent = quiz ? `نتايج: ${quiz.title}` : 'النتايج';
       document.getElementById('quiz-attempt-detail').style.display = 'none';
+      // التصدير رابط عادي مش نداء fetch: تنزيل ملف من fetch محتاج blob وanchor مؤقت،
+      // والمتصفح بيعمل الشغل ده لوحده لو الرابط <a> والسيرفر باعت Content-Disposition
+      document.getElementById('quiz-export-btn').href = `/api/quizzes/${id}/export`;
       // لوحة الإحصائيات بتتقفل مع كل اختبار جديد — أرقام اختبار معروضة في صفحة اختبار
       // تاني غلط مابيبانش، لأن الشكل هو الشكل
       document.getElementById('quiz-stats').style.display = 'none';

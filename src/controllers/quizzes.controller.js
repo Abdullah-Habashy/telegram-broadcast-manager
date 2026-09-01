@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQueue } = require('../utils/quizScoring');
 const { gradeEssayAnswer } = require('../utils/quizGrading');
 const { listProviders, PROVIDERS } = require('../utils/aiProviders');
+const { buildQuizBuffer } = require('../utils/quizExport');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -516,6 +517,53 @@ async function getAttempt(req, res) {
   });
 }
 
+// ---------- تصدير النتايج ----------
+//
+// تلات استعلامات مش جوين واحد: الجوين بين المحاولات والأسئلة والإجابات بيرجّع
+// (طلاب × أسئلة) صف، وبناء الشيت بيحتاجهم متجمّعين برضه — فالتجميع في الجافاسكريبت
+// أرخص من تكرار بيانات كل طالب على كل سؤال في الشبكة
+async function exportAttempts(req, res) {
+  const quizId = Number(req.params.id);
+  const quizResult = await pool.query('SELECT id, title FROM quizzes WHERE id = $1', [quizId]);
+  const quiz = quizResult.rows[0];
+  if (!quiz) return res.status(404).json({ error: 'الاختبار مش موجود' });
+
+  const [questions, attempts, answers] = await Promise.all([
+    pool.query(
+      `SELECT q.id, q.parent_id, q.label, q.kind, q.text, q.points, q.options
+       FROM quiz_questions q
+       LEFT JOIN quiz_questions p ON p.id = q.parent_id
+       WHERE q.quiz_id = $1
+       ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
+      [quizId]),
+    pool.query(
+      `SELECT a.id, a.student_name, a.phone, a.tafra_student_id, a.started_at, a.submitted_at,
+              a.is_late, a.score, a.max_score, a.grading_status, s.name AS platform_name
+       FROM quiz_attempts a
+       LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
+       WHERE a.quiz_id = $1
+       ORDER BY a.score DESC NULLS LAST, a.submitted_at`, [quizId]),
+    pool.query(
+      `SELECT an.attempt_id, an.question_id, an.selected_option, an.essay_text,
+              an.awarded_points, an.ai_reason
+       FROM quiz_answers an
+       JOIN quiz_attempts a ON a.id = an.attempt_id
+       WHERE a.quiz_id = $1`, [quizId]),
+  ]);
+
+  const buffer = await buildQuizBuffer({
+    quiz, questions: questions.rows, attempts: attempts.rows, answers: answers.rows,
+  });
+
+  // اسم الملف بيتنضّف من كل حاجة ممكن تكسر ترويسة HTTP أو اسم ملف على ويندوز — عنوان
+  // الاختبار بيكتبه الموظف وممكن يكون فيه أي حاجة
+  const safeTitle = String(quiz.title).replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 60) || 'quiz';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition',
+    `attachment; filename*=UTF-8''${encodeURIComponent(safeTitle)}.xlsx`);
+  res.send(buffer);
+}
+
 // ---------- إحصائيات على مستوى السؤال ----------
 //
 // **ده مقلوب شاشة المحاولة.** المحاولة بتقول "الطالب ده عمل إيه"، ودي بتقول "السؤال ده
@@ -670,6 +718,6 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
-  getQuestionStats,
+  getQuestionStats, exportAttempts,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
 };
