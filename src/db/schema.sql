@@ -950,6 +950,14 @@ CREATE INDEX IF NOT EXISTS idx_call_logs_follow_up ON call_logs (next_follow_up_
 -- نموذج تصحيح الأسئلة المقالية. **منفصل عن ai_provider بتاع الرد الآلي عن قصد**: الرد الآلي
 -- بيتكلم مع طالب ومحتاج أخف وأسرع، والتصحيح بيحط درجة في ورقة وبيتحاسب عليها — فاللي يختار
 -- Haiku للرد مش لازم يبقى مجبر يختاره للتصحيح. فاضي أو قيمة مش معروفة = يرجع لـ ai_provider
+-- **وضع التصحيح: فوري ولا طابور.**
+-- التصحيح أصلًا بيمشي في طابور في الحالتين — الفرق إن "فوري" بيشغّل الطابور في نفس
+-- لحظة التسليم عشان الطالب ياخد درجته في ثواني، و"طابور" بيسيب الكرون (كل دقيقة)
+-- يلقطها. وقت الزحمة، آلاف التسليمات في نفس النص ساعة معناها إن كل تسليم بيحاول
+-- يشغّل الطابور جنب خدمة الطلبات — والوضع التاني بيشيل الحمل ده عن أسوأ لحظة في اليوم.
+INSERT INTO settings (key, value) VALUES ('quiz_grading_mode', 'instant')
+ON CONFLICT (key) DO NOTHING;
+
 INSERT INTO settings (key, value) VALUES ('quiz_grading_provider', 'anthropic')
 ON CONFLICT (key) DO NOTHING;
 

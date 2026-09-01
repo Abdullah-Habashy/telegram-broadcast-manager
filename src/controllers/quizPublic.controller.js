@@ -457,10 +457,33 @@ async function submitAttempt(req, res) {
      WHERE id = $2`, [late, attempt.id]);
 
   // بيبدأ الطابور فورًا بعد ما الرد يروح — الطالب الوحيد على السيرفر بياخد درجته في ثواني
-  // زي الأول، والزحمة هي اللي بتخلي الطابور يطول. الكرون بيلقط الباقي في كل الحالات
-  kickGradingQueue();
+  // زي الأول، والزحمة هي اللي بتخلي الطابور يطول. الكرون بيلقط الباقي في كل الحالات.
+  //
+  // **والأدمن يقدر يقفل الجزء ده** (quiz_grading_mode = 'queued') وقت الامتحانات الكبيرة:
+  // الورقة بتتسجّل وتقفل زي ما هي، والتصحيح بيستنى الكرون بدل ما يزاحم خدمة الطلبات في
+  // أسوأ لحظة. الطالب وقتها بيشوف "بنصحّح" لحد دقيقة بدل ثواني
+  if (await gradingIsInstant()) kickGradingQueue();
 
   res.json({ state: 'grading', score: null, max_score: null, score_hidden: !attempt.show_score_to_student });
+}
+
+// **الوضع بيتقرا مكاشًا مش مع كل تسليم.** التسليم هو بالظبط اللحظة اللي فيها آلاف
+// الطلاب مع بعض، واستعلام إعداد زيادة في اللحظة دي بيضيف على الحمل اللي إحنا بنحاول
+// نخفّفه. دقيقة كاش: الأدمن اللي بيغيّر الوضع بيستنى دقيقة، والسيرفر بيستريح.
+//
+// وفشل قراءة الإعداد مايوقفش التسليم — بنفضل على آخر قيمة نعرفها، وافتراضيًا الفوري
+const GRADING_MODE_TTL_MS = 60 * 1000;
+let gradingMode = { value: 'instant', at: 0 };
+
+async function gradingIsInstant() {
+  if (Date.now() - gradingMode.at < GRADING_MODE_TTL_MS) return gradingMode.value === 'instant';
+  try {
+    const { rows } = await pool.query("SELECT value FROM settings WHERE key = 'quiz_grading_mode'");
+    gradingMode = { value: rows[0]?.value === 'queued' ? 'queued' : 'instant', at: Date.now() };
+  } catch (error) {
+    gradingMode = { value: gradingMode.value, at: Date.now() };
+  }
+  return gradingMode.value === 'instant';
 }
 
 // نداء واحد شغّال في المرة من المسار ده — الكرون هو اللي بيضمن الاستمرار، وده بس
@@ -508,4 +531,7 @@ async function getResult(req, res) {
   });
 }
 
-module.exports = { renderQuiz, startAttempt, saveProgress, submitAttempt, getResult, normalizePhone, seededShuffle };
+module.exports = {
+  renderQuiz, startAttempt, saveProgress, submitAttempt, getResult,
+  normalizePhone, seededShuffle, gradingIsInstant,
+};

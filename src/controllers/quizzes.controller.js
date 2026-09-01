@@ -4,6 +4,7 @@ const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQue
 const { gradeEssayAnswer } = require('../utils/quizGrading');
 const { listProviders, PROVIDERS } = require('../utils/aiProviders');
 const { buildQuizBuffer } = require('../utils/quizExport');
+const { queueLength } = require('../utils/quizScoring');
 const { parseQuizDocument } = require('../utils/quizDocImport');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
@@ -403,14 +404,28 @@ async function saveQuestions(req, res) {
 // منفصل عن نموذج الرد الآلي في تبويب الذكاء الصناعي: ده بيحط درجة في ورقة، وده بيتكلم
 // مع طالب. المزوّد اللي مفتاحه مش مضبوط على السيرفر بيرجع available: false والواجهة
 // بتقفله بدل ما الموظف يختاره ويكتشف الفشل وقت تصحيح أول امتحان
+// وضع التصحيح: أي قيمة مش 'queued' معناها فوري — الافتراضي بيكسب لو الصف اتمسح أو
+// اتكتب فيه حاجة غريبة، لأن الفوري هو السلوك اللي الطلاب متعوّدين عليه
+function normalizeGradingMode(value) {
+  return value === 'queued' ? 'queued' : 'instant';
+}
+
 async function getGradingProviders(req, res) {
-  const { rows } = await pool.query(
-    "SELECT key, value FROM settings WHERE key IN ('quiz_grading_provider', 'ai_provider')");
-  const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  const [settingsResult, queued] = await Promise.all([
+    pool.query("SELECT key, value FROM settings WHERE key IN ('quiz_grading_provider', 'ai_provider', 'quiz_grading_mode')"),
+    // طول الطابور بيتعرض جنب الاختيار: الأدمن اللي بيقرر الوضع محتاج يشوف أثره
+    queueLength().catch(() => null),
+  ]);
+  const settings = Object.fromEntries(settingsResult.rows.map((row) => [row.key, row.value]));
   const chosen = settings.quiz_grading_provider;
   const current = chosen && PROVIDERS[chosen] ? chosen
     : (settings.ai_provider && PROVIDERS[settings.ai_provider] ? settings.ai_provider : 'anthropic');
-  res.json({ providers: listProviders(), current });
+  res.json({
+    providers: listProviders(),
+    current,
+    mode: normalizeGradingMode(settings.quiz_grading_mode),
+    queue_length: queued,
+  });
 }
 
 async function setGradingProvider(req, res) {
@@ -421,10 +436,13 @@ async function setGradingProvider(req, res) {
   if (!PROVIDERS[provider].available()) {
     return res.status(400).json({ error: `مفتاح ${PROVIDERS[provider].label} مش مضبوط على السيرفر` });
   }
+  // الوضع بيتحفظ مع المزوّد لأن الاتنين في نفس الكارت وبيتاخدوا بنفس الضغطة — زرارين
+  // منفصلين لإعدادين جنب بعض بيخلّي الأدمن يغيّر واحد ويسيب التاني من غير ما ياخد باله
+  const mode = normalizeGradingMode(req.body?.mode);
   await pool.query(
-    `INSERT INTO settings (key, value) VALUES ('quiz_grading_provider', $1)
-     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [provider]);
-  res.json({ ok: true, provider, label: PROVIDERS[provider].label });
+    `INSERT INTO settings (key, value) VALUES ('quiz_grading_provider', $1), ('quiz_grading_mode', $2)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [provider, mode]);
+  res.json({ ok: true, provider, mode, label: PROVIDERS[provider].label });
 }
 
 // ---------- تجربة التصحيح قبل الإرسال ----------

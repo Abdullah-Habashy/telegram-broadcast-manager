@@ -674,10 +674,16 @@
               </div>
               <div class="row" style="gap:8px; flex-wrap:wrap">
                 <select id="grading-provider-select" class="compact-select" style="min-width:230px"></select>
+                <%# وضع التصحيح جنب المزوّد: الاتنين قرار على مستوى المنصة وبيتحفظوا بنفس الضغطة %>
+                <select id="grading-mode-select" class="compact-select" style="min-width:230px">
+                  <option value="instant">تصحيح فوري — الدرجة في ثواني</option>
+                  <option value="queued">طابور — أخف على السيرفر وقت الزحمة</option>
+                </select>
                 <button type="button" class="btn btn-primary btn-sm" id="save-grading-provider-btn" style="width:auto">اعتمد</button>
               </div>
             </div>
             <p class="card-desc" id="grading-provider-state" style="margin-bottom:0">بيتحمّل...</p>
+            <p class="card-desc" id="grading-mode-help" style="margin:6px 0 0"></p>
           </div>
 
           <!-- ===== خانة تجريب التصحيح =====
@@ -8685,17 +8691,29 @@ ${reply.content}` : reply.content;
         const preview = document.getElementById('preview-provider');
         preview.innerHTML = options;
         preview.value = data.current;
-        renderGradingProviderState(data.current);
+        document.getElementById('grading-mode-select').value = data.mode || 'instant';
+        renderGradingProviderState(data.current, data.mode, data.queue_length);
       } catch (error) {
         state.textContent = error.message;
       }
     }
 
-    function renderGradingProviderState(current) {
+    // شرح الوضع بيتعرض تحت الاختيار مش جواه: الأدمن اللي بيقرر ده محتاج يعرف الطالب
+    // هيشوف إيه، والفرق بين الوضعين مالوش معنى من غير الجملة دي
+    const GRADING_MODE_HELP = {
+      instant: 'الطالب بيسلّم والتصحيح بيبدأ في نفس اللحظة — بياخد درجته في ثواني. ده المناسب في الأيام العادية.',
+      queued: 'الطالب بيسلّم وإجاباته بتتسجّل فورًا، والتصحيح بيمشي في الخلفية كل دقيقة. الدرجة بتتأخر لحد دقيقة، والسيرفر بيرتاح وقت الامتحانات الكبيرة.',
+    };
+
+    function renderGradingProviderState(current, mode, queued) {
       const provider = gradingProviders.find((item) => item.key === current);
       document.getElementById('grading-provider-state').textContent = provider
         ? `المعتمد دلوقتي: ${provider.label} (${provider.model})`
         : 'مفيش نموذج معتمد.';
+      const help = GRADING_MODE_HELP[mode === 'queued' ? 'queued' : 'instant'];
+      // طول الطابور بيتعرض لما يكون فيه ورق مستني فعلًا — الصفر مش معلومة
+      const waiting = queued ? ` — مستني في الطابور دلوقتي: ${queued} ورقة.` : '';
+      document.getElementById('grading-mode-help').textContent = help + waiting;
     }
 
     async function saveGradingProvider() {
@@ -8703,11 +8721,15 @@ ${reply.content}` : reply.content;
       button.disabled = true;
       try {
         const provider = document.getElementById('grading-provider-select').value;
+        const mode = document.getElementById('grading-mode-select').value;
         const result = await api('/api/quizzes/grading-provider', {
-          method: 'POST', body: JSON.stringify({ provider }),
+          method: 'POST', body: JSON.stringify({ provider, mode }),
         });
-        showToast(`التصحيح بقى على ${result.label}`);
-        renderGradingProviderState(provider);
+        // **الإعداد بيتقرا مكاشًا على السيرفر لمدة دقيقة**، فالتغيير مش بيسري لحظيًا على
+        // التسليمات. الرسالة بتقول كده صراحة بدل ما الأدمن يجرّب ويستغرب.
+        // ورسالة واحدة مش اتنين: الـ toast التاني بيمسح الأول قبل ما يتقرا
+        showToast(`${result.label} · ${result.mode === 'queued' ? 'طابور' : 'فوري'} — بيسري خلال دقيقة`);
+        renderGradingProviderState(provider, result.mode, null);
       } catch (error) {
         showToast(error.message);
       } finally {
