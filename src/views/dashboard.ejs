@@ -766,6 +766,58 @@
             </label>
           </div>
 
+          <!-- ===== استيراد من ملف Word =====
+               التيم بيكتب الأسئلة في Word أصلًا، والنقل اليدوي هو الشغل الضايع.
+               الاستيراد بيملى المحرر بس — الحفظ لسه بإيد الموظف بعد ما يراجع -->
+          <div class="card">
+            <div class="row-between" style="margin-bottom:6px">
+              <b>📄 استيراد الأسئلة من ملف Word</b>
+            </div>
+            <p class="card-desc" style="margin-top:0">
+              اكتب في الملف كل سؤال في سطر يبدأ بـ <code>س1)</code>، وإجابته <code>ج1)</code>، ودرجته <code>د1)</code>.
+              الأسئلة بتتحط في المحرر تحت وإنت اللي بتحفظ — مافيش حاجة بتتسجّل من غير ما تشوفها.
+            </p>
+            <details style="margin-bottom:10px">
+              <summary class="card-desc" style="cursor:pointer">شكل الملف بالتفصيل</summary>
+              <pre dir="rtl" style="white-space:pre-wrap; background:var(--surface-sunken); padding:12px; border-radius:8px; margin-top:8px; font-size:13px; line-height:2">س1) عرّف عملية البناء الضوئي واذكر نواتجها.
+ج1) عملية بتحوّل الضوء لطاقة كيميائية، ونواتجها الجلوكوز والأكسجين.
+د1) 3
+ت1) المطلوب التعريف والنواتج — التعريف لوحده نص الدرجة   ← اختياري
+
+س2) أنهي دي عاصمة مصر؟
+أ) الإسكندرية
+ب) القاهرة
+ج) أسوان
+ج2) ب                                                    ← حرف الإجابة الصح
+د2) 1
+
+س3) اقرا الفقرة وجاوب:                                    ← سؤال بفروع
+س3أ) إيه سبب الظاهرة؟
+ج3أ) ارتفاع الحرارة.
+د3أ) 2
+س3ب) إزاي نمنعها؟
+ج3ب) بتقليل الانبعاثات.
+د3ب) 3</pre>
+              <ul class="card-desc" style="margin:8px 0 0; padding-inline-start:18px; line-height:2">
+                <li>الأرقام العربية والإنجليزية الاتنين شغّالين: <code>س١</code> زي <code>س1</code>.</li>
+                <li>الفاصل ممكن يكون <code>)</code> أو <code>:</code> أو <code>-</code> أو <code>.</code> أو مسافة بس.</li>
+                <li><code>ج)</code> من غير رقم = اختيار تالت. <code>ج2)</code> برقم = إجابة السؤال التاني. الرقم هو الفارق.</li>
+                <li>السؤال اللي فيه اختيارين أو أكتر بيبقى اختياري، واللي مالوش بيبقى مقالي.</li>
+                <li>السؤال اللي مالوش <code>د</code> بياخد درجة واحدة، وهيتقالك.</li>
+              </ul>
+            </details>
+            <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
+              <input type="file" id="quiz-doc-file" accept=".docx" style="max-width:280px" />
+              <button type="button" class="btn btn-primary btn-sm" id="quiz-doc-file-btn" style="width:auto">اقرا الملف</button>
+            </div>
+            <details style="margin-top:10px">
+              <summary class="card-desc" style="cursor:pointer">أو الصق النص بدل الملف</summary>
+              <div class="field" style="margin-top:8px"><textarea id="quiz-doc-text" rows="6" placeholder="الصق الأسئلة بنفس الشكل..."></textarea></div>
+              <button type="button" class="btn btn-ghost btn-sm" id="quiz-doc-text-btn" style="width:auto">اقرا النص</button>
+            </details>
+            <div id="quiz-doc-result" style="margin-top:10px"></div>
+          </div>
+
           <div class="card">
             <div class="row-between" style="margin-bottom:12px">
               <b>الأسئلة</b>
@@ -8699,6 +8751,83 @@ ${reply.content}` : reply.content;
       box.insertBefore(card, box.firstChild);
     }
 
+    // ---------- استيراد من ملف Word ----------
+    //
+    // **بيضيف مابيمسحش.** الموظف ممكن يكون كاتب أسئلة بإيده قبل ما يستورد، ومسحها من
+    // غير سؤال أسوأ بكتير من إنه يشيل المكرّر بإيده.
+    //
+    // التحذيرات بتتعرض كلها ومابتمنعش الإضافة — الملف اللي فيه سؤال مالوش درجة لسه
+    // نافع، والموظف بيصلّحه في المحرر تحت قبل ما يحفظ
+    async function applyParsedQuestions(payload) {
+      const box = document.getElementById('quiz-doc-result');
+      const shape = (question) => ({
+        kind: question.kind,
+        label: question.label || '',
+        text: question.text || '',
+        image: question.image || null,
+        points: Number(question.points),
+        options: question.kind === 'mcq' ? (question.options || []) : [],
+        correct_option: question.correct_option,
+        reference_answer: question.reference_answer || '',
+        grading_notes: question.grading_notes || '',
+        parts: (question.parts || []).map((part) => shape(part)),
+      });
+      quizEditorQuestions = quizEditorQuestions.concat(payload.questions.map(shape));
+      renderQuizQuestions();
+
+      const warnings = (payload.warnings || []).length
+        ? `<ul style="margin:8px 0 0; padding-inline-start:18px; line-height:1.9">
+            ${payload.warnings.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+        : '';
+      box.innerHTML = `
+        <div class="card" style="background:var(--surface-sunken); margin:0">
+          <b>اتقرا ${payload.questions.length} سؤال واتحطوا في المحرر تحت ⬇️</b>
+          <div class="card-desc" style="margin-top:4px">راجعهم واضغط <b>حفظ الاختبار</b> — لسه مافيش حاجة اتسجّلت.</div>
+          ${warnings ? `<div class="card-desc" style="margin-top:8px">⚠️ حاجات تشوفها:${warnings}</div>` : ''}
+        </div>`;
+      showToast(`${payload.questions.length} سؤال اتضافوا للمحرر`);
+    }
+
+    function showDocError(message) {
+      document.getElementById('quiz-doc-result').innerHTML =
+        `<div class="card" style="background:var(--surface-sunken); margin:0">${escapeHtml(message)}</div>`;
+    }
+
+    async function importQuizDocumentFile() {
+      const input = document.getElementById('quiz-doc-file');
+      const file = input.files && input.files[0];
+      if (!file) return showToast('اختار ملف .docx الأول');
+      const button = document.getElementById('quiz-doc-file-btn');
+      button.disabled = true;
+      try {
+        // multipart مش JSON عشان الملف — نفس نمط رفع الصور في اللوحة
+        const formData = new FormData();
+        formData.append('document', file);
+        const response = await fetch('/api/quizzes/parse-document', { method: 'POST', body: formData });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'مقدرناش نقرا الملف');
+        await applyParsedQuestions(result);
+        input.value = '';
+      } catch (error) {
+        showDocError(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function importQuizDocumentText() {
+      const text = document.getElementById('quiz-doc-text').value.trim();
+      if (!text) return showToast('الصق الأسئلة الأول');
+      try {
+        const result = await api('/api/quizzes/parse-document', {
+          method: 'POST', body: JSON.stringify({ text }),
+        });
+        await applyParsedQuestions(result);
+      } catch (error) {
+        showDocError(error.message);
+      }
+    }
+
     // ---------- محرر الاختبار ----------
     function newQuizEditor() {
       editingQuizId = null;
@@ -8716,6 +8845,9 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-shuffle-questions').checked = false;
       document.getElementById('quiz-shuffle-options').checked = false;
       document.getElementById('quiz-editor-note').textContent = '';
+      document.getElementById('quiz-doc-result').innerHTML = '';
+      document.getElementById('quiz-doc-text').value = '';
+      document.getElementById('quiz-doc-file').value = '';
       renderQuizQuestions();
       showQuizView('editor');
     }
@@ -9518,6 +9650,8 @@ ${reply.content}` : reply.content;
     document.getElementById('preview-clear-btn')?.addEventListener('click', () => {
       document.getElementById('preview-results').innerHTML = '';
     });
+    document.getElementById('quiz-doc-file-btn').addEventListener('click', importQuizDocumentFile);
+    document.getElementById('quiz-doc-text-btn').addEventListener('click', importQuizDocumentText);
     document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));
     document.getElementById('add-essay-btn').addEventListener('click', () => addQuizQuestion('essay'));
     document.getElementById('add-group-btn').addEventListener('click', () => addQuizQuestion('group'));

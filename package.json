@@ -21,6 +21,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-session": "^1.18.0",
+    "mammoth": "^1.12.2",
     "multer": "^2.2.0",
     "node-cron": "^3.0.3",
     "pg": "^8.12.0",

@@ -4,6 +4,7 @@ const { finalizeAttempt, recalculateAttempt, queueQuizRegrade, processRegradeQue
 const { gradeEssayAnswer } = require('../utils/quizGrading');
 const { listProviders, PROVIDERS } = require('../utils/aiProviders');
 const { buildQuizBuffer } = require('../utils/quizExport');
+const { parseQuizDocument } = require('../utils/quizDocImport');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -535,6 +536,39 @@ async function getAttempt(req, res) {
   });
 }
 
+// ---------- استيراد أسئلة من ملف Word ----------
+//
+// **بيقرا ومابيكتبش.** الناتج بيرجع للمحرر عشان الموظف يشوفه ويحفظ بنفسه — ملف فيه
+// غلطة في علامة واحدة بيبوّظ اختبار كامل لو دخل القاعدة على طول، والتحذيرات اللي
+// بترجع معاه هي اللي بتخلّي الغلطة دي تبان قبل الحفظ.
+//
+// الملف بيتقرا من الذاكرة مش من القرص: إحنا محتاجين نصه بس، والاحتفاظ بيه بعد القراءة
+// معناه مجلد بيكبر بملفات محدش هيفتحها تاني
+async function parseDocument(req, res) {
+  let text = String(req.body?.text || '');
+  if (req.file) {
+    // mammoth بيفك الـ docx ويطلّع النص. لو الملف مش docx صالح بيرمي، والرسالة
+    // بتوصل للموظف زي ما هي عشان يعرف إن المشكلة في الملف مش في الصيغة
+    const mammoth = require('mammoth');
+    try {
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      text = result.value;
+    } catch (error) {
+      return res.status(400).json({ error: 'مقدرناش نقرا الملف — لازم يكون .docx (مش .doc القديم ولا PDF)' });
+    }
+  }
+  if (!text.trim()) return res.status(400).json({ error: 'ارفع ملف Word أو الصق النص' });
+
+  const parsed = parseQuizDocument(text);
+  if (!parsed.questions.length) {
+    return res.status(400).json({
+      error: 'مالقيناش أي سؤال. كل سؤال لازم يبدأ بسطر فيه س1) والإجابة ج1) والدرجة د1)',
+      warnings: parsed.warnings,
+    });
+  }
+  res.json(parsed);
+}
+
 // ---------- مين حلّ ومين ماحلّش ----------
 //
 // الاختبار ممكن يتربط بمعسكر (target_bootcamp_id). من غير الربط ده إحنا عارفين بس مين
@@ -863,6 +897,6 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
-  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt,
+  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt, parseDocument, parseDocument,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
 };

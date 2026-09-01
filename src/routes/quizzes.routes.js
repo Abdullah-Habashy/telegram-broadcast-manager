@@ -33,6 +33,19 @@ const uploadQuizImage = multer({
 // الصفحة العامة للطالب متسجّلة في server.js على /q/:ref برّه المسارات المحمية دي
 router.use(requireQuizAccessApi);
 
+// ملف الأسئلة بيتقرا من الذاكرة — محتاجين نصه بس، ومفيش سبب نكتبه على القرص.
+// الحد الأقصى ٥ ميجا: ملف أسئلة نصّي أصغر من كده بكتير، والأكبر منه غالبًا صور
+const uploadQuizDocument = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, callback) => {
+    const isDocx = file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      || /\.docx$/i.test(file.originalname || '');
+    if (!isDocx) return callback(new Error('لازم يكون ملف Word بصيغة .docx'));
+    callback(null, true);
+  },
+});
+
 // قبل /:id عن قصد: "grade-preview" مش رقم، بس ترتيب المسارات أوضح من الاعتماد على ده
 router.post('/image', uploadQuizImage.single('image'), controller.uploadQuestionImage);
 // اعتماد المصحّح الآلي وتجريبه: **الأدمن بس**. القرار على مستوى المنصة كلها — نموذج
@@ -41,6 +54,7 @@ router.post('/image', uploadQuizImage.single('image'), controller.uploadQuestion
 router.get('/grading-provider', requireAdminApi, controller.getGradingProviders);
 router.post('/grading-provider', requireAdminApi, controller.setGradingProvider);
 router.post('/grade-preview', requireAdminApi, controller.gradePreview);
+router.post('/parse-document', uploadQuizDocument.single('document'), controller.parseDocument);
 // قبل /:id عشان "bootcamps" مش رقم
 router.get('/bootcamps', controller.listBootcamps);
 router.get('/', controller.listQuizzes);
