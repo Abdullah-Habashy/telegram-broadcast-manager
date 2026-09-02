@@ -5108,8 +5108,9 @@ ${mark}${percent}`;
       }
     }
 
-    // زرار الحضور بتاع التيمات المتخصصة. التذاكر مابتتحوّلش على حد مش مسجّل حضور، والانصراف
-    // بيرجّع كل اللي في إيده لفريق المتابعة — عشان مايفضلش سؤال طالب واقف عند حد مشي
+    // زرار الحضور بتاع التيمات المتخصصة. التذاكر مابتتحوّلش على حد مش مسجّل حضور.
+    // **والانصراف مابيرجّعش حاجة** — مافيش رجوع من غير ضغطة زرار، فالتذاكر بتفضل معاه
+    // بعد ما يمشي والتأكيد بيقوله كده صراحة
     async function initTeamAttendance() {
       const button = document.getElementById('team-attendance-btn');
       const info = document.getElementById('team-attendance-info');
@@ -5134,11 +5135,18 @@ ${mark}${percent}`;
         button.disabled = true;
         try {
           const state = await api('/api/tickets/teams/attendance');
+          // التأكيد بيقول اللي هيحصل فعلًا: التذاكر **مش** هترجع لوحدها. الموظف اللي
+          // مش هيكمّلها لازم يرجّعها بإيده قبل ما يمشي
           if (state.present && state.holding
-            && !confirm(`معاك ${state.holding} تذكرة، هترجع لفريق المتابعة. تأكيد الانصراف؟`)) return;
+            && !confirm(`معاك ${state.holding} تذكرة وهتفضل معاك بعد الانصراف.
+
+لو مش هتكمّلها، ارجّعها بإيدك الأول.
+
+تأكيد الانصراف؟`)) return;
           const result = await api(`/api/tickets/teams/attendance/${state.present ? 'check-out' : 'check-in'}`,
             { method: 'POST' });
-          showToast(result.present ? 'اتسجّل حضورك' : `اتسجّل انصرافك${result.returned ? ` — رجّعنا ${result.returned} تذكرة` : ''}`);
+          showToast(result.present ? 'اتسجّل حضورك'
+            : `اتسجّل انصرافك${result.holding ? ` — و${result.holding} تذكرة لسه معاك` : ''}`);
           await refresh();
           loadTickets();
         } catch (error) { showToast(error.message); }

@@ -57,30 +57,33 @@ async function checkIn(req, res) {
   }
 }
 
-// الانصراف بيرجّع كل التذاكر اللي في إيده لموظفي المتابعة — تذكرة محوّلة لموظف مشي معناها
-// سؤال طالب واقف عند حد مش موجود، وده بالظبط اللي المفروض الميزة تمنعه
+// الانصراف بيقفل الحضور بس. **مابيرجّعش أي تذكرة** — بقرار صاحب المشروع مافيش رجوع
+// من غير ضغطة زرار من موظف.
+//
+// كان بيرجّع كل اللي في إيده لموظفي المتابعة، والمنطق كان "تذكرة عند موظف مشي معناها
+// سؤال طالب واقف عند حد مش موجود". القرار اتغيّر، وde معناه إن التذكرة بتفضل معلّمة
+// باسمه بعد ما يمشي لحد ما حد يرجّعها بإيده.
+//
+// **واللي بيخلي ده مقبول:** التحويل مشاركة مش نقل ملكية — `assigned_to` بيفضل موظف
+// المتابعة، والتذكرة بتفضل ظاهرة في قايمته بلون التيم وعنده زرار الإرجاع. يعني مش
+// بتختفي، بتفضل باينة ومحتاجة قرار.
+//
+// وجملة واحدة مش ترانزاكشن: مافيش بقى حاجتين لازم يحصلوا مع بعض
 async function checkOut(req, res) {
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-    const returned = await client.query(
-      `UPDATE tickets SET transfer_agent_id = NULL, transfer_team = NULL, transfer_since = NULL,
-        updated_at = NOW()
-       WHERE transfer_agent_id = $1 RETURNING id`,
-      [req.session.userId]
-    );
-    await client.query(
+    await pool.query(
       'UPDATE team_attendance SET ended_at = NOW() WHERE user_id = $1 AND ended_at IS NULL',
       [req.session.userId]
     );
-    await client.query('COMMIT');
-    res.json({ present: false, returned: returned.rowCount });
+    // العدد بيرجع عشان اللوحة تفكّره إن التذاكر لسه معاه — الرقم ده هو التنبيه الوحيد
+    const holding = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM tickets WHERE transfer_agent_id = $1',
+      [req.session.userId]
+    );
+    res.json({ present: false, holding: holding.rows[0].count });
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('❌ Failed to check out of the team shift:', error.message);
     res.status(500).json({ error: 'تعذر تسجيل الانصراف' });
-  } finally {
-    client.release();
   }
 }
 
