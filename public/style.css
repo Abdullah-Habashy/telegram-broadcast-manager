@@ -1172,3 +1172,9 @@ th.perf-sorted { color: var(--primary); }
   background: var(--primary); border-color: var(--primary); color: #fff;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 }
+
+/* شريط التحديد الجماعي — بيظهر لما يتحدد سؤال أو أكتر، وبياخد سطر كامل تحت المربعات */
+.quiz-bulk {
+  flex-basis: 100%; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  padding: 10px 0 2px; border-top: 1px solid var(--border); margin-top: 8px;
+}

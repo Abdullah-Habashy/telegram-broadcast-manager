@@ -1095,6 +1095,28 @@ ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES
 ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS label VARCHAR(20);
 -- صورة السؤال (رسم بياني، معادلة، شكل). ممكن السؤال يبقى صورة من غير أي نص
 ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS image_path VARCHAR(255);
+
+-- ---------- الفكرة ومستوى الصعوبة ----------
+--
+-- **الفكرة هي نفس الفكرة اللي بيتتبّع بيها تقدّم الطالب** (`tickets.current_idea_number`)
+-- مش قايمة تانية. ده اللي بيخلي السؤال والطالب على نفس المحور: "١٠٠ طالب واقفين على
+-- فكرة ١٢، ودي أسئلتها". قايمة مستقلة كانت هتدي حاجتين اسمهم "فكرة" مالهمش علاقة.
+--
+-- الاتنين NULL بالافتراضي عن قصد: السؤال مابياخدش فكرة ولا صعوبة غير لما المدرّس
+-- يختار. القيمة المفروضة من غير اختيار بتبقى بيانات مش معلومة
+ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS idea_number SMALLINT;
+ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS difficulty VARCHAR(10);
+CREATE INDEX IF NOT EXISTS idx_quiz_questions_idea ON quiz_questions (idea_number)
+    WHERE idea_number IS NOT NULL;
+
+-- **أسماء الأفكار بس — مش عددها.** عدد الأفكار جاي من `settings.max_idea_number`
+-- وهو اللي كل الشاشات بتعد بيه من زمان. الجدول ده بيدّي اسم للرقم، والفكرة اللي
+-- مالهاش صف بتتعرض برقمها زي ما هي. مصدرين لعدد الأفكار كان هيخليهم يفترقوا
+CREATE TABLE IF NOT EXISTS curriculum_ideas (
+    idea_number SMALLINT PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE INDEX IF NOT EXISTS idx_quiz_questions_parent ON quiz_questions (parent_id, position)
     WHERE parent_id IS NOT NULL;
 

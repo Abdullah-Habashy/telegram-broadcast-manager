@@ -72,6 +72,19 @@ async function getQuiz(req, res) {
   });
 }
 
+// **NULL معناها "المدرّس ماختارش" — مش "صفر" ولا "متوسط".** أي قيمة غريبة بترجع NULL
+// بدل ما تتحط قيمة افتراضية: بيانات مش معروفة أصدق من بيانات مخترعة
+const DIFFICULTIES = ['easy', 'medium', 'hard'];
+
+function normalizeDifficulty(raw) {
+  return DIFFICULTIES.includes(raw) ? raw : null;
+}
+
+function normalizeIdea(raw) {
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
 // المعسكر اختياري: القايمة بتبعت "" لما الموظف مايختارش، والفراغ ده لازم يبقى NULL
 // مش صفر — صفر معرّف معسكر مش موجود وبيرجّع قايمة متخلّفين فاضية من غير أي رسالة
 // **المحاولات بين ١ و١٠.** الصفر بيقفل الاختبار على الكل من غير ما حد يقصد، والرقم
@@ -126,7 +139,8 @@ function questionIsFilled(question) {
 // أب) يترتب بمكانه هو، والشرط التاني بيحط الأب قبل أبنائه
 const QUESTIONS_SQL = `
   SELECT q.id, q.parent_id, q.label, q.position, q.kind, q.text, q.points, q.options,
-         q.correct_option, q.reference_answer, q.grading_notes, q.image_path
+         q.correct_option, q.reference_answer, q.grading_notes, q.image_path,
+         q.idea_number, q.difficulty
   FROM quiz_questions q
   LEFT JOIN quiz_questions p ON p.id = q.parent_id
   WHERE q.quiz_id = $1
@@ -321,6 +335,8 @@ function flattenQuestions(tree) {
       reference_answer: question.kind === 'essay' ? String(question.reference_answer || '').trim() : null,
       grading_notes: question.kind === 'essay' ? (String(question.grading_notes || '').trim() || null) : null,
       image_path: question.image || null,
+      idea_number: normalizeIdea(question.idea_number),
+      difficulty: normalizeDifficulty(question.difficulty),
     });
     const parentIndex = rows.length - 1;
     if (question.kind !== 'group') return;
@@ -340,6 +356,8 @@ function flattenQuestions(tree) {
         reference_answer: part.kind === 'essay' ? String(part.reference_answer || '').trim() : null,
         grading_notes: part.kind === 'essay' ? (String(part.grading_notes || '').trim() || null) : null,
         image_path: part.image || null,
+        idea_number: normalizeIdea(part.idea_number),
+        difficulty: normalizeDifficulty(part.difficulty),
       });
     });
   });
@@ -385,20 +403,22 @@ async function saveQuestions(req, res) {
       const params = [
         quizId, parentId, row.label, row.position, row.kind, row.text, row.points,
         JSON.stringify(row.options), row.correct_option, row.reference_answer,
-        row.grading_notes, row.image_path,
+        row.grading_notes, row.image_path, row.idea_number, row.difficulty,
       ];
       if (keptIds.has(row.id)) {
         await client.query(
           `UPDATE quiz_questions SET quiz_id = $1, parent_id = $2, label = $3, position = $4,
                   kind = $5, text = $6, points = $7, options = $8::jsonb, correct_option = $9,
-                  reference_answer = $10, grading_notes = $11, image_path = $12
-           WHERE id = $13`, [...params, row.id]);
+                  reference_answer = $10, grading_notes = $11, image_path = $12,
+                  idea_number = $13, difficulty = $14
+           WHERE id = $15`, [...params, row.id]);
         dbIds.push(row.id);
       } else {
         const inserted = await client.query(
           `INSERT INTO quiz_questions (quiz_id, parent_id, label, position, kind, text, points,
-                                       options, correct_option, reference_answer, grading_notes, image_path)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12) RETURNING id`, params);
+                                       options, correct_option, reference_answer, grading_notes, image_path,
+                                       idea_number, difficulty)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14) RETURNING id`, params);
         dbIds.push(inserted.rows[0].id);
       }
     }
@@ -760,6 +780,72 @@ async function getQuizCoverage(req, res) {
   });
 }
 
+// ---------- أفكار المنهج ----------
+//
+// **الفكرة هنا هي نفس الفكرة اللي بيتتبّع بيها تقدّم الطالب** — مش قايمة تانية. عددها
+// جاي من `settings.max_idea_number` زي كل الشاشات التانية، والجدول بيدّي اسم للرقم بس.
+// الفكرة اللي مالهاش اسم بتتعرض برقمها، فالقايمة شغّالة من غير ما حد يسمّي حاجة.
+//
+// والعدّ بيرجع معاها: كام سؤال مربوط بكل فكرة، وكام طالب واقف عندها. الرقمين جنب بعض
+// هم اللي بيدّوا معنى للقايمة — فكرة عندها ١٠٠ طالب ومفيش ليها سؤال واحد دي معلومة
+async function listIdeas(req, res) {
+  const [setting, named, questions, students] = await Promise.all([
+    pool.query("SELECT value FROM settings WHERE key = 'max_idea_number'"),
+    pool.query('SELECT idea_number, name FROM curriculum_ideas'),
+    pool.query(`SELECT idea_number, COUNT(*)::int AS count FROM quiz_questions
+                WHERE idea_number IS NOT NULL GROUP BY idea_number`),
+    pool.query(`SELECT current_idea_number AS idea_number, COUNT(*)::int AS count FROM tickets
+                WHERE current_idea_number IS NOT NULL GROUP BY current_idea_number`),
+  ]);
+  const total = Math.max(1, Math.min(Number(setting.rows[0]?.value) || 20, 200));
+  const names = new Map(named.rows.map((row) => [row.idea_number, row.name]));
+  const questionCounts = new Map(questions.rows.map((row) => [row.idea_number, row.count]));
+  const studentCounts = new Map(students.rows.map((row) => [row.idea_number, row.count]));
+
+  res.json({
+    ideas: Array.from({ length: total }, (whole, index) => {
+      const number = index + 1;
+      return {
+        number,
+        name: names.get(number) || '',
+        questions: questionCounts.get(number) || 0,
+        students: studentCounts.get(number) || 0,
+      };
+    }),
+  });
+}
+
+// الأسماء بتتحفظ كلها مرة واحدة زي محرر الأسئلة: الشاشة بتعرض الثلاثين سطر ومعاها زرار
+// حفظ واحد، فحفظ كل اسم بنداء كان هيبقى ثلاثين نداء لضغطة واحدة.
+// **والاسم الفاضي بيمسح الصف** — الفكرة بترجع لرقمها، مش بتفضل بصف اسمه فاضي
+async function saveIdeas(req, res) {
+  const incoming = Array.isArray(req.body?.ideas) ? req.body.ideas : [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const idea of incoming) {
+      const number = normalizeIdea(idea?.number);
+      if (!number) continue;
+      const name = String(idea?.name || '').trim().slice(0, 200);
+      if (!name) {
+        await client.query('DELETE FROM curriculum_ideas WHERE idea_number = $1', [number]);
+        continue;
+      }
+      await client.query(
+        `INSERT INTO curriculum_ideas (idea_number, name) VALUES ($1, $2)
+         ON CONFLICT (idea_number) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()`,
+        [number, name]);
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // قايمة الأبواب لقايمة الاختيار في محرر الاختبار. موجودة هنا مش تحت /api/tafra عشان
 // التيم العلمي يقدر يوصلها — صلاحياته على الاختبارات مش على شاشات طفرة
 async function listBootcamps(req, res) {
@@ -842,6 +928,7 @@ async function exportAttempts(req, res) {
 // ورؤوس الأسئلة مستبعدة: الأب مالوش إجابة ولا درجة، فروعه هي اللي بتتصحّح
 const QUESTION_STATS_SQL = `
   SELECT q.id AS question_id, q.parent_id, q.label, q.kind, q.text, q.points,
+         q.idea_number, q.difficulty,
          COUNT(an.id)::int AS answered,
          COUNT(*) FILTER (WHERE an.awarded_points >= q.points)::int AS full_marks,
          COUNT(*) FILTER (WHERE an.awarded_points > 0 AND an.awarded_points < q.points)::int AS partial,
@@ -1082,6 +1169,7 @@ module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
   getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt, parseDocument,
+  listIdeas, saveIdeas,
   approveQuizGrades, approveAttemptGrades, parseDocument,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
 };

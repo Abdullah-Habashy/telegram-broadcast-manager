@@ -74,6 +74,9 @@ router.post('/grade-preview', requireAdminApi, controller.gradePreview);
 router.post('/parse-document', uploadQuizDocument.single('document'), reportUploadError, controller.parseDocument);
 // قبل /:id عشان "bootcamps" مش رقم
 router.get('/bootcamps', controller.listBootcamps);
+// أفكار المنهج: التسمية شغل التيم العلمي — هو اللي عارف المنهج
+router.get('/ideas', controller.listIdeas);
+router.put('/ideas', controller.saveIdeas);
 router.get('/', controller.listQuizzes);
 router.post('/', controller.createQuiz);
 router.get('/:id', controller.getQuiz);

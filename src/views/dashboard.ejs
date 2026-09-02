@@ -654,6 +654,25 @@
             <div id="quizzes-list"><div class="empty-state">بيتحمّل...</div></div>
           </div>
 
+          <!-- ===== أفكار المنهج =====
+               نفس الأفكار اللي بيتتبّع بيها تقدّم الطالب — مش قايمة تانية. الجدول
+               بيدّي اسم للرقم بس، وعددها جاي من الإعدادات زي كل الشاشات -->
+          <div class="card">
+            <div class="row-between" style="gap:12px; flex-wrap:wrap; margin-bottom:6px">
+              <div>
+                <b>💡 أفكار المنهج</b>
+                <div class="card-desc" style="margin-top:4px">
+                  دي نفس الأفكار اللي بتتبّعوا بيها تقدّم الطلاب — سمّيها هنا وهتظهر في كل سؤال.
+                </div>
+              </div>
+              <div class="row" style="gap:8px">
+                <button type="button" class="btn btn-ghost btn-sm" id="quiz-ideas-toggle" style="width:auto">عرض القايمة</button>
+                <button type="button" class="btn btn-primary btn-sm" id="quiz-ideas-save" style="width:auto; display:none">حفظ الأسماء</button>
+              </div>
+            </div>
+            <div id="quiz-ideas-list" style="display:none"></div>
+          </div>
+
           <%# ===== إعدادات المصحّح الآلي — للأدمن بس =====
               الكارتين اللي تحت (اعتماد النموذج، وتجريب التصحيح) بيتحكموا في المصحّح لكل
               الاختبارات ولكل الطلاب — قرار على مستوى المنصة مش على مستوى اختبار. التيم
@@ -869,6 +888,16 @@
               <!-- مربعات الأسئلة: الضغط بينط للسؤال في المحرر. نفس فكرة اللي عند
                    الطالب — محرر ٢٥ سؤال مستحيل تتنقل فيه بالسكرول -->
               <div class="quiz-editor-nav" id="quiz-editor-nav"></div>
+              <!-- ===== تحديد جماعي =====
+                   الفكرة والصعوبة بيتحطوا على أسئلة كتير مع بعض: ورقة كاملة على فكرة
+                   واحدة، أو خمس أسئلة سهلة. واحد واحد في ٢٥ سؤال شغل ضايع -->
+              <div class="quiz-bulk" id="quiz-bulk" style="display:none">
+                <span class="card-desc" id="quiz-bulk-count">محدد ٠</span>
+                <select id="quiz-bulk-idea" class="compact-select" style="min-width:180px"></select>
+                <select id="quiz-bulk-difficulty" class="compact-select" style="min-width:150px"></select>
+                <button type="button" class="btn btn-primary btn-sm" id="quiz-bulk-apply" style="width:auto">طبّق على المحدد</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="quiz-bulk-clear" style="width:auto">إلغاء التحديد</button>
+              </div>
             </div>
             <div id="quiz-questions-editor"><div class="empty-state">ضيف أول سؤال</div></div>
             <div class="row" style="margin-top:14px">
@@ -8637,6 +8666,7 @@ ${reply.content}` : reply.content;
       showQuizView('list');
       loadQuizzes();
       loadQuizBootcamps();
+      loadCurriculumIdeas();
       // كارت النموذج وكارت التجريب مش موجودين أصلًا في صفحة غير الأدمن، والنداء بيرجّع
       // ٤٠٣ — فبيتخطى بدل ما يرمي على عناصر مش موجودة
       if (currentUserRole === 'admin') loadGradingProviders();
@@ -8834,6 +8864,9 @@ ${reply.content}` : reply.content;
     async function applyParsedQuestions(payload) {
       const box = document.getElementById('quiz-doc-result');
       const shape = (question) => ({
+        // الاستيراد من Word مابيحددش فكرة ولا صعوبة — دول قرار المدرّس بعد ما يراجع
+        idea_number: null,
+        difficulty: null,
         kind: question.kind,
         label: question.label || '',
         text: question.text || '',
@@ -8931,6 +8964,7 @@ ${reply.content}` : reply.content;
       document.getElementById('quiz-show-score').checked = true;
       document.getElementById('quiz-show-answers').checked = true;
       activeQuizQuestion = null;
+      pickedQuizQuestions.clear();
       document.getElementById('quiz-bootcamp').value = '';
       document.getElementById('quiz-max-attempts').value = 1;
       document.getElementById('quiz-answers-after-close').checked = false;
@@ -8951,6 +8985,8 @@ ${reply.content}` : reply.content;
         quizEditorHasAttempts = quiz.attempt_count > 0;
         const shape = (question) => ({
           id: question.id,
+          idea_number: question.idea_number || null,
+          difficulty: question.difficulty || null,
           kind: question.kind,
           label: question.label || '',
           text: question.text || '',
@@ -9000,6 +9036,9 @@ ${reply.content}` : reply.content;
 
     function blankQuestion(kind) {
       return {
+        // **الافتراضي فاضي** — السؤال مابياخدش فكرة ولا صعوبة غير لما المدرّس يختار
+        idea_number: null,
+        difficulty: null,
         kind,
         text: '',
         image: null,
@@ -9133,6 +9172,7 @@ ${reply.content}` : reply.content;
       // قبل الخروج المبكر: المحرر الفاضي محتاج يوري "مفيش أسئلة" برضه
       updateQuizEditorCount();
       renderQuizEditorNav();
+      renderQuizBulkBar();
       const box = document.getElementById('quiz-questions-editor');
       if (!quizEditorQuestions.length) {
         box.innerHTML = '<div class="empty-state">ضيف أول سؤال</div>';
@@ -9156,7 +9196,10 @@ ${reply.content}` : reply.content;
         return `
           <div class="card quiz-question" data-path="${index}" style="background:var(--surface-sunken); margin-bottom:12px">
             <div class="row-between" style="margin-bottom:10px; gap:8px; flex-wrap:wrap">
-              <b>${index + 1}. ${title}</b>
+              <label class="row" style="gap:8px; align-items:center; cursor:pointer">
+                <input type="checkbox" class="quiz-pick" data-index="${index}" ${pickedQuizQuestions.has(index) ? 'checked' : ''} />
+                <b>${index + 1}. ${title}</b>
+              </label>
               <div class="row" style="gap:6px">
                 <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizQuestion(${index}, -1)" ${index === 0 ? 'disabled' : ''}>↑</button>
                 <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="moveQuizQuestion(${index}, 1)" ${index === quizEditorQuestions.length - 1 ? 'disabled' : ''}>↓</button>
@@ -9171,6 +9214,133 @@ ${reply.content}` : reply.content;
     }
 
     // نفس الدالة بترسم السؤال والفرع — الفرق بس إن الفرع بياخد خانة حرف ورأس أصغر
+    // ---------- أفكار المنهج ومستوى الصعوبة ----------
+    //
+    // **الفكرة هي نفس الفكرة اللي بيتتبّع بيها تقدّم الطالب** — مش قايمة تانية. فالسؤال
+    // والطالب بيبقوا على نفس المحور، وتقدر تقول "١٠٠ طالب على فكرة ١٢، ودي أسئلتها"
+    let curriculumIdeas = [];
+
+    const DIFFICULTY_LABELS = { easy: 'سهل', medium: 'متوسط', hard: 'صعب' };
+
+    // **الفاضي مش خيار من الخيارات — هو الافتراضي.** السؤال بيفضل من غير فكرة ومن غير
+    // صعوبة لحد ما المدرّس يختار بنفسه، والقيمة المفروضة من غير اختيار بتبقى بيانات
+    // مخترعة مش معلومة
+    // الفكرة اللي مالهاش اسم بتتعرض برقمها — القايمة شغّالة من غير ما حد يسمّي حاجة
+    function ideaLabel(number) {
+      const idea = curriculumIdeas.find((item) => item.number === Number(number));
+      return idea && idea.name ? `${idea.number}. ${idea.name}` : `فكرة ${number}`;
+    }
+
+    function ideaOptions(selected) {
+      const current = Number(selected) || '';
+      return `<option value="">— من غير فكرة —</option>`
+        + curriculumIdeas.map((idea) => `<option value="${idea.number}" ${current === idea.number ? 'selected' : ''}>`
+          + `${idea.number}. ${escapeHtml(idea.name || 'من غير اسم')}</option>`).join('');
+    }
+
+    function difficultyOptions(selected) {
+      return `<option value="">— من غير مستوى —</option>`
+        + Object.entries(DIFFICULTY_LABELS).map(([key, label]) =>
+          `<option value="${key}" ${selected === key ? 'selected' : ''}>${label}</option>`).join('');
+    }
+
+    // **المحدد بالرقم مش بالمرجع.** الأسئلة بتتعاد كتابتها مع كل رسم، فأي إشارة للعنصر
+    // نفسه بتموت. والرقم بيتظبط مع الحذف والنقل زي المربع المعروض بالظبط
+    const pickedQuizQuestions = new Set();
+
+    function renderQuizBulkBar() {
+      const bar = document.getElementById('quiz-bulk');
+      bar.style.display = pickedQuizQuestions.size ? '' : 'none';
+      if (!pickedQuizQuestions.size) return;
+      document.getElementById('quiz-bulk-count').textContent = `محدد ${pickedQuizQuestions.size} سؤال`;
+      const idea = document.getElementById('quiz-bulk-idea');
+      const difficulty = document.getElementById('quiz-bulk-difficulty');
+      // بتتعاد كتابتها عشان القوايم تفضل مطابقة لأسماء الأفكار بعد أي تعديل
+      if (!idea.dataset.filled) {
+        idea.innerHTML = `<option value="">— من غير فكرة —</option>` + ideaOptions(null).replace(/^<option value="">[^<]*<\/option>/, '');
+        difficulty.innerHTML = difficultyOptions(null);
+        idea.dataset.filled = '1';
+      }
+    }
+
+    // **بيشتغل على المصفوفة مش على الصفحة.** القراءة الأول عشان اللي اتكتب مايضيعش،
+    // وبعدين التعديل، وبعدين الرسم — نفس ترتيب أي تعديل تاني في المحرر
+    function applyQuizBulk() {
+      if (!pickedQuizQuestions.size) return;
+      readQuizEditor();
+      const ideaValue = document.getElementById('quiz-bulk-idea').value;
+      const difficultyValue = document.getElementById('quiz-bulk-difficulty').value;
+      // **مافيش اختيار = مافيش تغيير، مش مسح.** الموظف اللي عايز يحط صعوبة بس مش
+      // المفروض يمسح الأفكار اللي حاططها قبل كده من غير ما يقصد
+      if (!ideaValue && !difficultyValue) {
+        return showToast('اختار فكرة أو مستوى الأول');
+      }
+      let touched = 0;
+      pickedQuizQuestions.forEach((index) => {
+        const question = quizEditorQuestions[index];
+        if (!question) return;
+        // الرأس مالوش فكرة ولا صعوبة — فروعه هي اللي بتاخدهم
+        const targets = question.kind === 'group' ? (question.parts || []) : [question];
+        targets.forEach((target) => {
+          if (ideaValue) target.idea_number = Number(ideaValue);
+          if (difficultyValue) target.difficulty = difficultyValue;
+          touched += 1;
+        });
+      });
+      renderQuizQuestions();
+      showToast(`اتطبّق على ${touched} سؤال`);
+    }
+
+    function clearQuizPicks() {
+      pickedQuizQuestions.clear();
+      document.querySelectorAll('#quiz-questions-editor .quiz-pick').forEach((box) => { box.checked = false; });
+      renderQuizBulkBar();
+    }
+
+    document.getElementById('quiz-questions-editor').addEventListener('change', (event) => {
+      const box = event.target.closest('.quiz-pick');
+      if (!box) return;
+      const index = Number(box.dataset.index);
+      if (box.checked) pickedQuizQuestions.add(index);
+      else pickedQuizQuestions.delete(index);
+      renderQuizBulkBar();
+    });
+
+    // **الأرقام جنب بعض هي اللي بتدي معنى للقايمة:** فكرة عندها ١٠٠ طالب ومفيش ليها
+    // ولا سؤال دي معلومة تستاهل تبان، مش مجرد خانة اسم
+    function renderIdeasList() {
+      const box = document.getElementById('quiz-ideas-list');
+      box.innerHTML = curriculumIdeas.map((idea) => `
+        <div class="row" style="gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border)">
+          <span class="badge badge-muted" style="min-width:34px; text-align:center">${idea.number}</span>
+          <input type="text" class="compact-input quiz-idea-name" data-number="${idea.number}"
+                 style="flex:1; min-width:180px" value="${escapeHtml(idea.name)}" placeholder="اسم الفكرة — سيبه فاضي لو مش محتاج" />
+          <span class="card-desc" style="white-space:nowrap">${idea.students} طالب · ${idea.questions} سؤال</span>
+        </div>`).join('');
+    }
+
+    async function saveCurriculumIdeas() {
+      const ideas = [...document.querySelectorAll('.quiz-idea-name')].map((input) => ({
+        number: Number(input.dataset.number), name: input.value,
+      }));
+      try {
+        await api('/api/quizzes/ideas', { method: 'PUT', body: JSON.stringify({ ideas }) });
+        await loadCurriculumIdeas();
+        renderIdeasList();
+        showToast('أسماء الأفكار اتحفظت');
+      } catch (error) { showToast(error.message); }
+    }
+
+    async function loadCurriculumIdeas() {
+      try {
+        const data = await api('/api/quizzes/ideas');
+        curriculumIdeas = data.ideas;
+      } catch (error) {
+        // فشل القايمة مايوقفش المحرر — الفكرة اختيارية أصلًا
+        curriculumIdeas = [];
+      }
+    }
+
     function renderQuestionFields(question, path, partIndex) {
       const isPart = partIndex !== null;
       const isGroup = question.kind === 'group';
@@ -9190,9 +9360,17 @@ ${reply.content}` : reply.content;
           </div>
         </div>` : '';
 
+      // **الرأس مالوش فكرة ولا صعوبة** — الفروع هي اللي بتتجاوب وبتتصحّح، والرأس عنوان.
+      // ولا درجة كمان، وده السبب اللي سطر الدرجة تحت مبني عليه أصلًا
       const points = isGroup ? '' : `
-        <div class="field" style="max-width:150px"><label>الدرجة</label>
-          <input type="number" class="compact-input quiz-points" min="0.5" step="0.5" value="${question.points}" /></div>`;
+        <div class="row" style="gap:12px; flex-wrap:wrap; align-items:flex-end">
+          <div class="field" style="max-width:130px; margin-bottom:0"><label>الدرجة</label>
+            <input type="number" class="compact-input quiz-points" min="0.5" step="0.5" value="${question.points}" /></div>
+          <div class="field" style="min-width:190px; margin-bottom:0"><label>فكرة المنهج</label>
+            <select class="compact-select quiz-idea" style="width:100%">${ideaOptions(question.idea_number)}</select></div>
+          <div class="field" style="min-width:150px; margin-bottom:0"><label>مستوى الصعوبة</label>
+            <select class="compact-select quiz-difficulty" style="width:100%">${difficultyOptions(question.difficulty)}</select></div>
+        </div>`;
 
       const body = question.kind === 'mcq' ? renderOptions(question, path)
         : question.kind === 'essay' ? `
@@ -9265,6 +9443,11 @@ ${reply.content}` : reply.content;
         const question = questionAt(node.dataset.path);
         if (!question) return;
         question.text = node.querySelector(':scope > .field > .quiz-question-text').value;
+        // القوايم جوه صف الدرجة، فالبحث مش :scope > — والرأس مالوش الحقول دي أصلًا
+        const idea = node.querySelector(':scope > .row .quiz-idea');
+        if (idea) question.idea_number = idea.value ? Number(idea.value) : null;
+        const difficulty = node.querySelector(':scope > .row .quiz-difficulty');
+        if (difficulty) question.difficulty = difficulty.value || null;
         const labelInput = node.querySelector(':scope > .row-between .quiz-label');
         if (labelInput) question.label = labelInput.value.trim();
         const pointsInput = node.querySelector(':scope > .field > .quiz-points');
@@ -9304,6 +9487,9 @@ ${reply.content}` : reply.content;
     function removeQuizQuestion(index) {
       readQuizEditor();
       quizEditorQuestions.splice(index, 1);
+      // التحديد بالرقم، والحذف بيزحلق الأرقام — فأي تحديد قديم بقى بيشاور على أسئلة
+      // تانية. تصفيره أأمن من إن "طبّق على المحدد" يمشي على اللي مش مقصود
+      pickedQuizQuestions.clear();
       // **الحذف بيزحلق كل الأرقام اللي بعده.** حذف سؤال ٢ والعلامة على ٥ معناه إن ٥
       // بقى سؤال تاني خالص — فالعلامة لازم تنزل معاه. ولو المحذوف هو المعروض نفسه،
       // بتفضل مكانها عشان تقع على اللي جه بدله
@@ -9331,6 +9517,7 @@ ${reply.content}` : reply.content;
       if (target < 0 || target >= quizEditorQuestions.length) return;
       const [moved] = quizEditorQuestions.splice(index, 1);
       quizEditorQuestions.splice(target, 0, moved);
+      pickedQuizQuestions.clear();
       // العلامة بتتبع السؤال اللي اتحرّك مش مكانه القديم — غير كده الموظف بينقل سؤال
       // ويلاقي نفسه بيبص على سؤال تاني
       if (activeQuizQuestion === index) activeQuizQuestion = target;
@@ -9563,6 +9750,13 @@ ${reply.content}` : reply.content;
             ? `سؤال ${question.number} (${escapeHtml(question.label || '')})`
             : `سؤال ${question.number}`;
           const percent = question.avg_ratio === null ? '—' : `${Math.round(question.avg_ratio * 100)}%`;
+          // **المستوى المعلَن جنب النسبة الحقيقية.** سؤال متعلّم "سهل" ونسبته ٣٠٪ معناه
+          // إما إن التصنيف غلط وإما إن الفكرة نفسها مش واصلة — والرقمين جنب بعض هما
+          // اللي بيقولوا ده
+          const idea = question.idea_number
+            ? `<span class="badge badge-muted">💡 ${escapeHtml(ideaLabel(question.idea_number))}</span>` : '';
+          const declared = question.difficulty
+            ? `<span class="badge badge-muted">${DIFFICULTY_LABELS[question.difficulty] || question.difficulty}</span>` : '';
           const counts = [
             `صح ${question.full_marks}`,
             question.partial ? `ناقص ${question.partial}` : '',
@@ -9573,7 +9767,8 @@ ${reply.content}` : reply.content;
             <div class="card" style="background:var(--surface-sunken); margin-bottom:10px">
               <div class="row-between" style="gap:10px; flex-wrap:wrap">
                 <b>${heading}</b>
-                <span class="badge badge-muted">${percent} من الدرجة</span>
+                <span class="row" style="gap:6px; flex-wrap:wrap">${idea}${declared}
+                  <span class="badge badge-muted">${percent} من الدرجة</span></span>
               </div>
               <div class="card-desc" style="margin-top:4px">${escapeHtml((question.text || '').slice(0, 160))}</div>
               ${statsBar(question.avg_ratio)}
@@ -9921,6 +10116,18 @@ ${reply.content}` : reply.content;
     document.getElementById('preview-clear-btn')?.addEventListener('click', () => {
       document.getElementById('preview-results').innerHTML = '';
     });
+    document.getElementById('quiz-ideas-toggle').addEventListener('click', async () => {
+      const box = document.getElementById('quiz-ideas-list');
+      const save = document.getElementById('quiz-ideas-save');
+      const open = box.style.display === 'none';
+      box.style.display = open ? '' : 'none';
+      save.style.display = open ? '' : 'none';
+      document.getElementById('quiz-ideas-toggle').textContent = open ? 'إخفاء' : 'عرض القايمة';
+      if (open) { await loadCurriculumIdeas(); renderIdeasList(); }
+    });
+    document.getElementById('quiz-ideas-save').addEventListener('click', saveCurriculumIdeas);
+    document.getElementById('quiz-bulk-apply').addEventListener('click', applyQuizBulk);
+    document.getElementById('quiz-bulk-clear').addEventListener('click', clearQuizPicks);
     document.getElementById('quiz-doc-file-btn').addEventListener('click', importQuizDocumentFile);
     document.getElementById('quiz-doc-text-btn').addEventListener('click', importQuizDocumentText);
     document.getElementById('add-mcq-btn').addEventListener('click', () => addQuizQuestion('mcq'));
