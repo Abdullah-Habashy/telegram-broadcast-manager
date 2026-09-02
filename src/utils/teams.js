@@ -9,8 +9,9 @@
 //   requiresAttendance — التحويل بيروح للحاضرين بس (العلمي والفني). الواتساب لأ: التوجيه
 //     بتاعه تلقائي وقت ما الطالب يدخل البوت، ولو اشترطنا حضور كان الطالب اللي بييجي الساعة
 //     تلاتة الفجر ميروحش لحد.
-//   idleReturn — بترجع لوحدها بعد نص ساعة سكوت (سؤال علمي أو مشكلة تقنية ليها بداية ونهاية).
-//     الواتساب لأ: دي محادثة إقناع ممكن تاخد أيام.
+//   idleReturn — كانت بترجع التذكرة لوحدها بعد نص ساعة سكوت. **مقفولة لكل التيمات
+//     دلوقتي بقرار صاحب المشروع: الرجوع يدوي بس.** الخاصية سايبة مش متشالة عشان
+//     الرجوع لها يبقى قلب قيمة واحدة لتيم واحد لو الموقف اتغيّر.
 //   autoRoute — بيتحوّل عليها تلقائيًا حسب قاعدة، مش بضغطة موظف.
 //   canManageQuizzes — بيبني اختبارات ويراجع تصحيحها من تبويب الاختبارات. قرار صاحب
 //     المشروع: العلمي والفني، مش الواتساب — ده شغله إقناع طالب مش بناء محتوى.
@@ -28,7 +29,7 @@ const TEAMS = {
     offlineSettingKey: 'science_offline_message',
     transferTitle: 'تحويل السؤال للتيم العلمي',
     requiresAttendance: true,
-    idleReturn: true,
+    idleReturn: false,
     canManageQuizzes: true,
   },
   tech: {
@@ -39,7 +40,7 @@ const TEAMS = {
     offlineSettingKey: 'tech_offline_message',
     transferTitle: 'تحويل المشكلة للدعم الفني',
     requiresAttendance: true,
-    idleReturn: true,
+    idleReturn: false,
     canManageQuizzes: true,
   },
   whatsapp: {
