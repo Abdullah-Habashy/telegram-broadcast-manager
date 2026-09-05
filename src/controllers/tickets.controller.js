@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const botManager = require('../bot/botManager');
 const push = require('../utils/push');
+const { withStudentMenu, STUDENT_MENU_OPTIONS } = require('../bot/studentMenu');
 
 const VALID_STATUSES = ['new', 'in_progress', 'waiting_student', 'resolved', 'closed'];
 const VALID_PRIORITIES = ['low', 'normal', 'urgent'];
@@ -757,7 +758,7 @@ async function replyToTicket(req, res) {
           .split('{name}')
           .join(ticketResult.rows[0].agent_name);
         try {
-          const introTelegramMessage = await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, introText);
+          const introTelegramMessage = await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, introText, STUDENT_MENU_OPTIONS);
           await pool.query(
             `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id)
              VALUES ($1, $2, $3, $4)`,
@@ -782,9 +783,11 @@ async function replyToTicket(req, res) {
 
     // allow_sending_without_reply: لو الرسالة الأصلية اتمسحت من عند الطالب في الوقت ده بالذات، الرد
     // لسه يتبعت عادي (بدون quote) بدل ما العملية كلها تفشل
-    const replyOptions = replyToTelegramMessageId
+    // قايمة الطالب بتتبعت مع رد الموظف كمان: أغلب الطلاب مابياخدوش رسالة آلية بعد الترحيب،
+    // فلو ماتبعتتش هنا كان اللي دخلوا البوت قبل الميزة مش هيشوفوا الزراير أبدًا
+    const replyOptions = withStudentMenu(replyToTelegramMessageId
       ? { reply_parameters: { message_id: Number(replyToTelegramMessageId), allow_sending_without_reply: true } }
-      : {};
+      : {});
     const localImagePath = req.file ? `uploads/support/${req.file.filename}` : null;
     let imagePath = localImagePath;
     const telegramMessage = req.file

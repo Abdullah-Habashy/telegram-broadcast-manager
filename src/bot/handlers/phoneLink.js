@@ -1,5 +1,6 @@
 const pool = require('../../config/db');
 const { lastTenDigits, SQL_TRANSLATE_DIGITS } = require('../../utils/phone');
+const { STUDENT_MENU_OPTIONS } = require('../studentMenu');
 
 // ===================== البوت بيطلب الرقم عشان يعرف الطالب =====================
 //
@@ -47,7 +48,7 @@ module.exports = function registerPhoneLinkHandler(bot) {
     const phone = lastTenDigits(contact.phone_number);
     if (!phone) {
       await ctx.reply('الرقم ده مش واضح. اكتبلنا سؤالك عادي وهنساعدك.',
-        { reply_markup: { remove_keyboard: true } });
+        STUDENT_MENU_OPTIONS);
       return;
     }
 
@@ -58,23 +59,25 @@ module.exports = function registerPhoneLinkHandler(bot) {
         [ctx.chat.id, contact.phone_number]);
 
       const { rows } = await pool.query(MATCH_SQL, [phone]);
-      const hide = { reply_markup: { remove_keyboard: true } };
+      // كيبورد مشاركة الرقم لازم يروح بعد ما يتستخدم، وبدل ما يسيب الطالب من غير أي زرار بيرجع لقايمة
+      // الطالب العادية — الكيبورد الجديد بيحل محل القديم في تيليجرام
+      const menu = STUDENT_MENU_OPTIONS;
 
       if (!rows.length) {
         // مش على المنصة: مايستاهلش رسالة إحباط. بنشكره ونسيب الرسالة تكمّل لموظف عادي
-        await ctx.reply('تمام، وصلنا رقمك ✅ اكتبلنا اللي محتاجه وهنساعدك.', hide);
+        await ctx.reply('تمام، وصلنا رقمك ✅ اكتبلنا اللي محتاجه وهنساعدك.', menu);
         return;
       }
       if (rows.length > 1) {
         // ٦٩ رقم متكرر على المنصة (إخوات على تليفون الأب). التخمين هنا يعني إن طالب يشوف
         // بيانات أخوه — فبيروح لموظف، والرسالة بتكمّل عشان تفتح تذكرة
-        await ctx.reply('الرقم ده مسجّل لأكتر من طالب، فحد من الفريق هيتأكد معاك.', hide);
+        await ctx.reply('الرقم ده مسجّل لأكتر من طالب، فحد من الفريق هيتأكد معاك.', menu);
         return next();
       }
 
       const student = rows[0];
       if (student.telegram_chat_id && String(student.telegram_chat_id) !== String(ctx.chat.id)) {
-        await ctx.reply('الرقم ده مربوط بحساب تاني على تيليجرام. حد من الفريق هيتواصل معاك.', hide);
+        await ctx.reply('الرقم ده مربوط بحساب تاني على تيليجرام. حد من الفريق هيتواصل معاك.', menu);
         return next();
       }
 
@@ -82,11 +85,11 @@ module.exports = function registerPhoneLinkHandler(bot) {
         [ctx.chat.id, student.tafra_student_id]);
       const firstName = (student.name || '').trim().split(/\s+/)[0];
       await ctx.reply(`${firstName ? 'أهلًا ' + firstName + '! ' : ''}عرفناك ✅\n`
-        + 'دلوقتي تقدر تكتب /report في أي وقت وتشوف مستواك وتقريرك.', hide);
+        + 'دلوقتي تقدر تكتب /report في أي وقت وتشوف مستواك وتقريرك.', menu);
     } catch (error) {
       console.error('❌ Failed to link a shared contact:', error.message);
       await ctx.reply('حصلت مشكلة وإحنا بنسجّل رقمك. جرّب تاني بعد شوية.',
-        { reply_markup: { remove_keyboard: true } });
+        STUDENT_MENU_OPTIONS);
     }
   });
 

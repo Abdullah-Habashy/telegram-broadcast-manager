@@ -229,18 +229,52 @@ async function transferToTeam(req, res) {
   });
 }
 
-// الإرجاع — الموظف المتخصص بيدوسه لما يخلّص، وموظف المتابعة يقدر يسحبها برضه
+// ---------- الإرجاع لتيم المتابعة: المنطق مفصول عن الـ HTTP ----------
+//
+// زي التحويل بالظبط بقى ليه مصدرين: الموظف المتخصص بيدوس زرار الإرجاع في اللوحة، والطالب
+// بيضغط «تيم المتابعة» في قايمة البوت.
+//
+// **الفرق الوحيد إن إرجاع الطالب بيبلّغ الموظف الماسك.** لما الموظف بيرجّعها بنفسه هو عارف،
+// إنما لو الطالب رجع للمتابعة وهو في نص الكلام مع المتخصص، التذكرة بتختفي من قايمة المتخصص
+// من غير ما يعرف ليه — فبياخد إشعار.
+//
+// الـ CTE بيقرا الماسك القديم قبل ما الأعمدة تتصفّر: `RETURNING` لوحدها بترجّع القيم الجديدة
+// (يعني NULL)، فما كانش فيه طريقة نعرف بيها نبلّغ مين
+async function performReturn({ ticketId, by }) {
+  const result = await pool.query(
+    `WITH previous AS (
+       SELECT id, transfer_agent_id, transfer_team FROM tickets
+       WHERE id = $1 AND transfer_agent_id IS NOT NULL
+     )
+     UPDATE tickets t SET transfer_agent_id = NULL, transfer_team = NULL, transfer_since = NULL,
+       updated_at = NOW()
+     FROM previous p WHERE t.id = p.id
+     RETURNING p.transfer_agent_id AS previous_agent_id, p.transfer_team AS previous_team`,
+    [ticketId]
+  );
+  const row = result.rows[0];
+  if (!row) return { ok: false, status: 409, error: 'التذكرة مش محوّلة لأي تيم' };
+
+  if (by === 'student' && row.previous_agent_id) {
+    const team = getTeam(row.previous_team);
+    push.sendToUser(row.previous_agent_id, {
+      title: 'الطالب رجع لفريق المتابعة',
+      body: `تذكرة كانت معاك${team ? ` في ${team.label}` : ''} رجعت للمتابعة بطلب الطالب`,
+      tag: `ticket-${ticketId}`,
+      url: `/?ticket=${ticketId}`,
+    }).catch((err) => console.error('❌ Failed to notify the team agent about a student return:', err.message));
+  }
+
+  return { ok: true, previous_team: row.previous_team, previous_agent_id: row.previous_agent_id };
+}
+
+// الإرجاع من اللوحة — الموظف المتخصص بيدوسه لما يخلّص، وموظف المتابعة يقدر يسحبها برضه
 async function returnFromTeam(req, res) {
   const ticketId = Number(req.params.id);
   if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'التذكرة غير صالحة' });
   try {
-    const result = await pool.query(
-      `UPDATE tickets SET transfer_agent_id = NULL, transfer_team = NULL, transfer_since = NULL,
-        updated_at = NOW()
-       WHERE id = $1 AND transfer_agent_id IS NOT NULL RETURNING id`,
-      [ticketId]
-    );
-    if (!result.rows[0]) return res.status(409).json({ error: 'التذكرة مش محوّلة لأي تيم' });
+    const result = await performReturn({ ticketId, by: 'staff' });
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
     res.json({ ok: true });
   } catch (error) {
     console.error('❌ Failed to return the ticket from a team:', error.message);
@@ -250,5 +284,5 @@ async function returnFromTeam(req, res) {
 
 module.exports = {
   getAttendanceStatus, checkIn, checkOut, listOnDuty,
-  transferToTeam, returnFromTeam, performTransfer,
+  transferToTeam, returnFromTeam, performTransfer, performReturn,
 };

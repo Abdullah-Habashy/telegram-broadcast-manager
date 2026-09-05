@@ -5,6 +5,7 @@ const { getFirstName } = require('../utils/messagePersonalization');
 const { isWithinWorkingHours, currentCairoTime } = require('../utils/workingHours');
 const events = require('../utils/events');
 const { notifyEmployeesOfIncomingMessage } = require('../bot/handlers/message');
+const { STUDENT_MENU_OPTIONS } = require('../bot/studentMenu');
 
 // دفعة صغيرة كل مرة عشان تشغيلة الكرون ما تاخدش وقت طويل لو الطابور فيه رصيد كبير — الباقي هيتبعت
 // في التشغيلات الجاية لسه احنا داخل وقت العمل
@@ -56,7 +57,7 @@ async function sendPendingWelcomeMessages() {
             getFirstName({ tafra_name: row.tafra_name, gender: row.tafra_gender, first_name: row.first_name, telegram_username: row.telegram_username })
           )
           .replaceAll('الموظف', row.agent_name || 'فريق المتابعة');
-        const telegramMessage = await bot.telegram.sendMessage(row.chat_id, messageText);
+        const telegramMessage = await bot.telegram.sendMessage(row.chat_id, messageText, STUDENT_MENU_OPTIONS);
         await pool.query(
           `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id, is_welcome)
            VALUES ($1, NULL, $2, $3, TRUE)`,
