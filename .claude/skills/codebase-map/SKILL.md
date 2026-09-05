@@ -47,6 +47,7 @@ src/bot/
                        · forwarding.js · staffLink.js · phoneLink.js
                        · studentReport.js · studentTransfer.js
   outsideHoursAck.js   رد بره المواعيد — ومنه بيتنده الرد الآلي
+  studentMenu.js       قايمة الطالب (تلات زراير) — مصدر واحد للنصوص والـ markup
 src/routes/            17 راوتر رقيق
 src/controllers/       كل المنطق هنا
 src/jobs/              scheduler · welcomeMessageSender · tafraSyncScheduler
@@ -195,6 +196,15 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 العمل**، لأنه نتيجة فعل الطالب مش رد على سؤاله، ولو اتحسب رد كان هيفضّي لون التذكرة من معناه.
 استيراد الأسئلة من Word بـ `mammoth` (`quizDocImport` + `quizDocImages`) والتصدير Excel
 بـ `exceljs` (`quizExport`).
+
+**قايمة الطالب: كيبورد مش القايمة الزرقا.** `bot/studentMenu.js` فيه تلات زراير لكل طالب
+(الدعم العلمي · الدعم الفني · تيم المتابعة)، **ومالهاش أي علاقة بقايمة الأوامر الفاضية** — دي
+`reply_markup` بتتبعت مع الرسالة. ولأن الكيبورد مابيتبعتش لوحده، بيتحط على **كل** رسالة رايحة
+للطالب (الترحيب، `/start`، رد بره المواعيد، ردود الموظفين من `tickets.controller`) — لو اتحط عند
+`/start` بس، الطلاب القدام عمرهم ما هيشوفوه. **أي موضع إرسال جديد للطالب ياخد
+`STUDENT_MENU_OPTIONS`** (أو `withStudentMenu(options)` لو عنده خيارات تانية). زرار المتابعة بينادي
+`performReturn` — **نفس الدالة اللي بيناديها زرار الإرجاع في اللوحة**، فالإرجاع اليدوي من المتخصص
+شغّال زي ما هو. وإرجاع الطالب لوحده بيبلّغ الموظف الماسك.
 
 **أدمن البوت = `settings.forward_chat_id`.** الحساب اللي بتتحوّل له كل رسالة جديدة هو نفسه
 حساب صاحب المشروع، فهو الأدمن — مافيش إعداد تاني يتنسى يتحدّث. `bot/handlers/adminReport.js`
