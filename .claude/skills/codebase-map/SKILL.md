@@ -44,19 +44,24 @@ src/bot/
   newBotManager.js     بوت تاني منفصل، webhook على /bot2/webhook — تتبّع Start بس
   broadcastSender.js   تنفيذ الإرسال الجماعي
   handlers/            start.js · message.js · forwarding.js · staffLink.js
+                       · phoneLink.js · studentReport.js · studentTransfer.js
   outsideHoursAck.js   رد بره المواعيد — ومنه بيتنده الرد الآلي
-src/routes/            14 راوتر رقيق
+src/routes/            17 راوتر رقيق
 src/controllers/       كل المنطق هنا
 src/jobs/              scheduler · welcomeMessageSender · tafraSyncScheduler
                        · staffActivityDigest · callAutoAssign · unansweredAlert
-                       · teamAutoReturn · whatsappRouting   (كلهم node-cron)
+                       · teamAutoReturn · whatsappRouting · quizFinalizer
+                       · quizResultNotifier   (كلهم node-cron)
 src/integrations/tafraClient.js   عميل API منصة طفرة
 src/db/schema.sql      الـ schema كامل (اقرأ قسم الأعراف)
 src/utils/             crypto · workingHours · telegramErrors · genderInference
                        · messagePersonalization · ticketAssignment · push · reportExport
                        · teams · silentStudent · callOutcomes · voiceNote
-                       · aiProviders · aiReply · aiHarvest ...
-src/views/dashboard.ejs  ⚠️ 450KB — اللوحة كلها في ملف واحد
+                       · aiProviders · aiReply · aiHarvest · objectStorage
+                       · quizGrading · quizScoring · quizExport · quizDocImport
+                       · quizDocImages · pdfAttachment ...
+src/views/dashboard.ejs  ⚠️ 640KB+ — اللوحة كلها في ملف واحد
+src/views/quiz.ejs       صفحة الاختبار العامة للطالب (/q/:ref)
 ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل من /etc/cron.d على السيرفر
 ```
 
@@ -66,11 +71,11 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 
 ### التنقّل في `dashboard.ejs`
 
-450KB في ملف واحد — **متقراهوش كله**، هيبلع الـ context. استخدم Grep على معرّف العنصر أو اسم الدالة. الأعراف: الفلاتر بمعرّفات زي `tafra-<name>-filter`، ومسجّلة في `registerFilterGroup(...)` وفي خريطة الـ query params، وفي دالة التصفير، وفي مصفوفة مستمعي `change`. **أي فلتر جديد لازم يتحدّث في الأربع أماكن دي** وإلا يشتغل نص شغل بدون أي خطأ ظاهر.
+640KB+ في ملف واحد — **متقراهوش كله**، هيبلع الـ context. استخدم Grep على معرّف العنصر أو اسم الدالة. الأعراف: الفلاتر بمعرّفات زي `tafra-<name>-filter`، ومسجّلة في `registerFilterGroup(...)` وفي خريطة الـ query params، وفي دالة التصفير، وفي مصفوفة مستمعي `change`. **أي فلتر جديد لازم يتحدّث في الأربع أماكن دي** وإلا يشتغل نص شغل بدون أي خطأ ظاهر.
 
 ## نموذج البيانات
 
-٣٧ جدول. المهم منها:
+٤٤ جملة `CREATE TABLE` في `schema.sql`. المهم منها:
 
 | المجموعة | الجداول |
 |---|---|
@@ -81,6 +86,7 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 | طفرة | `tafra_students`, `tafra_bootcamps`, `tafra_enrollments`, `tafra_exams`, `tafra_exam_marks` + جداول `*_sync_status` |
 | المكالمات | `student_call_assignments`, `call_logs`, `call_outcomes`, `call_auto_assign_config` |
 | التيمات | `team_attendance` (حضور وانصراف التيمات المتخصصة) |
+| الاختبارات | `quizzes`, `quiz_questions`, `curriculum_ideas`, `quiz_attempts`, `quiz_answers` |
 | الذكاء الصناعي | `ai_knowledge` (المصدر)، `ai_reply_log` (سجل كل نداء)، `quick_replies` |
 | متنوع | `settings` (مفتاح/قيمة)، `push_subscriptions`، `session` |
 
@@ -177,6 +183,18 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 الطالب بيشوف شارة على إنجازه هو (`badgeFor` في `src/utils/studentDigest.js`). العتبات متكاشة
 ١٠ دقايق لأن حسابها بيمسح كل درجات المنصة (~٢٤٠ مللي).
 
+**الاختبارات: صفحة عامة بهوية تليفون، وتصحيح في طابور.** `/q/:ref` (في `server.js`، **قبل**
+مسارات المصادقة زي تقرير الطالب) بياخد الرابط المختصر أو التوكن الطويل — الاتنين على نفس
+الاختبار عشان الروابط القديمة ماتكسرش. الهوية جوه الصفحة برقم التليفون مش بتسجيل دخول.
+`quizPublic.controller` بيمسك start/save/submit/result، والتصحيح **مش في نفس الطلب**:
+`quiz_grading_mode` (`instant`/`queued`) بيقرّر يبدأ لحظة التسليم ولا يستنى الكرون، والمقالي
+بيتصحّح بنموذج (`utils/quizGrading.js`) بالمعنى مش بالنص. وظيفتين ورا ده: `quizFinalizer`
+بيقفل المحاولات اللي وقتها خلص (الطالب اللي قفل التاب كانت محاولته هتفضل مفتوحة للأبد)،
+و`quizResultNotifier` بيبعت الدرجة على تيليجرام — **مابيتسجّلش في المحادثة ومابيستناش وقت
+العمل**، لأنه نتيجة فعل الطالب مش رد على سؤاله، ولو اتحسب رد كان هيفضّي لون التذكرة من معناه.
+استيراد الأسئلة من Word بـ `mammoth` (`quizDocImport` + `quizDocImages`) والتصدير Excel
+بـ `exceljs` (`quizExport`).
+
 **أخطاء تليجرام: دائمة ضد مؤقتة.** `src/utils/telegramErrors.js` → `isPermanentSendError(error)`. الدائم (حاظر البوت، حساب محذوف، محادثة مش موجودة) **متعيدش المحاولة أبدًا** — تذكرة #466 فضلت تحاول كل ٥ دقايق لشهور على `403 bot was blocked`. المطابقة بنص الوصف مش بكود الحالة، لأن 403 و 400 بيرجعوا في الحالتين. **استخدم الدالة دي في أي كود إرسال جديد.**
 
 ## أعراف الكود
@@ -243,7 +261,10 @@ ssh -i <key> root@<ip> "echo '$b64' | base64 -d > /root/app/<remote-path>"
   مابياخدش رد آلي مهما بعت — على الأرجح مش المطلوب، وتوسيعه محتاج حماية من التكرار.
 - `welcomeMessageSender.js` بيشيل الرسالة من الطابور عند **أي** فشل، فخلل شبكة لحظي بيضيّع الترحيب نهائيًا. متعمّد وموثّق، بس بقى عندنا `isPermanentSendError` فينفع يتحسّن — محتاج عمود لعدّ المحاولات.
 - المتابعة التلقائية بتعيد المحاولة للأخطاء المؤقتة بلا حد أعلى — محتاجة عمود عدّاد كمان.
-- الصور على القرص المحلي، مفيش Object Storage.
+- **الصور لسه على القرص المحلي، بس الكود جاهز للتحويل.** `src/utils/objectStorage.js` بيتكلم
+  S3/R2/Spaces بنفس الكود ومستخدم في `message.js` و`tickets` و`voice` و`quizzes`، لكنه **خامل
+  من غير إعدادات**: لو `S3_*` (٧ متغيّرات في `.env.example`) مش مضبوطة بيرجّع المسار المحلي زي
+  ما هو. التحويل = ضبط المتغيّرات + restart، والمسارات القديمة في القاعدة مابتتلمسش.
 - مفيش Queue خارجي (Redis/BullMQ)، ومفيش زر إيقاف لحملة بدأت، وحملتين متوازيتين بتجمع سرعتيهما.
 - مفيش Audit Log ولا Rate limiting على تسجيل الدخول.
 - `users.is_science_team` عمود ميت بعد التعميم لـ `users.team` — سايب لأن الحذف محتاج موافقة.
