@@ -1345,6 +1345,38 @@
         </div>
 
         <div class="card">
+          <h2>قايمة التعليمات</h2>
+          <p class="card-desc">
+            تعليمات مرقّمة بتتبعت للنموذج <b>مع</b> التعليمات العامة اللي فوق. الفرق إن كل واحدة
+            هنا تقدر تعطّلها أو تحذفها لوحدها لما تطلع إنها بتضر — والخانة النصية فوق مابتسمحش
+            بده. ومساحة التدريب تحت بتضيف هنا تعليمة مع كل تقييم.
+          </p>
+          <div class="row" style="gap:8px; margin-bottom:10px">
+            <input type="text" id="ai-instr-new" class="compact-input" style="flex:1"
+              placeholder="مثال: متقولش «مش لاقي» لوحدها — قول للطالب إن حد من الفريق هيرد عليه.">
+            <button type="button" class="btn btn-primary btn-sm" id="ai-instr-add" style="width:auto">ضيف</button>
+          </div>
+          <div id="ai-instr-list"></div>
+        </div>
+
+        <div class="card">
+          <h2>تدريب على شات قديم</h2>
+          <p class="card-desc">
+            اختار محادثة حصلت فعلًا، والبرنامج بيعدّي كل رسالة الطالب كتبها على النموذج ويحط رده
+            جنب <b>رد الموظف الحقيقي</b> وقتها. تقيّم كل رد: الكويس تضيفه لقاعدة المعرفة، والوحش
+            تكتب معاه تعليمة تتحفظ في القايمة فوق وتأثر على أي تشغيل بعد كده.
+            <b>مفيش رسالة بتتبعت لأي طالب من هنا — المحادثة قديمة والطالب اتردّ عليه خلاص.</b>
+          </p>
+          <div class="row" style="gap:8px; margin-bottom:10px">
+            <input type="text" id="ai-train-q" class="compact-input" style="flex:1"
+              placeholder="اسم الطالب أو رقم التذكرة — سيبها فاضية عشان تشوف أطول المحادثات">
+            <button type="button" class="btn btn-ghost btn-sm" id="ai-train-find" style="width:auto">دوّر</button>
+          </div>
+          <div id="ai-train-tickets"></div>
+          <div id="ai-train-result" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
           <h2>المساحة التجريبية</h2>
           <p class="card-desc">
             كلّمه زي ما الطالب هيكلّمه. لو قال «مش لاقي الإجابة» — ده معناه إن المصدر ناقص:
@@ -5519,10 +5551,189 @@ ${reply.content}` : reply.content;
       } catch (error) { showToast(error.message); }
     }
 
+    // ---------- قايمة التعليمات ----------
+    async function loadAiInstructions() {
+      const list = document.getElementById('ai-instr-list');
+      if (!list) return;
+      try {
+        const data = await api('/api/assist/instructions');
+        list.innerHTML = data.instructions.length
+          ? data.instructions.map((row, index) => `
+            <div class="row-between" style="padding:8px 0; border-bottom:1px solid var(--border); gap:8px">
+              <div style="flex:1; min-width:0; ${row.is_active ? '' : 'opacity:.5'}">
+                <span class="ticket-muted">${index + 1}.</span>
+                <span style="white-space:pre-wrap">${escapeHtml(row.content)}</span>
+                ${row.source === 'training' ? '<span class="stat-pill stat-muted" style="margin-right:6px">من التدريب</span>' : ''}
+              </div>
+              <label class="icon-toggle" title="مفعّلة — المعطّلة مابتتبعتش للنموذج"><input type="checkbox" data-instr-active="${row.id}" ${row.is_active ? 'checked' : ''}> ⚡</label>
+              <button type="button" class="btn btn-danger-ghost btn-sm" data-instr-del="${row.id}" style="width:auto">حذف</button>
+            </div>`).join('')
+          : '<div class="empty-state">مفيش تعليمات في القايمة — النموذج ماشي على التعليمات العامة فوق بس</div>';
+        list.querySelectorAll('[data-instr-active]').forEach((box) => {
+          box.addEventListener('change', () => api(`/api/assist/instructions/${box.dataset.instrActive}`,
+            { method: 'PATCH', body: JSON.stringify({ is_active: box.checked }) })
+            .then(() => showToast('اتحدّثت')).catch((e) => showToast(e.message)));
+        });
+        list.querySelectorAll('[data-instr-del]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            if (!confirm('تحذف التعليمة دي؟')) return;
+            try {
+              await api(`/api/assist/instructions/${button.dataset.instrDel}`, { method: 'DELETE' });
+              loadAiInstructions();
+            } catch (e) { showToast(e.message); }
+          });
+        });
+      } catch (e) { list.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
+    }
+
+    // ---------- تدريب على شات قديم ----------
+    // البنود متخزّنة على السيرفر (ai_training_items) مش في المتصفح زي المساحة التجريبية،
+    // عشان التقييم يفضل موجود لو الأدمن قفل الصفحة ورجع يكمّل
+    let aiTrainingItems = [];
+    let aiTrainingRun = null;
+
+    async function searchAiTrainingTickets() {
+      const box = document.getElementById('ai-train-tickets');
+      const term = document.getElementById('ai-train-q').value.trim();
+      box.innerHTML = '<div class="ticket-muted">بيدوّر...</div>';
+      try {
+        const data = await api(`/api/assist/training/tickets?q=${encodeURIComponent(term)}`);
+        box.innerHTML = data.tickets.length
+          ? data.tickets.map((row) => `
+            <div class="row-between" style="padding:6px 0; border-bottom:1px solid var(--border); gap:8px">
+              <div style="flex:1; min-width:0">
+                ${escapeHtml(row.student_name || 'طالب')}
+                <span class="ticket-muted">— تذكرة #${row.id} · ${row.question_count} رسالة</span>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" data-train-run="${row.id}" style="width:auto">شغّل</button>
+            </div>`).join('')
+          : '<div class="empty-state">مفيش محادثات مطابقة</div>';
+        box.querySelectorAll('[data-train-run]').forEach((button) => {
+          button.addEventListener('click', () => runAiTraining(Number(button.dataset.trainRun), button));
+        });
+      } catch (e) { box.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
+    }
+
+    async function runAiTraining(ticketId, button) {
+      const box = document.getElementById('ai-train-result');
+      button.disabled = true;
+      box.innerHTML = '<div class="ticket-muted">النموذج بيرد على رسايل المحادثة واحدة واحدة... ممكن ياخد دقيقة</div>';
+      try {
+        const data = await api('/api/assist/training/run',
+          { method: 'POST', body: JSON.stringify({ ticket_id: ticketId }) });
+        aiTrainingItems = data.items || [];
+        aiTrainingRun = data.run;
+        renderAiTraining();
+      } catch (e) { box.innerHTML = `<div class="empty-state">${escapeHtml(e.message)}</div>`; }
+      finally { button.disabled = false; }
+    }
+
+    function renderAiTraining() {
+      const box = document.getElementById('ai-train-result');
+      if (!aiTrainingItems.length) { box.innerHTML = ''; return; }
+      const good = aiTrainingItems.filter((row) => row.verdict === 'good').length;
+      const bad = aiTrainingItems.filter((row) => row.verdict === 'bad').length;
+
+      box.innerHTML = `
+        <div class="row-between" style="margin-bottom:10px">
+          <b>${escapeHtml(aiTrainingRun?.student_name || 'محادثة')} — ${aiTrainingItems.length} سؤال</b>
+          <span class="ticket-muted">✅ ${good} · ❌ ${bad} · لسه ${aiTrainingItems.length - good - bad}</span>
+        </div>
+        ${aiTrainingItems.map((row) => {
+          const [label, tone] = OUTCOME_LABELS[row.outcome] || ['؟', 'stat-muted'];
+          const verdictPill = row.verdict === 'good' ? '<span class="stat-pill stat-success">✅ كويس</span>'
+            : row.verdict === 'bad' ? '<span class="stat-pill stat-warning">❌ وحش</span>' : '';
+          return `
+          <div class="card" data-tr-item="${row.id}" style="margin-bottom:10px; padding:12px">
+            <div style="margin-bottom:6px"><b>الطالب:</b> <span style="white-space:pre-wrap">${escapeHtml(row.question)}</span></div>
+            <div class="ticket-muted" style="margin-bottom:6px; white-space:pre-wrap"><b>رد الموظف وقتها:</b> ${row.agent_reply ? escapeHtml(row.agent_reply) : '— مفيش رد مسجّل —'}</div>
+            <div style="margin-bottom:8px">
+              <span class="stat-pill ${tone}">${label}</span>
+              ${verdictPill}
+              <div style="white-space:pre-wrap; margin-top:4px">${row.answer ? escapeHtml(row.answer) : '<span class="ticket-muted">مفيش رد</span>'}</div>
+            </div>
+            <input type="text" class="compact-input" data-tr-note placeholder="ليه؟ اكتب تعليمة أو ملاحظة..."
+              style="width:100%; margin-bottom:6px" value="${escapeHtml(row.note || '')}">
+            <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
+              <button type="button" class="btn btn-primary btn-sm" data-tr-good style="width:auto">✅ كويس</button>
+              <button type="button" class="btn btn-danger-ghost btn-sm" data-tr-bad style="width:auto">❌ وحش</button>
+              <label class="row" style="gap:6px"><input type="checkbox" data-tr-as-instr checked> ضيف الملاحظة لقايمة التعليمات</label>
+            </div>
+            ${row.answer ? `
+            <details style="margin-top:8px" ${row.knowledge_id ? '' : ''}>
+              <summary style="cursor:pointer">📚 ${row.knowledge_id ? 'متضاف لقاعدة المعرفة ✅' : 'ضيفه لقاعدة المعرفة'}</summary>
+              ${row.knowledge_id ? '<div class="ticket-muted" style="margin-top:6px">اتضاف خلاص — تقدر تعدّله من قاعدة المعرفة تحت</div>' : `
+                <input type="text" class="compact-input" data-tr-kbq style="width:100%; margin:6px 0" value="${escapeHtml(row.question)}">
+                <textarea class="compact-input" data-tr-kba rows="3" style="width:100%">${escapeHtml(row.answer)}</textarea>
+                <button type="button" class="btn btn-primary btn-sm" data-tr-kb style="width:auto; margin-top:6px">احفظ في المصدر</button>`}
+            </details>` : ''}
+          </div>`;
+        }).join('')}`;
+
+      box.querySelectorAll('[data-tr-item]').forEach((card) => {
+        const itemId = Number(card.dataset.trItem);
+        card.querySelector('[data-tr-good]').addEventListener('click', () => reviewAiTrainingItem(itemId, 'good', card));
+        card.querySelector('[data-tr-bad]').addEventListener('click', () => reviewAiTrainingItem(itemId, 'bad', card));
+        const promote = card.querySelector('[data-tr-kb]');
+        if (promote) promote.addEventListener('click', () => promoteAiTrainingItem(itemId, card, promote));
+      });
+    }
+
+    async function reviewAiTrainingItem(itemId, verdict, card) {
+      const note = card.querySelector('[data-tr-note]').value.trim();
+      // الملاحظة بتتحوّل لتعليمة دايمة بس لو الخانة متعلّم عليها — مش كل ملاحظة تستاهل تبقى قاعدة
+      const asInstruction = card.querySelector('[data-tr-as-instr]').checked && note;
+      try {
+        const data = await api(`/api/assist/training/items/${itemId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ verdict, note, as_instruction: asInstruction }),
+        });
+        const index = aiTrainingItems.findIndex((row) => row.id === itemId);
+        if (index >= 0) aiTrainingItems[index] = data.item;
+        renderAiTraining();
+        if (data.instruction_id) {
+          showToast('اتسجّل والتعليمة اتضافت — هتأثر على أي تشغيل بعد كده');
+          loadAiInstructions();
+        } else showToast('اتسجّل');
+      } catch (error) { showToast(error.message); }
+    }
+
+    async function promoteAiTrainingItem(itemId, card, button) {
+      const question = card.querySelector('[data-tr-kbq]').value.trim();
+      const answer = card.querySelector('[data-tr-kba]').value.trim();
+      if (!question || !answer) return showToast('السؤال والإجابة مطلوبين');
+      button.disabled = true;
+      try {
+        await api(`/api/assist/training/items/${itemId}/knowledge`,
+          { method: 'POST', body: JSON.stringify({ question, answer }) });
+        const index = aiTrainingItems.findIndex((row) => row.id === itemId);
+        if (index >= 0) aiTrainingItems[index].knowledge_id = 1;
+        renderAiTraining();
+        loadKnowledge();
+        showToast('اتضاف لقاعدة المعرفة');
+      } catch (error) { showToast(error.message); button.disabled = false; }
+    }
+
     function initAiTab() {
       const send = document.getElementById('ai-chat-send');
       if (!send || send.dataset.bound === '1') return;
       send.dataset.bound = '1';
+
+      document.getElementById('ai-instr-add').addEventListener('click', async () => {
+        const input = document.getElementById('ai-instr-new');
+        const content = input.value.trim();
+        if (!content) return showToast('اكتب التعليمة');
+        try {
+          await api('/api/assist/instructions', { method: 'POST', body: JSON.stringify({ content }) });
+          input.value = '';
+          loadAiInstructions();
+        } catch (error) { showToast(error.message); }
+      });
+
+      document.getElementById('ai-train-find').addEventListener('click', searchAiTrainingTickets);
+      document.getElementById('ai-train-q').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') { event.preventDefault(); searchAiTrainingTickets(); }
+      });
 
       send.addEventListener('click', sendAiChat);
       document.getElementById('ai-chat-input').addEventListener('keydown', (event) => {
@@ -5633,6 +5844,7 @@ ${reply.content}` : reply.content;
 
       renderAiChat();
       loadKnowledge();
+      loadAiInstructions();
     }
 
     function initAssistPanel() {

@@ -573,6 +573,66 @@ ALTER TABLE ai_reply_log ADD COLUMN IF NOT EXISTS provider VARCHAR(20);
 -- علامة إن الرسالة دي مولّدة آليًا — الموظف لازم يفرّقها عن كلام زمايله وهو بيراجع الصبح
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_ai BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- ---------- تعليمات الرد الآلي: قايمة صفوف ----------
+--
+-- `settings.ai_general_instructions` نص واحد كبير، وده كان كفاية وهي تعليمة أو اتنين. مساحة
+-- التدريب بتولّد تعليمة مع كل تقييم، والنص الواحد معناه إن كل تعليمة جديدة تتلزق في آخره من
+-- غير طريقة تشيلها أو تعطّلها لوحدها لما تطلع غلط.
+--
+-- **الخانة النصية القديمة لسه شغّالة زي ما هي** — النموذج بياخد الاتنين مع بعض. الترحيل مش
+-- ضروري: صفر تعليمات في القايمة = نفس السلوك القديم بالحرف
+CREATE TABLE IF NOT EXISTS ai_instructions (
+    id SERIAL PRIMARY KEY,
+    content TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    -- manual = الأدمن كتبها في القايمة · training = اتكتبت مع تقييم رد في مساحة التدريب
+    source VARCHAR(20) NOT NULL DEFAULT 'manual',
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_instructions_active ON ai_instructions (id) WHERE is_active;
+
+-- ---------- مساحة التدريب على شات قديم ----------
+--
+-- الفكرة: بدل ما نجرّب النموذج بأسئلة بنخترعها، بناخد محادثة حصلت فعلًا ونعدّي كل رسالة طالب
+-- فيها على النموذج، ونحط رد الموظف الحقيقي جنب رد النموذج. الفرق بين الاتنين هو التقييم.
+--
+-- **كل سؤال بيتبعت لوحده زي الإنتاج بالظبط** — من غير سياق المحادثة — لأن ده اللي بيحصل
+-- فعليًا لما الطالب يسأل بره المواعيد. لو بعتناه بسياق كامل كنا هنقيس حاجة البوت مابيعملهاش.
+CREATE TABLE IF NOT EXISTS ai_training_runs (
+    id SERIAL PRIMARY KEY,
+    ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+    provider VARCHAR(20),
+    started_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_training_runs_time ON ai_training_runs (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_training_items (
+    id SERIAL PRIMARY KEY,
+    run_id INTEGER NOT NULL REFERENCES ai_training_runs(id) ON DELETE CASCADE,
+    incoming_message_id INTEGER REFERENCES incoming_messages(id) ON DELETE SET NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    question TEXT NOT NULL,
+    -- رد الموظف الحقيقي وقتها. من غيره التقييم بيبقى رأي في الفراغ: "الرد ده كويس؟" من غير
+    -- ما تعرف الفريق رد إيه على نفس السؤال
+    agent_reply TEXT,
+    answer TEXT,
+    outcome VARCHAR(20),
+    detail TEXT,
+    latency_ms INTEGER,
+    -- good · bad · NULL = لسه ما اتقيّمش
+    verdict VARCHAR(10),
+    note TEXT,
+    -- الرد الكويس لما يتحوّل لصف في قاعدة المعرفة، والتعليمة لما تتكتب مع التقييم
+    knowledge_id INTEGER REFERENCES ai_knowledge(id) ON DELETE SET NULL,
+    instruction_id INTEGER REFERENCES ai_instructions(id) ON DELETE SET NULL,
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_training_items_run ON ai_training_items (run_id, position);
+
 INSERT INTO settings (key, value) VALUES
     ('bot_token_encrypted', NULL),
     ('new_bot_token_encrypted', NULL),

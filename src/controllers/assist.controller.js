@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const aiReply = require('../utils/aiReply');
 const aiHarvest = require('../utils/aiHarvest');
 const aiMining = require('../utils/aiMining');
+const aiTraining = require('../utils/aiTraining');
 
 // ---------- الردود الجاهزة وقاعدة معرفة الرد الآلي ----------
 //
@@ -333,8 +334,276 @@ async function getAiLog(req, res) {
   }
 }
 
+// ===== قايمة التعليمات =====
+//
+// التعليمات كانت نص واحد في `settings.ai_general_instructions`، والخانة دي **لسه شغّالة**.
+// القايمة دي فوقها: كل تعليمة صف تقدر تعطّله أو تحذفه لوحده لما يطلع إنه بيضر — وده اللي
+// النص الواحد ما كانش بيسمح بيه. `aiReply.joinInstructions` بيجمع الاتنين
+async function listInstructions(req, res) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT i.*, u.name AS author_name
+       FROM ai_instructions i LEFT JOIN users u ON u.id = i.created_by
+       ORDER BY i.id`
+    );
+    res.json({ instructions: rows });
+  } catch (error) {
+    console.error('❌ Failed to list AI instructions:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل التعليمات' });
+  }
+}
+
+async function createInstruction(req, res) {
+  const content = String(req.body.content || '').trim();
+  if (!content) return res.status(400).json({ error: 'اكتب التعليمة' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO ai_instructions (content, source, created_by) VALUES ($1, $2, $3)
+       RETURNING *`,
+      [content, req.body.source === 'training' ? 'training' : 'manual', req.session.userId]
+    );
+    res.status(201).json({ instruction: rows[0] });
+  } catch (error) {
+    console.error('❌ Failed to create an AI instruction:', error.message);
+    res.status(500).json({ error: 'تعذر حفظ التعليمة' });
+  }
+}
+
+async function updateInstruction(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'التعليمة غير صالحة' });
+  const fields = [];
+  const values = [id];
+  if (req.body.content !== undefined) {
+    const content = String(req.body.content).trim();
+    if (!content) return res.status(400).json({ error: 'التعليمة مش ممكن تبقى فاضية' });
+    values.push(content);
+    fields.push(`content = $${values.length}`);
+  }
+  if (req.body.is_active !== undefined) {
+    values.push(Boolean(req.body.is_active));
+    fields.push(`is_active = $${values.length}`);
+  }
+  if (!fields.length) return res.status(400).json({ error: 'مفيش حاجة تتحدّث' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE ai_instructions SET ${fields.join(', ')} WHERE id = $1 RETURNING *`, values
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'التعليمة غير موجودة' });
+    res.json({ instruction: rows[0] });
+  } catch (error) {
+    console.error('❌ Failed to update an AI instruction:', error.message);
+    res.status(500).json({ error: 'تعذر تعديل التعليمة' });
+  }
+}
+
+async function deleteInstruction(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'التعليمة غير صالحة' });
+  try {
+    await pool.query('DELETE FROM ai_instructions WHERE id = $1', [id]);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Failed to delete an AI instruction:', error.message);
+    res.status(500).json({ error: 'تعذر حذف التعليمة' });
+  }
+}
+
+// ===== مساحة التدريب على شات قديم =====
+
+// بحث عن محادثة للتجربة. الترتيب بعدد رسايل الطالب مش بالتاريخ: المحادثة اللي فيها ٣٠ سؤال
+// بتدي جلسة تدريب حقيقية، واللي فيها "شكرًا" بس مابتعلّمش حاجة
+async function searchTrainingTickets(req, res) {
+  const term = String(req.query.q || '').trim();
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.id, t.created_at,
+         COALESCE(s.name, c.first_name, c.telegram_username, c.chat_id::text) AS student_name,
+         (SELECT COUNT(*)::int FROM incoming_messages im
+           WHERE im.contact_id = c.id
+             AND LENGTH(TRIM(COALESCE(im.content, ''))) >= ${aiTraining.MIN_QUESTION_LENGTH}
+             AND im.content !~ '${aiTraining.MEDIA_PLACEHOLDER_PATTERN}') AS question_count
+       FROM tickets t
+       JOIN contacts c ON c.id = t.contact_id
+       LEFT JOIN LATERAL (
+         SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1
+       ) s ON true
+       WHERE ($1 = '' OR COALESCE(s.name, c.first_name, c.telegram_username, '') ILIKE '%' || $1 || '%'
+              OR t.id::text = $1)
+       ORDER BY question_count DESC, t.id DESC
+       LIMIT 25`,
+      [term]
+    );
+    res.json({ tickets: rows.filter((row) => row.question_count > 0) });
+  } catch (error) {
+    console.error('❌ Failed to search training tickets:', error.message);
+    res.status(500).json({ error: 'تعذر البحث عن المحادثات' });
+  }
+}
+
+async function startTraining(req, res) {
+  const ticketId = Number(req.body.ticket_id);
+  if (!Number.isInteger(ticketId)) return res.status(400).json({ error: 'اختار محادثة الأول' });
+  if (!aiReply.isEnabled()) {
+    return res.status(503).json({ error: 'مفيش أي مفتاح مضبوط على السيرفر — لا Claude ولا Groq' });
+  }
+  try {
+    const result = await aiTraining.runTraining({
+      ticketId,
+      provider: req.body.provider || undefined,
+      userId: req.session.userId,
+      limit: req.body.limit,
+    });
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    res.json(result);
+  } catch (error) {
+    console.error('❌ AI training run failed:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// جلسة واحدة بكل بنودها — عشان الأدمن يقفل الصفحة ويرجع يكمّل تقييم بعدين
+async function getTrainingRun(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'الجلسة غير صالحة' });
+  try {
+    const run = await pool.query(
+      `SELECT r.*, COALESCE(s.name, c.first_name, c.telegram_username) AS student_name
+       FROM ai_training_runs r
+       LEFT JOIN tickets t ON t.id = r.ticket_id
+       LEFT JOIN contacts c ON c.id = t.contact_id
+       LEFT JOIN LATERAL (SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1) s ON true
+       WHERE r.id = $1`,
+      [id]
+    );
+    if (!run.rows[0]) return res.status(404).json({ error: 'الجلسة غير موجودة' });
+    const items = await pool.query(
+      'SELECT * FROM ai_training_items WHERE run_id = $1 ORDER BY position', [id]
+    );
+    res.json({ run: run.rows[0], items: items.rows });
+  } catch (error) {
+    console.error('❌ Failed to load a training run:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل الجلسة' });
+  }
+}
+
+async function listTrainingRuns(req, res) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.ticket_id, r.provider, r.created_at,
+         COALESCE(s.name, c.first_name, c.telegram_username) AS student_name,
+         COUNT(i.id)::int AS total,
+         COUNT(*) FILTER (WHERE i.verdict = 'good')::int AS good,
+         COUNT(*) FILTER (WHERE i.verdict = 'bad')::int AS bad
+       FROM ai_training_runs r
+       LEFT JOIN ai_training_items i ON i.run_id = r.id
+       LEFT JOIN tickets t ON t.id = r.ticket_id
+       LEFT JOIN contacts c ON c.id = t.contact_id
+       LEFT JOIN LATERAL (SELECT name FROM tafra_students WHERE telegram_chat_id = c.chat_id LIMIT 1) s ON true
+       GROUP BY r.id, s.name, c.first_name, c.telegram_username
+       ORDER BY r.created_at DESC LIMIT 30`
+    );
+    res.json({ runs: rows });
+  } catch (error) {
+    console.error('❌ Failed to list training runs:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل الجلسات' });
+  }
+}
+
+// التقييم + التعليمة في نداء واحد: الاتنين فعل واحد عند الأدمن ("الرد ده وحش **لأنه**...")،
+// وفصلهم كان معناه تقييم يتحفظ وتعليمة تضيع لو النداء التاني فشل
+async function reviewTrainingItem(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'البند غير صالح' });
+  const verdict = req.body.verdict === 'good' || req.body.verdict === 'bad' ? req.body.verdict : null;
+  const note = String(req.body.note || '').trim();
+  // التعليمة بتتضاف للقايمة وبتأثر على أي تشغيل بعد كده. الملاحظة من غير الخانة دي بتتسجّل
+  // على البند بس — مش كل ملاحظة تستاهل تبقى قاعدة دايمة
+  const asInstruction = Boolean(req.body.as_instruction) && note;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let instructionId = null;
+    if (asInstruction) {
+      const inserted = await client.query(
+        `INSERT INTO ai_instructions (content, source, created_by) VALUES ($1, 'training', $2)
+         RETURNING id`,
+        [note, req.session.userId]
+      );
+      instructionId = inserted.rows[0].id;
+    }
+    const { rows } = await client.query(
+      `UPDATE ai_training_items
+         SET verdict = $2, note = $3,
+             instruction_id = COALESCE($4, instruction_id),
+             reviewed_by = $5, reviewed_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [id, verdict, note || null, instructionId, req.session.userId]
+    );
+    if (!rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'البند غير موجود' });
+    }
+    await client.query('COMMIT');
+    res.json({ item: rows[0], instruction_id: instructionId });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Failed to review a training item:', error.message);
+    res.status(500).json({ error: 'تعذر حفظ التقييم' });
+  } finally {
+    client.release();
+  }
+}
+
+// الرد الكويس بيتحوّل لصف في قاعدة المعرفة — **بموافقة صريحة، مش تلقائيًا مع التقييم**.
+// نفس مبدأ الحصاد: النموذج بيقترح والأدمن بيكتب في المصدر. والنص قابل للتعديل قبل الحفظ لأن
+// رد النموذج غالبًا محتاج تحرير بسيط قبل ما يبقى معلومة دايمة
+async function promoteTrainingItem(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'البند غير صالح' });
+  const question = String(req.body.question || '').trim();
+  const answer = String(req.body.answer || '').trim();
+  if (!question || !answer) return res.status(400).json({ error: 'السؤال والإجابة مطلوبين' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(
+      'SELECT knowledge_id FROM ai_training_items WHERE id = $1 FOR UPDATE', [id]
+    );
+    if (!existing.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'البند غير موجود' });
+    }
+    // اتضاف قبل كده: الضغط مرتين على نفس الزرار مايعملش صفين متكررين في المصدر
+    if (existing.rows[0].knowledge_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'الرد ده متضاف لقاعدة المعرفة بالفعل' });
+    }
+    const knowledge = await client.query(
+      `INSERT INTO ai_knowledge (question, answer, source) VALUES ($1, $2, 'training')
+       RETURNING id, question, answer`,
+      [question, answer]
+    );
+    await client.query('UPDATE ai_training_items SET knowledge_id = $2 WHERE id = $1',
+      [id, knowledge.rows[0].id]);
+    await client.query('COMMIT');
+    res.status(201).json({ knowledge: knowledge.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Failed to promote a training answer to knowledge:', error.message);
+    res.status(500).json({ error: 'تعذر إضافة الرد لقاعدة المعرفة' });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   listQuickReplies, createQuickReply, updateQuickReply, deleteQuickReply,
   listKnowledge, createKnowledge, updateKnowledge, deleteKnowledge, testKnowledge, getAiLog,
   updateAiSettings, chat, harvestChat, harvestFile, applyChanges, mineHistory, previewClusters,
+  listInstructions, createInstruction, updateInstruction, deleteInstruction,
+  searchTrainingTickets, startTraining, getTrainingRun, listTrainingRuns,
+  reviewTrainingItem, promoteTrainingItem,
 };

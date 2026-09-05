@@ -50,16 +50,29 @@ ${generalInstructions}
 }
 
 async function loadContext() {
-  const [knowledge, settings] = await Promise.all([
+  const [knowledge, settings, instructions] = await Promise.all([
     pool.query('SELECT question, answer FROM ai_knowledge WHERE is_active ORDER BY id'),
     pool.query(`SELECT key, value FROM settings WHERE key IN
       ('ai_reply_enabled', 'ai_reply_prefix', 'ai_blocked_topics', 'ai_provider',
        'ai_general_instructions')`),
+    pool.query('SELECT content FROM ai_instructions WHERE is_active ORDER BY id'),
   ]);
   return {
     knowledge: knowledge.rows,
     settings: Object.fromEntries(settings.rows.map((row) => [row.key, row.value])),
+    instructions: instructions.rows.map((row) => row.content),
   };
+}
+
+// مصدرين للتعليمات وبيتجمعوا في نص واحد: الخانة النصية القديمة في الإعدادات، وقايمة
+// `ai_instructions` اللي مساحة التدريب بتكتب فيها تعليمة مع كل تقييم. الترقيم مقصود — النموذج
+// بيلتزم بقايمة مرقمة أكتر من فقرة متصلة
+function joinInstructions(settingsText, listed) {
+  const parts = [];
+  const text = (settingsText || '').trim();
+  if (text) parts.push(text);
+  if (listed.length) parts.push(listed.map((line, index) => `${index + 1}. ${line.trim()}`).join('\n'));
+  return parts.join('\n');
 }
 
 // أي مزوّد متاح أصلًا؟ الميزة بتتعطّل لوحدها لو مفيش ولا مفتاح مضبوط
@@ -70,7 +83,7 @@ function isEnabled() {
 // بترجع { outcome, answer, ... } — والمنادي هو اللي بيبعت فعلًا. الفصل مقصود: الدالة دي
 // مسؤولة عن "إيه الرد الصح" بس، والإرسال والتسجيل عند اللي بينده
 async function generateReply({ question, provider, skipEnabledCheck = false }) {
-  const { knowledge, settings } = await loadContext();
+  const { knowledge, settings, instructions } = await loadContext();
   const providerKey = provider || settings.ai_provider || DEFAULT_PROVIDER;
 
   // التجربة من اللوحة بتتخطى شرط التشغيل: الأدمن لازم يقدر يجرّب قبل ما يشغّل
@@ -82,7 +95,7 @@ async function generateReply({ question, provider, skipEnabledCheck = false }) {
   const systemPrompt = buildSystemPrompt(
     knowledge,
     settings.ai_blocked_topics || 'لا يوجد',
-    (settings.ai_general_instructions || '').trim()
+    joinInstructions(settings.ai_general_instructions, instructions)
   );
   const startedAt = Date.now();
   const { output, usage } = await callProvider(providerKey, { systemPrompt, question });
