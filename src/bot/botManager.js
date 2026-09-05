@@ -3,6 +3,7 @@ const { Telegraf } = require('telegraf');
 const pool = require('../config/db');
 const env = require('../config/env');
 const { decrypt } = require('../utils/crypto');
+const registerAdminReportHandler = require('./handlers/adminReport');
 const registerStartHandler = require('./handlers/start');
 const registerForwardingHandler = require('./handlers/forwarding');
 const registerStaffLinkHandler = require('./handlers/staffLink');
@@ -37,6 +38,9 @@ async function getStoredToken() {
 
 function createBot(token) {
   const bot = new Telegraf(token);
+  // **أول واحد عن قصد.** رسايل حساب الأدمن (اللي بتتحوّل له رسايل البوت) مش رسايل طلاب — لو
+  // عدّت على `start.js` أو `message.js` كانت هتفتح تذكرة باسمه وتتوزّع على موظف
+  registerAdminReportHandler(bot);
   registerStartHandler(bot);
   registerForwardingHandler(bot);
   registerStaffLinkHandler(bot);

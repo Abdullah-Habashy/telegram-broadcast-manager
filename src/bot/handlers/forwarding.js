@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const pool = require('../../config/db');
+const { ADMIN_KEYBOARD, ensureAdminCommandMenu, invalidateAdminChatCache } = require('./adminReport');
 
 function generateSetupCode() {
   return crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -46,7 +47,16 @@ module.exports = function registerForwardingHandler(bot) {
         [String(ctx.chat.id), displayName, nextCode]
       );
 
-      await ctx.reply('✅ تم ربط هذا الحساب. ستصل إليه الرسائل الجديدة الواردة للبوت.');
+      // الحساب ده بقى أدمن البوت من اللحظة دي: بيصفّر كاش الميدلوير، وبيتسجّل له زرار
+      // التقرير وقايمة أوامر بنطاق محادثته لوحدها
+      invalidateAdminChatCache();
+      await ensureAdminCommandMenu(ctx.telegram, ctx.chat.id);
+
+      await ctx.reply(
+        '✅ تم ربط هذا الحساب. ستصل إليه الرسائل الجديدة الواردة للبوت،'
+        + ' وهو حساب الأدمن الوحيد الذي يظهر له زر التقرير اليومي.',
+        ADMIN_KEYBOARD
+      );
       console.log(`✅ Incoming-message forwarding target linked: ${displayName}`);
     } catch (error) {
       console.error('❌ Failed to link forwarding target:', error.message);
