@@ -59,7 +59,7 @@ src/db/schema.sql      الـ schema كامل (اقرأ قسم الأعراف)
 src/utils/             crypto · workingHours · telegramErrors · genderInference
                        · messagePersonalization · ticketAssignment · push · reportExport
                        · teams · silentStudent · callOutcomes · voiceNote
-                       · aiProviders · aiReply · aiHarvest · objectStorage
+                       · aiProviders · aiReply · aiHarvest · aiTraining · objectStorage
                        · quizGrading · quizScoring · quizExport · quizDocImport
                        · quizDocImages · pdfAttachment ...
 src/views/dashboard.ejs  ⚠️ 640KB+ — اللوحة كلها في ملف واحد
@@ -89,7 +89,7 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 | المكالمات | `student_call_assignments`, `call_logs`, `call_outcomes`, `call_auto_assign_config` |
 | التيمات | `team_attendance` (حضور وانصراف التيمات المتخصصة) |
 | الاختبارات | `quizzes`, `quiz_questions`, `curriculum_ideas`, `quiz_attempts`, `quiz_answers` |
-| الذكاء الصناعي | `ai_knowledge` (المصدر)، `ai_reply_log` (سجل كل نداء)، `quick_replies` |
+| الذكاء الصناعي | `ai_knowledge` (المصدر)، `ai_instructions` (قايمة التعليمات)، `ai_reply_log` (سجل كل نداء)، `ai_training_runs` + `ai_training_items` (مساحة التدريب)، `quick_replies` |
 | متنوع | `settings` (مفتاح/قيمة)، `push_subscriptions`، `session` |
 
 ### مفاهيم لازم تفهمها قبل ما تعدّل
@@ -206,6 +206,18 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 `performReturn` — **نفس الدالة اللي بيناديها زرار الإرجاع في اللوحة**، فالإرجاع اليدوي من المتخصص
 شغّال زي ما هو. وإرجاع الطالب لوحده بيبلّغ الموظف الماسك.
 
+**تدريب الرد الآلي: مقارنة برد الموظف الحقيقي.** `utils/aiTraining.js` بياخد تذكرة قديمة،
+يعدّي رسايل الطالب على النموذج **كل واحدة لوحدها من غير سياق** (زي الإنتاج)، ويحط رد الموظف
+اللي حصل فعلًا جنب رد النموذج. **مفيش أي رسالة بتتبعت لطالب من هنا.** تلات قيود متعمدة:
+السقف ٢٤ رسالة بتوازي ٤ لأن **Cloudflare بيقطع الطلب عند ١٠٠ ثانية** والنداء الواحد ~٨ ثواني؛
+رسايل الوسايط مستبعدة لأنها مش أسئلة، والفلتر **مصدّر** عشان عدّاد البحث يعدّ بنفس القاعدة؛
+والتقييم مابيكتبش في المصدر لوحده — الرد الكويس محتاج ضغطة تانية عشان يبقى صف في
+`ai_knowledge` (نفس مبدأ الحصاد: النموذج يقترح والأدمن يكتب).
+
+**التعليمات في مكانين والاتنين بيتبعتوا:** `settings.ai_general_instructions` (خانة نصية
+قديمة لسه شغالة) + جدول `ai_instructions` (قايمة مرقمة كل صف يتعطّل لوحده). `joinInstructions`
+في `aiReply.js` بيجمعهم — لو ضفت مصدر تالت للتعليمات، مكانه هناك مش في `buildSystemPrompt`.
+
 **أدمن البوت = `settings.forward_chat_id`.** الحساب اللي بتتحوّل له كل رسالة جديدة هو نفسه
 حساب صاحب المشروع، فهو الأدمن — مافيش إعداد تاني يتنسى يتحدّث. `bot/handlers/adminReport.js`
 ميدلوير **مسجّل قبل كل الهاندلرات** بيمسك رسايله: رسايله مش رسايل طلاب ومابتفتحش تذاكر
@@ -239,6 +251,14 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 مفيش تستات، فالتحقق: `node --check <file>` للـ syntax، و`ejs.compile()` للقوالب، ولوجيك خالص جرّبه بـ `node -e`. استعلامات فلترة جديدة **اختبرها على بيانات الإنتاج قراءة-فقط** قبل النشر (`SELECT` بس) — أسرع وأصدق دليل من أي حاجة تانية، وبيكشف حالات زي طالب عنده تاريخ مكالمات متعدد النتايج. وبعد النشر راقب اللوج.
 
 النشر نسخ يدوي. `scp` ممكن يكون محجوب في وضع الأذونات — البديل الشغّال:
+
+**الأسرع ومفيهاش حد حجم** — stdin من Git Bash (اتجرّبت على `dashboard.ejs` ٤٥٠KB+ في نداء واحد):
+
+```bash
+ssh -i <key> root@<ip> "cat > /root/app/<remote-path>" < <local-path>
+```
+
+ولو احتجت base64 من PowerShell (بيقف عند ~20KB ولازم تقطيع بعدها):
 
 ```powershell
 $b64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($local))
