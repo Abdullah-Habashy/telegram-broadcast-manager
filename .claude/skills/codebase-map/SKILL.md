@@ -43,8 +43,9 @@ src/bot/
   botManager.js        بوت الدعم الأساسي (@Dr_Abdullah_Habashy_FollowUp_bot)
   newBotManager.js     بوت تاني منفصل، webhook على /bot2/webhook — تتبّع Start بس
   broadcastSender.js   تنفيذ الإرسال الجماعي
-  handlers/            start.js · message.js · forwarding.js · staffLink.js
-                       · phoneLink.js · studentReport.js · studentTransfer.js
+  handlers/            adminReport.js (الأول في الترتيب) · start.js · message.js
+                       · forwarding.js · staffLink.js · phoneLink.js
+                       · studentReport.js · studentTransfer.js
   outsideHoursAck.js   رد بره المواعيد — ومنه بيتنده الرد الآلي
 src/routes/            17 راوتر رقيق
 src/controllers/       كل المنطق هنا
@@ -194,6 +195,16 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 العمل**، لأنه نتيجة فعل الطالب مش رد على سؤاله، ولو اتحسب رد كان هيفضّي لون التذكرة من معناه.
 استيراد الأسئلة من Word بـ `mammoth` (`quizDocImport` + `quizDocImages`) والتصدير Excel
 بـ `exceljs` (`quizExport`).
+
+**أدمن البوت = `settings.forward_chat_id`.** الحساب اللي بتتحوّل له كل رسالة جديدة هو نفسه
+حساب صاحب المشروع، فهو الأدمن — مافيش إعداد تاني يتنسى يتحدّث. `bot/handlers/adminReport.js`
+ميدلوير **مسجّل قبل كل الهاندلرات** بيمسك رسايله: رسايله مش رسايل طلاب ومابتفتحش تذاكر
+(قبل كده كانت بتفتح). الأوامر اللي مش بتاعته بتعدّي بـ `next()` عشان `/setforward` يفضل شغّال.
+**الزرار بيظهر له هو بس بحكم تيليجرام**: الكيبورد بيتبعت لمحادثة واحدة، وقايمة الأوامر متسجّلة
+بنطاق `chat` — والنطاق ده منفصل تمامًا عن القايمة العامة الفاضية، فمتقلقش إنها هتظهر للطلاب.
+الإعداد بيتقري من القاعدة بكاش دقيقة (الميدلوير على مسار كل رسالة داخلة)، و`forwarding.js`
+بيصفّر الكاش وقت الربط. التقرير نفسه في `utils/dailyReport.js` — منفصل عن الهاندلر عشان
+يتجرّب بـ `node -e` من غير بوت.
 
 **أخطاء تليجرام: دائمة ضد مؤقتة.** `src/utils/telegramErrors.js` → `isPermanentSendError(error)`. الدائم (حاظر البوت، حساب محذوف، محادثة مش موجودة) **متعيدش المحاولة أبدًا** — تذكرة #466 فضلت تحاول كل ٥ دقايق لشهور على `403 bot was blocked`. المطابقة بنص الوصف مش بكود الحالة، لأن 403 و 400 بيرجعوا في الحالتين. **استخدم الدالة دي في أي كود إرسال جديد.**
 
