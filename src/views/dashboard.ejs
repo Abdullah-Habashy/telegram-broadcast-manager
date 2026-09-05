@@ -1366,6 +1366,7 @@
             جنب <b>رد الموظف الحقيقي</b> وقتها. تقيّم كل رد: الكويس تضيفه لقاعدة المعرفة، والوحش
             تكتب معاه تعليمة تتحفظ في القايمة فوق وتأثر على أي تشغيل بعد كده.
             <b>مفيش رسالة بتتبعت لأي طالب من هنا — المحادثة قديمة والطالب اتردّ عليه خلاص.</b>
+            <br>بياخد آخر ٢٤ رسالة من المحادثة كحد أقصى — ورسايل الفيديو والصوت والملصقات بتتشال لأنها مش أسئلة.
           </p>
           <div class="row" style="gap:8px; margin-bottom:10px">
             <input type="text" id="ai-train-q" class="compact-input" style="flex:1"
@@ -5617,7 +5618,7 @@ ${reply.content}` : reply.content;
     async function runAiTraining(ticketId, button) {
       const box = document.getElementById('ai-train-result');
       button.disabled = true;
-      box.innerHTML = '<div class="ticket-muted">النموذج بيرد على رسايل المحادثة واحدة واحدة... ممكن ياخد دقيقة</div>';
+      box.innerHTML = '<div class="ticket-muted">النموذج بيرد على رسايل المحادثة واحدة واحدة... حوالين ٣٠ ثانية، متقفلش الصفحة</div>';
       try {
         const data = await api('/api/assist/training/run',
           { method: 'POST', body: JSON.stringify({ ticket_id: ticketId }) });
