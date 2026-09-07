@@ -329,13 +329,21 @@ async function listTickets(req, res) {
     );
 
     const total = countResult.rows[0].count;
-    // الموظف مابيشوفش الإجمالي ولا عدد الصفحات — الرقمين دول بيدوه تقدير لحجم الطلاب على
-    // المنصة كلها، وده مش شغله. **الأرقام مش بتتبعت أصلًا** مش بتتخبّى في الواجهة بس، عشان
-    // مايبقاش فيه فرق بين اللي على الشاشة واللي في الشبكة.
+    // **الموظف بيشوف الإجمالي وعدد الصفحات — اتفتحوا له بطلب صاحب المشروع (٧ سبتمبر ٢٠٢٦).**
     //
-    // الوصول للتذاكر زي ما هو بالظبط — القواعد اللي بتحدد مين يشوف أنهي تذكرة ما اتغيّرتش،
-    // اللي اتشال هو العدّاد بس. وبدله بيتبعت عدد اللي محتاج تدخّل فعلًا، وهو رقم صغير
-    // وشغله المباشر
+    // كانوا متشالين عن قصد بحجّة إن الرقم بيدّي الموظف تقدير لحجم الطلاب على المنصة. القرار
+    // اتغيّر: الموظف محتاج يعرف حجم شغله، وقد إيه الفلتر اللي طبّقه ضيّق النتيجة — وده
+    // مستحيل من غير رقم. **متشيلهوش تاني من غير سؤال.**
+    //
+    // و`actionable` فضلت جنبه للموظف مش بدله: الإجمالي بيقول «عندك كام»، ودي بتقول «ابدأ
+    // بأنهي». الرقم بيتحسب من نفس `where` بتاع الفلاتر، فأي فلتر بيتطبّق بيغيّر الاتنين مع بعض
+    const payload = {
+      tickets: result.rows,
+      page,
+      total,
+      pages: Math.max(1, Math.ceil(total / limit)),
+    };
+
     if (req.session.userRole !== 'admin') {
       const actionable = await pool.query(
         `SELECT COUNT(*)::int AS count
@@ -344,14 +352,10 @@ async function listTickets(req, res) {
          ${where ? `${where} AND` : 'WHERE'} (t.unread_count > 0 OR ${NEVER_REPLIED_SQL})`,
         params
       );
-      // has_more بدل pages: بيخلّي زرار "التالي" يشتغل صح من غير ما يفضح العدد الكلي
-      return res.json({
-        tickets: result.rows, page,
-        has_more: result.rows.length === limit,
-        actionable: actionable.rows[0].count,
-      });
+      payload.actionable = actionable.rows[0].count;
     }
-    res.json({ tickets: result.rows, page, pages: Math.max(1, Math.ceil(total / limit)), total });
+
+    res.json(payload);
   } catch (error) {
     console.error('❌ Failed to load tickets:', error.message);
     res.status(500).json({ error: 'حصل خطأ في تحميل التذاكر' });

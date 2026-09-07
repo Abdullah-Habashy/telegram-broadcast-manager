@@ -1757,11 +1757,11 @@
     let currentTicketId = null;
     let ticketsPage = 1;
     let ticketsTotalPages = 1;
-    // **مش زيادة على ticketsTotalPages — بديل عنه في القرار.** السيرفر بيبعت شكلين مختلفين:
-    // الأدمن بياخد pages، والموظف بياخد has_more (عشان مايقدرش يقدّر عدد الطلاب من الإجمالي).
-    // حارس زرار "التالي" كان بيقارن بـ pages وبس، وهي undefined عند الموظف — و`1 < undefined`
-    // بترجّع false دايمًا، فالزرار كان **مفعّل ومابيعملش حاجة**، والموظف محبوس في أول ٥٠ تذكرة
-    // من ٦٥٠. العلم ده بيتحسب من الشكلين، فأي تغيير في رد السيرفر مايكسرش التنقّل تاني
+    // **مش زيادة على ticketsTotalPages — بديل عنه.** السيرفر بيبعت `pages` للكل دلوقتي، بس
+    // كان بيبعت `has_more` بس للموظف قبل ما الإجمالي يتفتح له. وقتها كان حارس زرار "التالي"
+    // بيقارن بـ pages وبس، وهي undefined عند الموظف — و`1 < undefined` بترجّع false دايمًا،
+    // فالزرار كان **مفعّل ومابيعملش حاجة** والموظف محبوس في أول ٥٠ تذكرة من ٦٥٠.
+    // العلم ده بيتحسب من الشكلين، فأي تغيير في رد السيرفر مايكسرش التنقّل تاني
     let ticketsHasMore = false;
     let ticketSearchTimer = null;
     let tafraStudentsPage = 1;
@@ -6065,9 +6065,12 @@ ${reply.content}` : reply.content;
       try {
         const data = await api('/api/tickets?' + ticketQueryString());
         ticketsTotalPages = data.pages;
-        // الأدمن بيشوف الإجمالي وعدد الصفحات؛ الموظف بيشوف عدد اللي محتاج تدخّل بس.
-        // السيرفر أصلًا مش بيبعتله total ولا pages، فالتفريع هنا على وجود الرقم مش على الدور —
-        // ولو اتغيّرت القاعدة على السيرفر الواجهة بتمشي وراها من غير تعديل
+        // **الإجمالي بيظهر للكل دلوقتي** (الموظف كمان — بطلب صاحب المشروع)، وبيتحدّث مع
+        // الفلاتر لأن السيرفر بيحسبه من نفس شرط الفلترة.
+        //
+        // التفريع لسه على **وجود الرقم** مش على الدور: لو السيرفر رجع يخفيه يومًا ما، الشاشة
+        // بتمشي وراه من غير تعديل هنا. و`actionable` بتتعرض جنبه للموظف — الإجمالي بيقول
+        // «عندك كام» وهي بتقول «ابدأ بأنهي»
         const countEl = document.getElementById('ticket-count');
         const pageEl = document.getElementById('ticket-page-label');
         if (data.total === undefined) {
@@ -6076,7 +6079,9 @@ ${reply.content}` : reply.content;
           ticketsHasMore = Boolean(data.has_more);
           document.getElementById('tickets-next').disabled = !ticketsHasMore;
         } else {
-          countEl.textContent = `التذاكر (${data.total})`;
+          const actionablePart = data.actionable === undefined ? ''
+            : (data.actionable ? ` · محتاجة تدخّلك: ${data.actionable}` : ' · مفيش حاجة محتاجة تدخّلك');
+          countEl.textContent = `التذاكر (${data.total})${actionablePart}`;
           pageEl.textContent = `صفحة ${data.page} من ${data.pages}`;
           ticketsHasMore = data.page < data.pages;
           document.getElementById('tickets-next').disabled = !ticketsHasMore;
