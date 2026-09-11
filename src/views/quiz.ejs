@@ -2,7 +2,10 @@
 <html lang="ar" dir="rtl">
 <head>
   <%- include('partials/layout-head') %>
-  <link rel="stylesheet" href="/quiz.css" />
+  <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
+      ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
+      القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
+  <link rel="stylesheet" href="/quiz.css?v=20260911" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
