@@ -298,7 +298,11 @@ function validateQuestion(question, label) {
   if (question.kind === 'mcq') {
     const options = normalizeOptions(question.options).filter(optionIsFilled);
     if (options.length < 2) return `${label} محتاج اختيارين على الأقل`;
-    if (!Number.isInteger(Number(question.correct_option)) || Number(question.correct_option) >= options.length) {
+    // **الفاضي بيترفض صراحةً قبل `Number()`.** `Number(null)` و`Number('')` الاتنين صفر،
+    // فالسؤال اللي مالوش إجابة صح كان بيعدّي هنا ويتحفظ على إن (أ) هي الصح
+    const key = question.correct_option;
+    if (key === null || key === undefined || key === ''
+        || !Number.isInteger(Number(key)) || Number(key) < 0 || Number(key) >= options.length) {
       return `حدّد الإجابة الصح لـ${label}`;
     }
     return null;

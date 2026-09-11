@@ -9262,7 +9262,10 @@ ${reply.content}` : reply.content;
         image: null,
         points: kind === 'group' ? 0 : 1,
         options: kind === 'mcq' ? [{ text: '', image: null }, { text: '', image: null }] : [],
-        correct_option: kind === 'mcq' ? 0 : null,
+        // **مفيش إجابة صح افتراضية.** كانت (أ)، فالسؤال اللي المدرّس نسي يعلّم إجابته
+        // كان بيتحفظ على إن (أ) هي الصح — واتحسب غلط لكل طالب جاوب صح (اختبار الباب الأول:
+        // ٧ أسئلة، ومحدش من الطلاب اختار (أ) في أي واحد فيهم). فاضي = السيرفر يرفض الحفظ
+        correct_option: null,
         reference_answer: '',
         grading_notes: '',
         label: '',
@@ -9630,11 +9633,14 @@ ${reply.content}` : reply.content;
 
     function renderOptions(question, path) {
       const options = question.options.length ? question.options : [{ text: '', image: null }, { text: '', image: null }];
+      // **`Number(null)` = صفر** — من غير الفحص ده السؤال اللي مالوش إجابة صح (سؤال
+      // مستورد من Word من غير نجمة) كان بيبان و(أ) متعلّم عليها، والمدرّس يفتكره متظبّط
+      const hasKey = question.correct_option !== null && question.correct_option !== undefined && question.correct_option !== '';
       return `
         <div class="quiz-options">${options.map((option, optionIndex) => `
           <div class="row" style="gap:8px; align-items:flex-start; margin-bottom:8px">
             <input type="radio" name="quiz-correct-${path.replace('.', '-')}" value="${optionIndex}"
-                   ${Number(question.correct_option) === optionIndex ? 'checked' : ''} title="الإجابة الصح" style="margin-top:10px" />
+                   ${hasKey && Number(question.correct_option) === optionIndex ? 'checked' : ''} title="الإجابة الصح" style="margin-top:10px" />
             <div style="flex:1">
               <input type="text" class="compact-input quiz-option-text" style="width:100%"
                      value="${escapeHtml(option.text)}" placeholder="اختيار ${optionIndex + 1} — أو سيبه فاضي واكتفِ بالصورة" />
@@ -9680,7 +9686,7 @@ ${reply.content}` : reply.content;
             image: question.options[index] ? question.options[index].image : null,
           }));
           const picked = optionsBox.querySelector('input[type="radio"]:checked');
-          question.correct_option = picked ? Number(picked.value) : 0;
+          question.correct_option = picked ? Number(picked.value) : null;
         } else if (question.kind === 'essay') {
           question.reference_answer = node.querySelector(':scope > .field > .quiz-reference').value;
           question.grading_notes = node.querySelector(':scope > .field > .quiz-notes').value;
@@ -9765,7 +9771,7 @@ ${reply.content}` : reply.content;
       if (question.options.length <= 2) return showToast('السؤال محتاج اختيارين على الأقل');
       question.options.splice(optionIndex, 1);
       // الإجابة الصح كانت بتفضل على نفس الرقم بعد الحذف فتشاور على اختيار تاني خالص
-      if (question.correct_option === optionIndex) question.correct_option = 0;
+      if (question.correct_option === optionIndex) question.correct_option = null;
       else if (question.correct_option > optionIndex) question.correct_option -= 1;
       renderQuizQuestions();
     }
