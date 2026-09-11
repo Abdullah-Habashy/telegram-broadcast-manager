@@ -299,6 +299,21 @@
         var anchor = event.target.closest('[id^="qz-anchor-"]');
         if (anchor) markActiveQuestion(anchor.id.replace('qz-anchor-', ''));
       });
+
+      trackBarHeight();
+    }
+
+    // المربعات بتنزل سطور، فطول الشريط اللاصق بيتغيّر مع عدد الأسئلة وعرض الشاشة (ولف
+    // الموبايل بالعرض بيقلّل السطور). النط لسؤال بيقف تحت الشريط بالطول ده بالظبط —
+    // من غيره السؤال اللي الطالب داس رقمه بيقف ورا الشريط ومايبانش
+    function trackBarHeight() {
+      var bar = el('qz-bar');
+      var sync = function () {
+        if (bar.offsetHeight) document.documentElement.style.setProperty('--qz-bar-h', bar.offsetHeight + 'px');
+      };
+      sync();
+      if (window.ResizeObserver) new ResizeObserver(sync).observe(bar);
+      else window.addEventListener('resize', sync);
     }
 
     // المربع المتعلّم = السؤال اللي الطالب واقف عنده دلوقتي. **منفصل عن الأخضر**
