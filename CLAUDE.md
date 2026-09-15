@@ -63,14 +63,34 @@ npm run sync:tafra-enrollments  # مزامنة اشتراكات طفرة يدو�
    قبل ما تكتبه حتى لو فاكر إنك بتعمله جديد**، والأسماء العامة زي `phone.js` و`utils.js`
    أرجح حاجة تكون متاخدة بالفعل.
 
-**قبل نشر أي تعديل على `dashboard.ejs`:** استخرج السكريبت وافحصه:
+**قبل نشر أي تعديل على `dashboard.ejs`:** استخرج السكريبت وافحصه. الأمر ده بيفحص
+السكريبت **والقالب** مع بعض، وبيشتغل على جهاز الويندوز وعلى السيرفر بنفس الشكل:
 ```bash
-node -e "const s=require('fs').readFileSync('src/views/dashboard.ejs','utf8');
-require('fs').writeFileSync('/tmp/s.js',[...s.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g)]
-.map(m=>m[1]).join('\n').replace(/<%[-=]\s*[\s\S]*?%>/g,'null').replace(/<%[\s\S]*?%>/g,''));"
-node --check /tmp/s.js
+node -e "
+const fs = require('fs'), os = require('os'), path = require('path');
+const src = fs.readFileSync('src/views/dashboard.ejs', 'utf8');
+const js = [...src.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g)]
+  .map((m) => m[1]).join('\n')
+  .replace(/<%[-=]\s*[\s\S]*?%>/g, 'null').replace(/<%[\s\S]*?%>/g, '');
+const out = path.join(os.tmpdir(), 'dashboard-script-check.js');
+fs.writeFileSync(out, js);
+require('child_process').execFileSync(process.execPath, ['--check', out], { stdio: 'inherit' });
+require('ejs').compile(src, { filename: 'src/views/dashboard.ejs' });
+console.log('OK: dashboard.ejs script + template both parse');
+"
 ```
-وابحث عن المتغيّر اللي استخدمته في الدالة اللي حواليه — الأسماء بتختلف بين الدوال.
+⚠️ **الأمر كان بيكتب في `/tmp/s.js` وده بيفشل على الويندوز** — Git Bash بيحوّل `/tmp`
+لمسار على القرص الحالي فبيرمي `ENOENT: open 'E:\tmp\s.js'`. `os.tmpdir()` بيشتغل في
+المكانين. (اتصلّح ١٥ سبتمبر ٢٠٢٦ بعد ما وقّع الفحص فعليًا.)
+
+وابحث عن المتغيّر اللي استخدمته في الدالة اللي حواليه — الأسماء بتختلف بين الدوال. حصل
+فعلًا: `quiz-stats` و`quiz-missing` متغيّرهم `panel` و`quiz-attempt-detail` متغيّره `box`
+في نفس الملف.
+
+**وخد بالك من مصيدة تالتة في `dashboard.ejs`:** العناصر اللي بتترسم **تحت جدول طويل**
+(نتايج الاختبار بتوصل ٥٠٠ صف) بتتملى في مكان بعيد عن الشاشة، فالزرار يبان مكسور وهو
+شغّال. أي مربع بيتفتح بضغطة تحت جدول لازم ياخد `scrollIntoView` — فيه دالة جاهزة
+`revealQuizPanel(element)` للتلات مربعات بتاعة الاختبارات.
 
 **وقبل نشر أي تعديل على استعلام فيه `UNION`:** اطبع أسماء الأعمدة من الفرعين وقارنهم واحد
 واحد. الاختلاف في الترتيب بيرمي خطأ نوع، والاختلاف في العدد بيرمي خطأ صريح — الاتنين بيقعوا

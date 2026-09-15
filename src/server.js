@@ -16,6 +16,7 @@ const { startUnansweredAlert } = require('./jobs/unansweredAlert');
 const { startTeamAutoReturn } = require('./jobs/teamAutoReturn');
 const { startWhatsappRouting } = require('./jobs/whatsappRouting');
 const { startQuizFinalizer } = require('./jobs/quizFinalizer');
+const { startQuizGradingAlert } = require('./jobs/quizGradingAlert');
 const { requireAuth } = require('./middleware/requireAuth');
 
 const authRoutes = require('./routes/auth.routes');
@@ -281,6 +282,7 @@ async function start() {
     startTeamAutoReturn();
     startWhatsappRouting();
     startQuizFinalizer();
+    startQuizGradingAlert();
   });
 }
 
