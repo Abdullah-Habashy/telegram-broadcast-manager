@@ -132,7 +132,18 @@ async function finalizeAttempt(attemptId, { late = false, force = false } = {}) 
     if (!question || question.kind !== 'mcq') continue;
     // الموظف عدّل الدرجة بإيده؟ تفضل زي ما هي — إعادة التصحيح مابتمسحش حكم بني آدم
     if (answer.graded_by === 'staff') continue;
-    const correct = question.correct_option !== null && Number(answer.selected_option) === Number(question.correct_option);
+    // **`answer.selected_option !== null` شرط لازم، مش زيادة.** `Number(null)` بيساوي
+    // صفر، والسؤال اللي إجابته الصح هي الخيار الأول `correct_option = 0` كان بيطابق
+    // الطالب اللي **ماختارش خالص** — فبياخد الدرجة كاملة على سؤال ساب فيه الفراغ.
+    //
+    // اتكشف يوم ١٥ سبتمبر ٢٠٢٦ على الإنتاج: **٨٢ ورقة · ٣٦٥ إجابة · ٣٦٥ درجة زيادة.**
+    // ودي نفس مصيدة `Number(null) === 0` بتاعة ١١ سبتمبر بالظبط — المرة اللي فاتت كانت
+    // في **حفظ المفتاح** (سؤال من غير إجابة صح كان بيتحفظ (أ))، ودي في **مقارنة إجابة
+    // الطالب**. أي مقارنة على `selected_option` أو `correct_option` لازم تفحص `null`
+    // صراحةً قبل `Number()`.
+    const correct = question.correct_option !== null
+      && answer.selected_option !== null && answer.selected_option !== undefined
+      && Number(answer.selected_option) === Number(question.correct_option);
     await pool.query(
       `UPDATE quiz_answers SET is_correct = $1, awarded_points = $2, graded_by = 'auto', graded_at = NOW()
        WHERE attempt_id = $3 AND question_id = $4`,
