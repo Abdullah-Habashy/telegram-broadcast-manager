@@ -259,8 +259,11 @@ body.qz-body {
 .qz-appeal-actions .qz-btn { width: auto; }
 
 /* زرار التظلم تحت الدرجة: هادي ومش بارز — التظلم مخرج مش دعوة */
-#qz-appeal-cta { margin-top: 14px; }
-#qz-appeal-cta .qz-btn { width: auto; padding: 8px 18px; }
+/* الزرارين تحت الدرجة جنب بعض، وبينزلوا تحت بعض على الموبايل الضيق */
+.qz-result-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
+.qz-result-actions .qz-btn { width: auto; padding: 9px 20px; }
+#qz-review-cta .qz-btn { font-weight: 700; }
+#qz-appeal-cta .qz-btn { padding: 8px 18px; }
 /* علامة «متظلَّم منه» جنب السؤال في مربع التعديل */
 .qz-appeal-item-tag { display: inline-block; margin-inline-start: 6px; padding: 1px 7px;
   border-radius: 999px; background: var(--qz-warn); color: #fff; font-size: 11px;

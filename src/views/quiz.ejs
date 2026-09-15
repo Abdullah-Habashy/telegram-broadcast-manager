@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260915d" />
+  <link rel="stylesheet" href="/quiz.css?v=20260915e" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -109,8 +109,16 @@
     <p id="qz-result-note"></p>
     <%# زرار التظلم تحت الدرجة على طول: ده المكان اللي الطالب بيبص فيه أول ما يشوف
         نتيجته، ولو كان تحت الورقة كلها كان محتاج يلف ٤٥ سؤال عشان يلاقيه %>
-    <div id="qz-appeal-cta" style="display:none">
-      <button class="qz-btn ghost" id="qz-appeal-open" type="button">أتظلم من درجتي</button>
+    <div class="qz-result-actions">
+      <%# **الورقة مخفية لحد ما الطالب يطلبها.** أول ما يشوف درجته بيبقى عايز يعرف
+          الرقم، والورقة الكاملة تحتيها على طول بتخلي الشاشة حايطة أسئلة — فالزرار
+          بيخليه يقرر يراجع امتى %>
+      <div id="qz-review-cta" style="display:none">
+        <button class="qz-btn" id="qz-review-toggle" type="button">عرض الأخطاء ونموذج الإجابة</button>
+      </div>
+      <div id="qz-appeal-cta" style="display:none">
+        <button class="qz-btn ghost" id="qz-appeal-open" type="button">أتظلم من درجتي</button>
+      </div>
     </div>
     <%# الإعادة: بتظهر لما يكون فاضل محاولات والاختبار لسه مفتوح — السيرفر هو اللي
         بيقرر، والزرار بيعرض قراره %>
@@ -159,6 +167,11 @@
     // بالرقم اللي الطالب شايفه («سؤال ٣» / «سؤال ٣ فرع ب») — المربع بيعرض اللي على
     // الشاشة، ورقم القاعدة مالوش أي معنى عند الطالب
     var appeals = { review: [], labels: {}, limit: 3 };
+
+    // حالة عرض ورقة التصحيح. `false` أول ما الصفحة تفتح — الطالب بيشوف درجته الأول
+    // وبيقرر هو يراجع امتى. **معرّف هنا مش جنب `toggleReview`** لأن `renderReview`
+    // بتقراه، و`var` بيتـhoist بقيمة undefined فالترتيب كان بيخليه يشتغل بالصدفة
+    var reviewShown = false;
 
     function el(id) { return document.getElementById(id); }
     function esc(value) {
@@ -781,7 +794,18 @@
     // بحكمه هو — الفروع بتتصحّح كل واحد لوحده
     function renderReview(review) {
       var box = el('qz-review');
-      if (!review || !review.length) { box.innerHTML = ''; el('qz-appeal').style.display = 'none'; return; }
+      var cta = el('qz-review-cta');
+      if (!review || !review.length) {
+        box.innerHTML = '';
+        box.style.display = 'none';
+        if (cta) cta.style.display = 'none';
+        el('qz-appeal').style.display = 'none';
+        return;
+      }
+      // **الورقة بتتبني كاملة بس بتفضل مخفية.** البناء مرة واحدة أسهل من إننا نأجّله
+      // لحد الضغطة، والإخفاء بـdisplay مش بحذف المحتوى عشان الزرار يوري ويخفي من غير
+      // ما يعيد أي شغل — والتظلم اللي جوه الورقة يفضل شغّال
+      if (cta) cta.style.display = '';
 
       appeals.review = review;
       appeals.labels = {};
@@ -835,6 +859,24 @@
       });
       if (open) html += '</div>';
       box.innerHTML = html;
+      // بيفضل على حالته: الطالب اللي فتح الورقة وقدّم تظلم مايترجعش لمخفي بعد التحديث
+      box.style.display = reviewShown ? '' : 'none';
+      syncReviewToggle();
+    }
+
+
+    function syncReviewToggle() {
+      var button = el('qz-review-toggle');
+      if (!button) return;
+      button.textContent = reviewShown ? 'إخفاء نموذج الإجابة' : 'عرض الأخطاء ونموذج الإجابة';
+    }
+
+    function toggleReview() {
+      var box = el('qz-review');
+      reviewShown = !reviewShown;
+      box.style.display = reviewShown ? '' : 'none';
+      syncReviewToggle();
+      if (reviewShown) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     // ---------- مربع التظلّم ----------
     //
@@ -954,6 +996,7 @@
       var button = event.target.closest('[data-appeal]');
       if (button) openAppealBox(Number(button.dataset.appeal));
     });
+    el('qz-review-toggle').addEventListener('click', toggleReview);
     el('qz-appeal-open').addEventListener('click', function () { openAppealBox(null); });
     el('qz-appeal-submit').addEventListener('click', sendAppeal);
     el('qz-appeal-cancel').addEventListener('click', function () {
