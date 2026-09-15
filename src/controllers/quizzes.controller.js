@@ -9,6 +9,10 @@ const { parseQuizDocument } = require('../utils/quizDocImport');
 const quizDocImages = require('../utils/quizDocImages');
 const { storeFile } = require('../utils/objectStorage');
 const aiPricing = require('../utils/aiPricing');
+const sheetImport = require('../utils/sheetImport');
+// **`lastTenDigits` مش نسخة محلية:** نفس تطبيع الرقم مستخدم في الـAPI العام وربط الطالب
+// وطلب الرقم من البوت، وأي اختلاف بينهم معناه رقم بيتلاقى في مكان ومايتلاقاش في التاني
+const { lastTenDigits, SQL_TRANSLATE_DIGITS } = require('../utils/phone');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -641,6 +645,193 @@ async function getAttempt(req, res) {
   });
 }
 
+// ---------- استيراد إجابات الطلاب من شيت (Google Forms وغيره) ----------
+//
+// **الاختبار اتحل بره، والإجابات في شيت.** نقلها بالإيد لمئات الطلاب مستحيل، والتصحيح
+// المقالي مش موجود هناك أصلًا. الاستيراد بيجيب الإجابات ويحطها في النظام، والتصحيح
+// الآلي بيشتغل عليها زي أي ورقة.
+//
+// **خطوتين بموافقة بينهم، زي استيراد أسئلة Word:** الأولى بتقرا وتقترح الربط وماتكتبش
+// حاجة، والتانية بتحفظ بعد المراجعة. السبب إن الربط الغلط **غلط صامت** — إجابات الطالب
+// بتتحسب على سؤال تاني، والدرجة بتطلع رقم معقول ومحدش يكتشف.
+
+// رفع الشيت وقراءته — **مافيش أي كتابة في القاعدة هنا**
+async function parseAnswerSheet(req, res) {
+  const quizId = Number(req.params.id);
+  if (!req.file) return res.status(400).json({ error: 'مفيش ملف مرفوع' });
+
+  const quiz = await pool.query('SELECT id, title FROM quizzes WHERE id = $1', [quizId]);
+  if (!quiz.rows.length) return res.status(404).json({ error: 'الاختبار مش موجود' });
+
+  let sheet;
+  try {
+    sheet = await sheetImport.readSheet(req.file.buffer, req.file.originalname);
+  } catch (error) {
+    return res.status(400).json({ error: `مقدرناش نقرا الملف: ${error.message}` });
+  }
+  if (!sheet.rows.length) return res.status(400).json({ error: 'الملف مافيهوش أي صف بيانات' });
+
+  // بترتيب الورقة عشان القايمة المنسدلة تبقى زي ما الموظف شايف الاختبار
+  const { rows: questions } = await pool.query(
+    `SELECT q.id, q.kind, q.text, q.points, q.options, q.label
+     FROM quiz_questions q LEFT JOIN quiz_questions p ON p.id = q.parent_id
+     WHERE q.quiz_id = $1 AND q.kind <> 'group'
+     ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
+    [quizId]);
+
+  const mapping = sheetImport.suggestMapping(sheet.headers, questions, sheet.rows);
+
+  res.json({
+    quiz: quiz.rows[0],
+    rows_count: sheet.rows.length,
+    headers: sheet.headers,
+    sample: sheet.sample,
+    mapping,
+    matched_questions: mapping.columns.filter((c) => c.role === 'question').length,
+    total_questions: questions.length,
+    questions: questions.map((q, index) => ({
+      id: q.id, kind: q.kind, points: Number(q.points),
+      number: index + 1,
+      text: String(q.text || '').replace(/\s+/g, ' ').slice(0, 90),
+      label: q.label,
+      options: normalizeOptions(q.options).map((o) => o.text),
+    })),
+  });
+}
+
+// **الاختيار من متعدد بيتطابق بنص الخيار مش برقمه.** الفورم بيحفظ اللي الطالب اختاره
+// كنص، والنظام بيخزّن فهرس الخيار — وأي إجابة مش مطابقة بتتعدّ في التقرير بدل ما
+// تتحفظ غلط
+function matchOption(answerText, options) {
+  const norm = sheetImport.normalizeText(answerText);
+  if (!norm) return null;
+  const exact = options.findIndex((o) => sheetImport.normalizeText(o.text) === norm);
+  if (exact >= 0) return exact;
+  // الفورم بيزوّد ترقيم على الخيار أحيانًا ("أ) الأكسجين")
+  const partial = options.findIndex((o) => {
+    const on = sheetImport.normalizeText(o.text);
+    return on.length >= 3 && (norm.includes(on) || on.includes(norm));
+  });
+  return partial >= 0 ? partial : null;
+}
+
+async function importAnswerSheet(req, res) {
+  const quizId = Number(req.params.id);
+  if (!req.file) return res.status(400).json({ error: 'مفيش ملف مرفوع' });
+
+  let mapping;
+  try { mapping = JSON.parse(req.body?.mapping || 'null'); } catch (_) { mapping = null; }
+  if (!mapping || !Array.isArray(mapping.columns)) return res.status(400).json({ error: 'الربط مش مبعوت' });
+
+  const phoneIndex = Number(mapping.phone_index);
+  if (!Number.isInteger(phoneIndex) || phoneIndex < 0) {
+    return res.status(400).json({ error: 'لازم تحدد عمود رقم الموبايل' });
+  }
+
+  const quizResult = await pool.query('SELECT id FROM quizzes WHERE id = $1', [quizId]);
+  if (!quizResult.rows.length) return res.status(404).json({ error: 'الاختبار مش موجود' });
+
+  let sheet;
+  try {
+    sheet = await sheetImport.readSheet(req.file.buffer, req.file.originalname);
+  } catch (error) {
+    return res.status(400).json({ error: `مقدرناش نقرا الملف: ${error.message}` });
+  }
+
+  const { rows: questions } = await pool.query(
+    "SELECT id, kind, options, points FROM quiz_questions WHERE quiz_id = $1 AND kind <> 'group'", [quizId]);
+  const questionById = new Map(questions.map((q) => [q.id, q]));
+
+  const columns = mapping.columns
+    .filter((c) => c.role === 'question' && questionById.has(Number(c.question_id)))
+    .map((c) => ({ index: Number(c.index), question: questionById.get(Number(c.question_id)) }));
+  if (!columns.length) return res.status(400).json({ error: 'مفيش ولا عمود مربوط بسؤال' });
+
+  const nameIndex = Number.isInteger(Number(mapping.name_index)) ? Number(mapping.name_index) : null;
+  // **المعاينة بتمشي نفس الكود بالظبط وبترجع في الآخر** — معاينة بكود تاني معناها إن
+  // اللي اتعرض مش اللي هيحصل
+  const dryRun = req.body?.dry_run === 'true' || req.body?.dry_run === true;
+
+  const report = {
+    rows: sheet.rows.length, imported: 0, skipped_no_phone: 0, skipped_duplicate: 0,
+    answers: 0, unmatched_options: 0, matched_students: 0,
+  };
+  const attemptIds = [];
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const row of sheet.rows) {
+      const phone = lastTenDigits(row[phoneIndex]);
+      if (!phone) { report.skipped_no_phone += 1; continue; }
+
+      const { rows: students } = await client.query(
+        `SELECT tafra_student_id, name FROM tafra_students
+         WHERE RIGHT(REGEXP_REPLACE(translate(phone, ${SQL_TRANSLATE_DIGITS}), '[^0-9]', '', 'g'), 10) = $1
+         LIMIT 1`, [phone]);
+      const student = students[0] || null;
+      if (student) report.matched_students += 1;
+
+      const studentName = (nameIndex !== null && row[nameIndex])
+        ? String(row[nameIndex]).trim().slice(0, 500)
+        : (student?.name || null);
+
+      // **ورقة واحدة لكل رقم في الاختبار.** إعادة رفع نفس الملف مابتعملش نسخ مكررة —
+      // بتتخطّى الموجود وتقوله في التقرير
+      const existing = await client.query(
+        'SELECT id FROM quiz_attempts WHERE quiz_id = $1 AND phone = $2 LIMIT 1', [quizId, phone]);
+      if (existing.rows.length) { report.skipped_duplicate += 1; continue; }
+
+      const { rows: [attempt] } = await client.query(
+        `INSERT INTO quiz_attempts
+           (quiz_id, tafra_student_id, student_name, phone, attempt_key, submitted_at, grading_status, source)
+         VALUES ($1, $2, $3, $4, $5, NOW(), 'queued', 'sheet') RETURNING id`,
+        [quizId, student?.tafra_student_id || null, studentName, phone,
+          crypto.randomBytes(32).toString('hex')]);
+      report.imported += 1;
+      attemptIds.push(attempt.id);
+
+      for (const col of columns) {
+        const raw = String(row[col.index] ?? '').trim();
+        if (!raw) continue;
+        if (col.question.kind === 'mcq') {
+          const picked = matchOption(raw, normalizeOptions(col.question.options));
+          if (picked === null) { report.unmatched_options += 1; continue; }
+          await client.query(
+            `INSERT INTO quiz_answers (attempt_id, question_id, selected_option) VALUES ($1, $2, $3)
+             ON CONFLICT (attempt_id, question_id) DO UPDATE SET selected_option = EXCLUDED.selected_option`,
+            [attempt.id, col.question.id, picked]);
+        } else {
+          await client.query(
+            `INSERT INTO quiz_answers (attempt_id, question_id, essay_text) VALUES ($1, $2, $3)
+             ON CONFLICT (attempt_id, question_id) DO UPDATE SET essay_text = EXCLUDED.essay_text`,
+            [attempt.id, col.question.id, raw.slice(0, 20000)]);
+        }
+        report.answers += 1;
+      }
+    }
+
+    if (dryRun) {
+      await client.query('ROLLBACK');
+      return res.json({ ...report, dry_run: true });
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // **التصحيح بره الـtransaction.** بيستدعي النموذج لكل إجابة مقالية وده بياخد دقايق،
+  // وtransaction مفتوحة طول المدة دي بتقفل الصفوف على أي شغل تاني. الحالة `queued`
+  // بتخلي الكرون يلتقطها لو الطلب اتقطع
+  processRegradeQueue(20).catch((error) =>
+    console.error('❌ Failed to start grading imported attempts:', error.message));
+
+  res.json({ ...report, grading_started: true });
+}
+
 // ---------- استيراد أسئلة من ملف Word ----------
 //
 // **بيقرا ومابيكتبش في القاعدة.** الناتج بيرجع للمحرر عشان الموظف يشوفه ويحفظ بنفسه —
@@ -1231,8 +1422,12 @@ async function regradeQuiz(req, res) {
 module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
-  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt, parseDocument,
+  getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt,
   listIdeas, saveIdeas,
-  approveQuizGrades, approveAttemptGrades, parseDocument,
+  // كان مكرر مرتين في القايمة دي — JS بياخد الأخير فمكانش بيضر، بس التكرار بيخفي
+  // المتنسي لما حد يدوّر على اسم
+  parseDocument,
+  approveQuizGrades, approveAttemptGrades,
   getGradingProviders, setGradingProvider, uploadQuestionImage,
+  parseAnswerSheet, importAnswerSheet,
 };

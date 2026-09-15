@@ -49,6 +49,25 @@ const uploadQuizDocument = multer({
   },
 });
 
+// شيت إجابات الطلاب (Google Forms وغيره). **من الذاكرة زي ملف الأسئلة** — بنقراه مرة
+// واحدة ومابنحتاجوش بعدها، والكتابة على القرص كانت هتسيب ملفات إجابات طلاب متراكمة.
+// الحد أصغر: شيت ٥٠٠ طالب × ٥٠ عمود أقل من ميجا، واللي فوق ١٠ غالبًا الملف الغلط
+const uploadAnswerSheet = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, callback) => {
+    const name = file.originalname || '';
+    const ok = /\.(xlsx|csv)$/i.test(name)
+      || file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      || file.mimetype === 'text/csv';
+    // **.xls القديم مرفوض صراحةً:** exceljs مابيقراهوش، والرسالة العامة كانت هتخلي
+    // الموظف يجرّب نفس الملف تاني وتالت
+    if (/\.xls$/i.test(name)) return callback(new Error('صيغة .xls القديمة مش مدعومة — احفظ الملف بصيغة .xlsx أو .csv'));
+    if (!ok) return callback(new Error('لازم يكون ملف Excel بصيغة .xlsx أو ملف .csv'));
+    callback(null, true);
+  },
+});
+
 // قبل /:id عن قصد: "grade-preview" مش رقم، بس ترتيب المسارات أوضح من الاعتماد على ده
 // **رسالة الرفض لازم توصل.** multer بيرمي الخطأ زي أي خطأ تاني، فبيروح للمعالج العام
 // في server.js ويرجع ٥٠٠ "حصل خطأ في السيرفر" — والموظف مش عارف إن ملفه كبير ولا إن
@@ -83,6 +102,10 @@ router.get('/:id', controller.getQuiz);
 router.put('/:id', controller.updateQuiz);
 router.delete('/:id', controller.deleteQuiz);
 router.put('/:id/questions', controller.saveQuestions);
+// استيراد إجابات من شيت: قراءة واقتراح ربط، وبعدها الحفظ. الاتنين بياخدوا الملف —
+// رفعه مرتين أبسط من تخزينه بين الخطوتين، والملف صغير
+router.post('/:id/parse-sheet', uploadAnswerSheet.single('sheet'), reportUploadError, controller.parseAnswerSheet);
+router.post('/:id/import-sheet', uploadAnswerSheet.single('sheet'), reportUploadError, controller.importAnswerSheet);
 router.post('/:id/regrade', controller.regradeQuiz);
 router.post('/:id/approve', controller.approveQuizGrades);
 router.get('/:id/attempts', controller.listAttempts);

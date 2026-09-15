@@ -1290,6 +1290,11 @@ ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMPTZ;
 ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS reopened_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS reopen_count SMALLINT NOT NULL DEFAULT 0;
 
+-- الورقة جت منين: `web` الطالب حلّها على الرابط، `sheet` اتستوردت من ملف (Google Forms).
+-- **لازمته إن المستوردة مالهاش نفس ضمانات المحلولة على الرابط** — مفيش وقت بداية ولا
+-- مهلة ولا مفتاح استُخدم فعلًا، ولو حد سأل بعدين "الورقة دي اتحلّت إمتى؟" الإجابة مختلفة
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'web';
+
 CREATE TABLE IF NOT EXISTS quiz_answers (
     id SERIAL PRIMARY KEY,
     attempt_id INTEGER NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
