@@ -545,9 +545,16 @@ async function listAttempts(req, res) {
   const { rows } = await pool.query(
     `SELECT a.id, a.student_name, a.phone, a.tafra_student_id, a.started_at, a.deadline_at,
             a.submitted_at, a.is_late, a.score, a.max_score, a.grading_status, a.grading_error,
-            a.attempt_no, s.name AS platform_name
+            a.attempt_no, s.name AS platform_name,
+            -- التظلمات المفتوحة بتحوّل الورقة لطابور شغل: الموظف بيرتّب بيها شغله،
+            -- فالعدد لازم يبان في القايمة مش جوه الورقة بس
+            COALESCE(ap.open_count, 0)::int AS open_appeals
      FROM quiz_attempts a
      LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*) AS open_count FROM quiz_appeals
+       WHERE attempt_id = a.id AND status = 'open'
+     ) ap ON true
      WHERE a.quiz_id = $1
      ORDER BY a.submitted_at DESC NULLS FIRST, a.started_at DESC`, [quizId]);
   res.json(rows.map((row) => ({
@@ -577,10 +584,14 @@ async function getAttempt(req, res) {
             q.options, q.correct_option, q.reference_answer, q.image_path,
             an.id AS answer_id, an.selected_option, an.essay_text, an.awarded_points,
             an.is_correct, an.ai_verdict, an.ai_reason, an.ai_provider, an.graded_by,
+            an.answer_image_path,
+            ap.status AS appeal_status, ap.student_note AS appeal_note,
+            ap.created_at AS appeal_at, ap.points_at_appeal,
             u.name AS graded_by_name
      FROM quiz_questions q
      LEFT JOIN quiz_questions p ON p.id = q.parent_id
      LEFT JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
+     LEFT JOIN quiz_appeals ap ON ap.question_id = q.id AND ap.attempt_id = $1
      LEFT JOIN users u ON u.id = an.graded_by_user
      WHERE q.quiz_id = $2
      ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
@@ -597,8 +608,10 @@ async function getAttempt(req, res) {
       points: Number(row.points),
       options: normalizeOptions(row.options),
       image: row.image_path || null,
+      answer_image: row.answer_image_path || null,
       is_part: row.parent_id !== null,
       awarded_points: row.awarded_points === null ? null : Number(row.awarded_points),
+      points_at_appeal: row.points_at_appeal === null ? null : Number(row.points_at_appeal),
     })),
   });
 }
@@ -1044,6 +1057,14 @@ async function gradeAnswer(req, res) {
          graded_by = 'staff', graded_by_user = EXCLUDED.graded_by_user, graded_at = NOW()`,
     [attemptId, questionId, points, points >= maxPoints, req.session.userId]);
 
+  // **حكم الموظف على السؤال هو الرد على التظلم.** سواء رفع الدرجة أو سابها زي ما هي،
+  // هو شاف الإجابة وقرّر — فالتظلم بيتقفل هنا مش بزرار منفصل. زرار «حسمت التظلم» تاني
+  // كان معناه إن الموظف يعدّل الدرجة وينسى يقفل، والطالب يفضل مستني حاجة حصلت خلاص
+  await pool.query(
+    `UPDATE quiz_appeals SET status = 'resolved', resolved_at = NOW(), resolved_by = $3
+     WHERE attempt_id = $1 AND question_id = $2 AND status = 'open'`,
+    [attemptId, questionId, req.session.userId]);
+
   const result = await recalculateAttempt(attemptId);
   res.json(result);
 }
@@ -1098,10 +1119,23 @@ async function approveAttemptGrades(req, res) {
   if (!attempt.rows.length) return res.status(404).json({ error: 'المحاولة مش موجودة' });
 
   const approved = await pool.query(`${APPROVE_SQL} AND a.id = $1`, [attemptId, req.session.userId]);
+
+  // **اعتماد الورقة الواحدة بيقفل تظلماتها، واعتماد الاختبار كله لأ.** الفرق مقصود:
+  // الموظف اللي فتح ورقة بعينها ودوس اعتماد شاف أسئلتها، فده رد حقيقي على التظلم.
+  // أما «وافق على كل النتايج» فبيمر على مئات الأوراق دفعة واحدة — وقفل خمسين تظلم
+  // بضغطة واحدة معناه إن الطالب اتقاله «اتراجعت» وماحدش بص فيها
+  const closed = await pool.query(
+    `UPDATE quiz_appeals SET status = 'resolved', resolved_at = NOW(), resolved_by = $2
+     WHERE attempt_id = $1 AND status = 'open'`,
+    [attemptId, req.session.userId]);
+
   const pending = await pool.query(
     'SELECT COUNT(*)::int AS count FROM quiz_answers WHERE attempt_id = $1 AND awarded_points IS NULL',
     [attemptId]);
-  res.json({ ok: true, approved: approved.rowCount, still_ungraded: pending.rows[0].count });
+  res.json({
+    ok: true, approved: approved.rowCount, still_ungraded: pending.rows[0].count,
+    appeals_closed: closed.rowCount,
+  });
 }
 
 // ---------- إعادة فتح المحاولة ----------

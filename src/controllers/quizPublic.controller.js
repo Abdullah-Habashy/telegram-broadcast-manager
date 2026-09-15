@@ -159,10 +159,12 @@ async function loadReviewForAttempt(attemptId, quizId) {
             q.options, q.correct_option, q.reference_answer, q.image_path,
             (an.id IS NOT NULL) AS answered,
             an.selected_option, an.essay_text, an.awarded_points, an.is_correct,
-            an.ai_verdict, an.ai_reason, an.graded_by
+            an.ai_verdict, an.ai_reason, an.graded_by, an.answer_image_path,
+            ap.status AS appeal_status, ap.created_at AS appeal_at
      FROM quiz_questions q
      LEFT JOIN quiz_questions p ON p.id = q.parent_id
      LEFT JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
+     LEFT JOIN quiz_appeals ap ON ap.question_id = q.id AND ap.attempt_id = $1
      WHERE q.quiz_id = $2
      ORDER BY COALESCE(p.position, q.position), (q.parent_id IS NOT NULL), q.position, q.id`,
     [attemptId, quizId]);
@@ -192,7 +194,65 @@ async function loadReviewForAttempt(attemptId, quizId) {
     is_correct: row.is_correct,
     verdict: row.ai_verdict,
     reason: row.graded_by === 'auto' ? row.ai_reason : null,
+    answer_image: row.answer_image_path || null,
+    // حالة التظلم بتترجع مع السؤال عشان الصفحة تعرف تعرض «اتظلمت» بدل الزرار — من
+    // غيرها الطالب بيدوس تاني وياخد رفض مش مفهوم
+    appeal: row.appeal_status || null,
   }));
+}
+
+// ---------- التظلّم ----------
+//
+// **إيه اللي يستاهل تظلم:** أي سؤال الطالب خد فيه أقل من الدرجة الكاملة، مقالي كان أو
+// اختيار من متعدد. المقالي واضح (النموذج بيغلط)، والاختيار من متعدد مش استثناء لأن
+// **مفتاح الإجابة نفسه ممكن يكون غلط** — حصل فعلًا يوم ١١ سبتمبر ٢٠٢٦: سبع أسئلة
+// مفتاحها كان (أ) وهمي، وتلات طلاب خدوا صفر في أسئلة إجابتهم صح.
+//
+// الشرط بيتحسب **في السيرفر من القاعدة** مش من اللي الصفحة بعتته: الطالب بيبعت أرقام
+// أسئلة، ولو مااتفحصتش كان يقدر يتظلم من سؤال خد فيه الدرجة كاملة أو سؤال من اختبار تاني
+const APPEALABLE_SQL = `
+  SELECT q.id AS question_id, q.points, an.awarded_points
+  FROM quiz_questions q
+  JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
+  LEFT JOIN quiz_appeals ap ON ap.question_id = q.id AND ap.attempt_id = $1
+  WHERE q.quiz_id = $2
+    AND q.kind <> 'group'
+    AND an.awarded_points IS NOT NULL
+    AND an.awarded_points < q.points
+    AND ap.id IS NULL
+`;
+
+async function appealableQuestions(attemptId, quizId) {
+  const { rows } = await pool.query(APPEALABLE_SQL, [attemptId, quizId]);
+  return new Map(rows.map((row) => [row.question_id, Number(row.awarded_points)]));
+}
+
+// **السقف مش تضييق على الطالب — هو اللي بيخلي التظلم يتقري أصلًا.** اتقاس على الإنتاج:
+// ٤٥٩ ورقة، متوسط ١٨.٧ سؤال ناقص في الورقة وأقصاها ٤٢. من غير سقف، تظلم الكل من الكل
+// = ٨٥٧٥ تظلم — ده مش طابور مراجعة، ده إعادة تصحيح الاختبار بالإيد. والسقف بيخلي
+// الطالب يختار الأسئلة اللي متأكد منها فعلًا بدل ما يعلّم على كل حاجة.
+//
+// في `settings` مش ثابت في الكود: الرقم المناسب بيتغيّر مع حجم الاختبار وعدد الطلاب،
+// وتغييره المفروض مايستنّاش نشر
+const APPEAL_LIMIT_KEY = 'quiz_appeal_limit';
+const DEFAULT_APPEAL_LIMIT = 3;
+
+async function appealLimit() {
+  try {
+    const { rows } = await pool.query('SELECT value FROM settings WHERE key = $1', [APPEAL_LIMIT_KEY]);
+    const value = Number(rows[0]?.value);
+    if (Number.isFinite(value) && value >= 1) return Math.floor(value);
+  } catch (error) {
+    // إعداد مش مقروء مايمنعش الطالب من التظلم — بنكمّل على الافتراضي
+    console.error('❌ Failed to read the appeal limit setting:', error.message);
+  }
+  return DEFAULT_APPEAL_LIMIT;
+}
+
+// **السقف بيترجع مع أي رد فيه ورقة تصحيح.** الصفحة محتاجة تعرفه قبل ما الطالب يختار،
+// مش تكتشفه من رسالة رفض بعد ما يكون علّم على عشرة أسئلة وكتب سببه
+async function payloadWithAppeals(attempt, quiz, questions, review) {
+  return { ...attemptPayload(attempt, quiz, questions, review), appeal_limit: await appealLimit() };
 }
 
 // التصحيح بيتحمّل لما يكون فيه تصحيح فعلًا: المحاولة اتسلّمت، والتصحيح خلص (graded) أو خلص
@@ -236,8 +296,11 @@ function attemptPayload(attempt, quiz, questions, review) {
     && (attempt.grading_status === 'queued' || attempt.grading_status === 'regrading');
   return {
     state: grading ? 'grading' : attempt.submitted_at ? 'submitted' : 'open',
-    // بيفضل موجود في حالة grading عشان الصفحة تقدر تسأل عن الدرجة بيه
-    attempt_key: grading || !attempt.submitted_at ? attempt.attempt_key : null,
+    // **بيرجع دايمًا دلوقتي، بعد التسليم كمان — وده آمن.** `saveProgress` و`submitAttempt`
+    // الاتنين بيرفضوا الورقة المسلّمة صراحةً بـ409، فالمفتاح بعد التسليم مابينفعش يعدّل
+    // ولا يسلّم أي حاجة. اللي بينفع بيه حاجتين: السؤال عن الدرجة وهي بتتصحّح، والتظلم.
+    // كان `null` بعد التسليم، والتظلم كان هيحتاج الطالب يدخل رقمه من أول وجديد.
+    attempt_key: attempt.attempt_key,
     student_name: attempt.student_name,
     deadline_at: attempt.deadline_at,
     questions: attempt.submitted_at ? [] : questions,
@@ -328,7 +391,7 @@ async function startAttempt(req, res) {
       const refreshed = await pool.query(
         'SELECT id, attempt_key, student_name, deadline_at, submitted_at, score, max_score, grading_status FROM quiz_attempts WHERE id = $1',
         [attempt.id]);
-      return res.json(attemptPayload(refreshed.rows[0], quiz, [],
+      return res.json(await payloadWithAppeals(refreshed.rows[0], quiz, [],
         await reviewIfReady(refreshed.rows[0], quiz)));
     }
     // **ده المسار اللي الطالب بيرجع بيه يشوف تصحيحه**: نفس الرابط ونفس الرقم في أي وقت
@@ -343,7 +406,7 @@ async function startAttempt(req, res) {
         const questions = await loadQuestionsForStudent(quiz.id, shuffleFor(quiz, next));
         return res.json(attemptPayload(next, quiz, questions));
       }
-      return res.json(attemptPayload(attempt, quiz, [], await reviewIfReady(attempt, quiz)));
+      return res.json(await payloadWithAppeals(attempt, quiz, [], await reviewIfReady(attempt, quiz)));
     }
     if (!quiz.is_open) return res.status(403).json({ error: 'الاختبار اتقفل' });
 
@@ -558,7 +621,69 @@ async function getResult(req, res) {
     max_score: done && attempt.show_score_to_student ? Number(attempt.max_score) : null,
     score_hidden: !attempt.show_score_to_student,
     review,
+    // نفس السبب: الصفحة اللي وصلها التصحيح من هنا محتاجة السقف زي اللي وصلها من start
+    appeal_limit: await appealLimit(),
   });
+}
+
+// ---------- تقديم التظلّم ----------
+//
+// **محمي بـ`attempt_key` زي الحفظ والتسليم بالظبط** — المسار عام (مفيش تسجيل دخول)،
+// والمفتاح هو اللي بيقول إن اللي بيتظلم هو صاحب الورقة. من غيره أي حد يعرف رقم محاولة
+// يقدر يتظلم باسم غيره.
+//
+// **وكل رقم سؤال بيتفحص في القاعدة.** الصفحة بتبعت أرقام أسئلة، والطالب يقدر يعدّلها —
+// فالسيرفر بيحسب بنفسه أنهي أسئلة تستاهل تظلم فعلًا (ناقصة، متصحّحة، في نفس الاختبار،
+// ومامتظلمش منها قبل كده) ويتجاهل أي رقم بره القايمة دي.
+async function submitAppeal(req, res) {
+  const attempt = await loadOpenAttempt(req.params.ref, req.body?.attempt_key);
+  if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
+  if (!attempt.submitted_at) return res.status(409).json({ error: 'سلّم ورقتك الأول' });
+
+  const requested = Array.isArray(req.body?.question_ids) ? req.body.question_ids : [];
+  const ids = [...new Set(requested.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!ids.length) return res.status(400).json({ error: 'اختار سؤال واحد على الأقل' });
+
+  const allowed = await appealableQuestions(attempt.id, attempt.quiz_id);
+  const valid = ids.filter((id) => allowed.has(id));
+  if (!valid.length) {
+    return res.status(409).json({
+      error: 'الأسئلة دي مش متاح التظلم منها — يا إما خدت فيها الدرجة كاملة يا إما اتظلمت منها قبل كده',
+    });
+  }
+
+  // **السقف على الورقة كلها مش على الطلب الواحد** — وإلا الطالب بيقدّم تلاتة، ويرجع
+  // يقدّم تلاتة تانيين، والسقف مابيعملش حاجة
+  const limit = await appealLimit();
+  const { rows: usedRows } = await pool.query(
+    'SELECT COUNT(*)::int AS count FROM quiz_appeals WHERE attempt_id = $1', [attempt.id]);
+  const used = usedRows[0].count;
+  if (used >= limit) {
+    return res.status(409).json({ error: `وصلت للحد الأقصى: ${limit} أسئلة تظلم للورقة الواحدة.` });
+  }
+  if (used + valid.length > limit) {
+    return res.status(409).json({
+      error: `تقدر تتظلم من ${limit - used} سؤال بس — الحد الأقصى ${limit} للورقة، وإنت قدّمت ${used} قبل كده.`,
+    });
+  }
+
+  // نص واحد لكل التظلمات المقدّمة مع بعض. الطالب بيكتب سبب واحد في المربع، ونسخه على كل
+  // سؤال أوضح للأدمن من إنه يبقى على واحد منهم بس
+  const note = String(req.body?.note || '').trim().slice(0, 1000) || null;
+
+  // **`ON CONFLICT DO NOTHING` مش فحص قبل الكتابة:** الطالب على نت بطيء بيدوس مرتين،
+  // والفحص-ثم-الكتابة بينهار بين النداءين. الـUNIQUE في القاعدة هي الحكم
+  const { rows } = await pool.query(
+    `INSERT INTO quiz_appeals (attempt_id, question_id, student_note, points_at_appeal)
+     SELECT $1, q.id, $3, an.awarded_points
+     FROM quiz_questions q
+     JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
+     WHERE q.id = ANY($2::int[])
+     ON CONFLICT (attempt_id, question_id) DO NOTHING
+     RETURNING question_id`,
+    [attempt.id, valid, note]);
+
+  res.json({ ok: true, submitted: rows.map((row) => row.question_id) });
 }
 
 // ---------- معاينة ورقة الطالب بعين الطالب (للأدمن) ----------
@@ -601,7 +726,7 @@ async function renderStudentPreview(req, res) {
     'SELECT COUNT(*)::int AS count FROM quiz_questions WHERE quiz_id = $1', [quiz.id]);
 
   const payload = attempt.submitted_at
-    ? attemptPayload(attempt, quiz, [], await reviewIfReady(attempt, quiz))
+    ? await payloadWithAppeals(attempt, quiz, [], await reviewIfReady(attempt, quiz))
     : null;
   // ضمانة تانية فوق شرط المسلّم: المفتاح مايخرجش من هنا بأي حال
   if (payload) {
@@ -636,6 +761,6 @@ async function renderStudentPreview(req, res) {
 
 module.exports = {
   renderQuiz, startAttempt, saveProgress, submitAttempt, getResult,
-  renderStudentPreview,
+  renderStudentPreview, submitAppeal,
   normalizePhone, seededShuffle, gradingIsInstant, attemptPayload,
 };

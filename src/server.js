@@ -132,6 +132,8 @@ app.post('/q/:ref/save', quizPublicController.saveProgress);
 app.post('/q/:ref/submit', quizPublicController.submitAttempt);
 // الصفحة بتسأل بيه عن الدرجة بعد التسليم — التصحيح بقى في طابور مش في نفس الطلب
 app.get('/q/:ref/result', quizPublicController.getResult);
+// تظلّم الطالب على درجة سؤال — عام زي باقي مسارات `/q/`، ومحمي بـattempt_key
+app.post('/q/:ref/appeal', quizPublicController.submitAppeal);
 
 // معاينة ورقة الطالب بعين الطالب — للأدمن بس. **على مسار منفصل عن `/q/` عن قصد:**
 // `/q/` كله عام بدون مصادقة، وإضافة مسار محمي جواه كانت هتخلي القاعدة دي مش واضحة

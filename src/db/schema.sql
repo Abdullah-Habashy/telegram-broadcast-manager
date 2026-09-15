@@ -1300,3 +1300,42 @@ CREATE TABLE IF NOT EXISTS quiz_answers (
     UNIQUE (attempt_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_answers_attempt ON quiz_answers (attempt_id);
+
+-- ---------- صورة الإجابة المقالية ----------
+--
+-- الطالب بيحل على ورق وبيصوّر إجابته بدل ما يكتبها — أسرع بكتير في الكيمياء والمعادلات،
+-- والكتابة على الموبايل بتخلي الطالب يختصر إجابته فيخسر درجات مش لأنه مش عارف.
+-- **بديل للكتابة مش إضافة ليها:** إجابة واحدة لكل سؤال، فالنموذج بيقرا مصدر واحد
+-- ومايحتارش لو الاتنين اختلفوا. الواجهة بتفضّي التانية لما الطالب يختار واحدة.
+ALTER TABLE quiz_answers ADD COLUMN IF NOT EXISTS answer_image_path TEXT;
+
+-- ---------- تظلّم الطالب على درجة سؤال ----------
+--
+-- **ليه الجدول ده موجود:** التصحيح المقالي بنموذج، والنموذج بيغلط. الطالب اللي شايف
+-- إجابته صح ودرجتها صفر مكانش عنده أي طريق غير إنه يفتح تذكرة دعم ويشرح — والموظف
+-- اللي بيقرا التذكرة مش بيبقى شايف الورقة ولا السؤال. التظلم بيربط الشكوى بالسؤال نفسه.
+--
+-- **صف واحد لكل (محاولة، سؤال)** — الطالب مايقدرش يتظلم من نفس السؤال مرتين، والـUNIQUE
+-- هي اللي بتفرض ده مش فحص في الكود (الطالب بيدوس مرتين على نت بطيء).
+--
+-- **`points_at_appeal` بتتسجّل وقت التظلم** عشان الأدمن يعرف بعدين إن الدرجة اتغيّرت
+-- فعلًا ولا اتراجعت وفضلت زي ما هي — القرار الأول والتاني الاتنين مشروعين، والفرق
+-- بينهم مش باين من الدرجة الحالية لوحدها.
+CREATE TABLE IF NOT EXISTS quiz_appeals (
+    id SERIAL PRIMARY KEY,
+    attempt_id INTEGER NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+    question_id INTEGER NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
+    -- سبب التظلم بكلام الطالب. اختياري: إجباره يكتب بيخلي اللي مش عارف يعبّر يسكت
+    student_note TEXT,
+    -- open = مستني الأدمن · resolved = الأدمن شاف السؤال وحسم (عدّل الدرجة أو اعتمدها)
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    points_at_appeal NUMERIC(6,2),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+    resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE (attempt_id, question_id)
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_appeals_attempt ON quiz_appeals (attempt_id);
+-- الفهرس الجزئي ده هو اللي بيخدم شاشة "التظلمات المفتوحة" وعدّاد جدول النتايج. المفتوح
+-- قليل والمحلول بيتراكم، فالفهرس الكامل كان هيكبر من غير فايدة
+CREATE INDEX IF NOT EXISTS idx_quiz_appeals_open ON quiz_appeals (question_id) WHERE status = 'open';
