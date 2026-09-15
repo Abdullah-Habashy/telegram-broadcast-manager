@@ -213,6 +213,20 @@ body.qz-body {
 .qz-rv-mark.wrong { background: color-mix(in srgb, var(--qz-danger) 12%, transparent); color: var(--qz-danger); }
 .qz-rv-mark.pending { background: var(--qz-accent-soft); color: var(--qz-accent); }
 
+/* ---------- دليل ألوان الورقة ----------
+   النقطة الملوّنة هي اللي بتربط الكلمة بلون السؤال نفسه. الحالات الأربعة هي نفسها
+   في لوحة الأدمن (style.css → .quiz-legend) — اللون الواحد لازم يعني نفس الحاجة
+   عند الطالب وعند الموظف */
+.qz-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px;
+  font-size: 13px; color: var(--qz-muted); }
+.qz-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.qz-legend-item::before { content: ""; width: 11px; height: 11px; border-radius: 3px;
+  flex: none; background: var(--qz-muted); }
+.qz-legend-item.correct::before { background: var(--qz-good); }
+.qz-legend-item.partial::before { background: var(--qz-warn); }
+.qz-legend-item.wrong::before   { background: var(--qz-danger); }
+.qz-legend-item.pending::before { background: var(--qz-accent); }
+
 /* الورقة بتتقري كجُمل موجّهة للطالب: "إنت اخترت كذا" وبعدها "والصح كذا". السطر التاني
    بلون الصح عشان العين تمسكه من غير ما نحتاج نكتب عليه عنوان */
 .qz-rv-say {

@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260911" />
+  <link rel="stylesheet" href="/quiz.css?v=20260915" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -693,8 +693,17 @@
 
       var number = 0;
       var open = false;
+      // **دليل الألوان جوه كارت المقدمة.** الألوان على الأسئلة موجودة من الأول، بس
+      // من غير الدليل الطالب بيخمّن معناها — والأصفر تحديدًا مابيقولش لوحده إنه
+      // "صح جزئي" مش "فيه مشكلة". نفس الأربع حالات وبنفس الترتيب في شاشة الأدمن
       var html = '<div class="qz-card qz-rv-head"><h2>يلا نراجع ورقتك مع بعض</h2>'
-        + '<p>هنعدّي على كل سؤال: إنت قلت إيه، وإيه الصح، وليه. الأسئلة المقالية ممكن الفريق يراجعها ويعدّل درجتها.</p></div>';
+        + '<p>هنعدّي على كل سؤال: إنت قلت إيه، وإيه الصح، وليه. الأسئلة المقالية ممكن الفريق يراجعها ويعدّل درجتها.</p>'
+        + '<div class="qz-legend">'
+        + '<span class="qz-legend-item correct">صح كامل</span>'
+        + '<span class="qz-legend-item partial">صح جزئي</span>'
+        + '<span class="qz-legend-item wrong">غلط</span>'
+        + '<span class="qz-legend-item pending">مستني مراجعة الفريق</span>'
+        + '</div></div>';
 
       review.forEach(function (answer) {
         if (answer.kind === 'group') {

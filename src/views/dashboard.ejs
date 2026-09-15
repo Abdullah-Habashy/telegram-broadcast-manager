@@ -10230,8 +10230,9 @@ ${reply.content}` : reply.content;
             ? optionText(options[answer.correct_option])
             : escapeHtml(answer.reference_answer);
           // حكم النموذج وسببه بيتعرضوا للموظف مش للطالب — ده اللي بيخليه يقدر يخالفه بثقة
+          // حكم النموذج بياخد لون الدرجة نفسها عشان السطرين مايتناقضوش في عين الموظف
           const verdict = answer.ai_verdict
-            ? `<div class="card-desc" style="margin-top:6px">🤖 ${verdictLabels[answer.ai_verdict] || answer.ai_verdict}: ${escapeHtml(answer.ai_reason)}</div>`
+            ? `<div class="card-desc" style="margin-top:6px; color:${gradeTone(answer).color}">🤖 ${verdictLabels[answer.ai_verdict] || answer.ai_verdict}: ${escapeHtml(answer.ai_reason)}</div>`
             : '';
           // الفرق بين "اتعتمدت" و"اتعدّلت" مش باين من graded_by لوحده، بس الاتنين معناهم
           // إن بني آدم شافها وإن إعادة التصحيح الآلي مش هتلمسها — والعلامة بتقول ده
@@ -10239,11 +10240,15 @@ ${reply.content}` : reply.content;
             ? `<span class="badge badge-success">✔ معتمدة — ${escapeHtml(answer.graded_by_name || 'موظف')}</span>`
             : '<span class="badge badge-muted">تصحيح آلي</span>';
 
+          const tone = gradeTone(answer);
           return `
-            <div class="card" style="background:var(--surface-sunken); margin-bottom:10px${answer.is_part ? '; margin-inline-start:18px' : ''}">
+            <div class="card quiz-answer-card ${tone.key}" style="background:var(--surface-sunken); margin-bottom:10px${answer.is_part ? '; margin-inline-start:18px' : ''}">
               <div class="row-between" style="gap:8px; flex-wrap:wrap">
                 ${heading}
-                <span class="badge badge-muted">${answer.points} درجة</span>
+                <span class="row" style="gap:6px; flex-wrap:wrap">
+                  <span class="badge ${tone.badge}">${tone.label}</span>
+                  <span class="badge badge-muted">${answer.awarded_points === null ? '—' : answer.awarded_points} / ${answer.points}</span>
+                </span>
               </div>
               ${image}
               <div style="margin-top:10px"><span class="card-desc">إجابة الطالب:</span>
@@ -10276,6 +10281,7 @@ ${reply.content}` : reply.content;
             </div>
           </div>
           ${data.attempt.grading_error ? `<div class="card-desc" style="margin-bottom:10px">⚠️ التصحيح الآلي فشل: ${escapeHtml(data.attempt.grading_error)}</div>` : ''}
+          ${QUIZ_COLOR_LEGEND}
           ${answers}`;
       } catch (error) {
         box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
@@ -10293,6 +10299,38 @@ ${reply.content}` : reply.content;
     //
     // **قبل الـawait مش بعده:** الشاشة تنزل على "بيتحمّل..." فورًا، فالضغطة يبقى ليها
     // رد فعل فوري من غير ما يستنى النداء يرجع
+    // ---------- دليل ألوان التصحيح ----------
+    //
+    // **اللون بيتحدد من الدرجة مش من حكم النموذج.** `ai_verdict` موجود للمقالي بس،
+    // فلو اعتمدنا عليه كان الاختيار من متعدد هيفضل بلا لون — وهو أغلب أسئلة الورقة.
+    // الدرجة موجودة للنوعين، فالقاعدة واحدة.
+    //
+    // **ونفس القاعدة بالحرف في `verdictOf` بصفحة الطالب (`quiz.ejs`)** — الموظف
+    // والطالب لازم يشوفوا نفس اللون على نفس الإجابة، وإلا الموظف يطمّن طالب على
+    // إجابة شايفها صح والطالب شايفها ناقصة
+    function gradeTone(answer) {
+      if (answer.awarded_points === null || answer.awarded_points === undefined) {
+        return { key: 'pending', label: 'مستني تصحيح', badge: 'badge-muted', color: 'var(--text-muted)' };
+      }
+      if (answer.awarded_points >= answer.points) {
+        return { key: 'correct', label: 'صح كامل', badge: 'badge-success', color: 'var(--success)' };
+      }
+      if (answer.awarded_points > 0) {
+        return { key: 'partial', label: 'صح جزئي', badge: 'badge-warning', color: 'var(--warning)' };
+      }
+      return { key: 'wrong', label: 'غلط', badge: 'badge-danger', color: 'var(--danger)' };
+    }
+
+    // الدليل بيتكتب مرة فوق الورقة. من غيره اللون بيبقى تخمين — الأصفر تحديدًا
+    // مابيقولش لوحده إنه "صح جزئي" مش "محتاج مراجعة"
+    const QUIZ_COLOR_LEGEND = `
+      <div class="quiz-legend">
+        <span class="quiz-legend-item correct">صح كامل</span>
+        <span class="quiz-legend-item partial">صح جزئي</span>
+        <span class="quiz-legend-item wrong">غلط</span>
+        <span class="quiz-legend-item pending">مستني تصحيح</span>
+      </div>`;
+
     function revealQuizPanel(element) {
       element.style.display = '';
       element.innerHTML = '<div class="empty-state">بيتحمّل...</div>';

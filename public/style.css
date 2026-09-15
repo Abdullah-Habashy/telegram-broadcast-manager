@@ -319,6 +319,28 @@ tr:last-child td { border-bottom: none; }
 .badge-warning { background: var(--warning-tint); color: var(--warning); }
 .badge-muted { background: var(--surface-sunken); color: var(--text-muted); }
 
+/* ---------- ألوان تصحيح الاختبار ----------
+   شريط على جانب كارت الإجابة + دليل فوق الورقة. اللون بيتحدد من الدرجة مش من حكم
+   النموذج (gradeTone في dashboard.ejs) عشان الاختيار من متعدد ياخد نفس اللون.
+   نفس الأربع حالات في صفحة الطالب (quiz.css) — اللون الواحد لازم يعني نفس الحاجة
+   في الشاشتين */
+.quiz-answer-card { border-inline-start: 3px solid var(--border); }
+.quiz-answer-card.correct { border-inline-start-color: var(--success); }
+.quiz-answer-card.partial { border-inline-start-color: var(--warning); }
+.quiz-answer-card.wrong   { border-inline-start-color: var(--danger); }
+.quiz-answer-card.pending { border-inline-start-color: var(--text-muted); }
+
+.quiz-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 12px;
+  font-size: .82rem; color: var(--text-muted); }
+/* النقطة الملوّنة قبل النص: هي اللي بتربط الكلمة باللون اللي على الكارت */
+.quiz-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.quiz-legend-item::before { content: ""; width: 10px; height: 10px; border-radius: 3px;
+  background: var(--border); flex: none; }
+.quiz-legend-item.correct::before { background: var(--success); }
+.quiz-legend-item.partial::before { background: var(--warning); }
+.quiz-legend-item.wrong::before   { background: var(--danger); }
+.quiz-legend-item.pending::before { background: var(--text-muted); }
+
 .selection-hint { margin-top: 6px; color: var(--primary); font-size: 12.5px; font-weight: 600; }
 .image-picker-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .image-file-name { color: var(--text-muted); font-size: 13px; }
