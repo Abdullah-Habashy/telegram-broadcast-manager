@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260915" />
+  <link rel="stylesheet" href="/quiz.css?v=20260915b" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -24,6 +24,30 @@
   <%# ===== بوابة الدخول =====
       الأسئلة مش في الصفحة دي — بتيجي من /start بعد ما الرقم يتطابق. لولا كده كان أي حد
       يفتح مصدر الصفحة يقرا الأسئلة والإجابات الصح من غير ما المؤقت يبدأ %>
+<%# معاينة الأدمن: بانر بيقول إن اللي تحته ورقة طالب بعينه مش ورقتك. لو اتشال، الأدمن
+    ممكن يفتكر إنه بيشوف الصفحة العامة ويحكم على حاجة مش موجودة فيها أصلًا.
+    **`locals.preview` مش `typeof preview`** — EJS بيحل المتغيّرات من `locals`، و
+    `typeof preview` بيرمي "preview is not defined" في الصفحة العامة اللي مابتمرّرهوش.
+    اتكشف بالاختبار قبل النشر، وكان هيوقّع صفحة الاختبار لكل الطلاب %>
+<% if (locals.preview) { %>
+  <div class="qz-card qz-preview-banner">
+    <b>👁️ معاينة بعين الطالب</b>
+    <p>ورقة <b><%= preview.student_name %></b><% if (preview.attempt_no > 1) { %> — محاولة <%= preview.attempt_no %><% } %>. دي نفس الصفحة اللي الطالب بيشوفها بالظبط، وبنفس القيود.</p>
+    <% if (!preview.submitted) { %>
+      <p class="qz-preview-note">⚠️ الورقة دي لسه بتتحل ومسلّمتش، فمفيش تصحيح يتعاين. المعاينة للأوراق المسلّمة بس.</p>
+    <% } else if (preview.answers_hidden) { %>
+      <p class="qz-preview-note">⚠️ الطالب <b>مش</b> شايف تصحيح ورقته دلوقتي، والسبب:
+        <% if (!preview.show_answers_to_student) { %>خانة «الطالب يشوف تصحيح ورقته» مقفولة في محرر الاختبار.
+        <% } else if (preview.answers_after_close && preview.is_open) { %>التصحيح مؤجّل لحد ما الاختبار يتقفل، والاختبار لسه مفتوح.
+        <% } else { %>الورقة لسه بتتصحّح.<% } %>
+      </p>
+    <% } %>
+    <% if (preview.score_hidden) { %>
+      <p class="qz-preview-note">⚠️ الدرجة مخفية عن الطالب (خانة «الطالب يشوف درجته» مقفولة).</p>
+    <% } %>
+  </div>
+<% } %>
+
   <div class="qz-card" id="qz-gate" <%= quiz.is_open ? '' : 'style="display:none"' %>>
     <div class="qz-field">
       <label for="qz-phone">رقم الموبايل
@@ -98,6 +122,11 @@
 
 </div>
 
+<script>
+  // بيانات المعاينة بتتحط من السيرفر. `null` في الصفحة العامة — القالب الواحد بيخدم
+  // الاتنين، فأي تعديل على شكل الورقة بيوصل للمعاينة تلقائيًا ومفيش نسختين يفترقوا
+  window.QZ_PREVIEW = <%- locals.preview ? JSON.stringify(locals.preview) : 'null' %>;
+</script>
 <script>
   (function () {
     var base = window.location.pathname.replace(/\/+$/, '');
@@ -735,6 +764,18 @@
       });
       if (open) html += '</div>';
       box.innerHTML = html;
+    }
+    // ---------- تشغيل المعاينة ----------
+    //
+    // **بيعدّي على البوابة كلها.** الطالب بيدخل رقمه عشان نعرف هو مين؛ في المعاينة
+    // الأدمن قال مين من اللوحة خلاص، والـpayload جاهز من السيرفر. ومفيش أي نداء
+    // للسيرفر من هنا: الصفحة مابتحفظش ومابتسلّمش ومابتسألش عن الدرجة، فمستحيل تلمس
+    // ورقة الطالب بأي شكل
+    if (window.QZ_PREVIEW) {
+      el('qz-gate').style.display = 'none';
+      if (window.QZ_PREVIEW.payload) {
+        renderResult(window.QZ_PREVIEW.payload);
+      }
     }
   }());
 </script>

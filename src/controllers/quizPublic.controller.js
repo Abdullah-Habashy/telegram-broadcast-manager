@@ -561,7 +561,81 @@ async function getResult(req, res) {
   });
 }
 
+// ---------- معاينة ورقة الطالب بعين الطالب (للأدمن) ----------
+//
+// **ليه الميزة موجودة:** الأدمن بيشوف الورقة في اللوحة بشكل مختلف تمامًا عن اللي الطالب
+// بيشوفه — مفاتيح الإجابات، حكم النموذج، خانات تعديل الدرجة. فمفيش طريقة يتأكد بيها إن
+// اللي وصل للطالب فعلًا مفهوم وصحيح، ولا إن الإجابات النموذجية ظاهرة أو مخفية زي ما هو
+// متوقع. الشاشة دي بتوريه الورقة زي ما هي عند الطالب بالظبط.
+//
+// **نفس الـpayload بالحرف، بنفس القيود** (`show_score_to_student` و
+// `show_answers_to_student` و `answers_after_close`). لو عرضنا أكتر مما الطالب شايفه،
+// المعاينة بتكدب في الاتجاه الأخطر: الأدمن يطمّن إن الطالب شايف تصحيحه وهو مش شايفه.
+//
+// **المسلّم بس.** الورقة اللي لسه بتتحل `attempt_key` بتاعها بيتبعت في الـpayload عشان
+// الصفحة تحفظ بيه — يعني معاينة محاولة مفتوحة كانت هتدّي الأدمن مفتاح يعدّل بيه إجابات
+// الطالب من غير قصد. والمعاينة أصلًا للتصحيح مش للحل.
+async function renderStudentPreview(req, res) {
+  const attemptId = Number(req.params.attemptId);
+  if (!Number.isInteger(attemptId) || attemptId < 1) return res.status(404).render('report-not-found');
+
+  const { rows } = await pool.query(
+    `SELECT a.id, a.attempt_key, a.student_name, a.deadline_at, a.submitted_at,
+            a.score, a.max_score, a.grading_status, a.attempt_no, a.quiz_id, a.phone,
+            s.name AS platform_name
+     FROM quiz_attempts a
+     LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
+     WHERE a.id = $1`, [attemptId]);
+  const attempt = rows[0];
+  if (!attempt) return res.status(404).render('report-not-found');
+
+  const quizResult = await pool.query(
+    `SELECT id, title, description, time_limit_minutes, is_open,
+            show_score_to_student, show_answers_to_student, answers_after_close,
+            shuffle_questions, shuffle_options, max_attempts
+     FROM quizzes WHERE id = $1`, [attempt.quiz_id]);
+  const quiz = quizResult.rows[0];
+  if (!quiz) return res.status(404).render('report-not-found');
+
+  const countResult = await pool.query(
+    'SELECT COUNT(*)::int AS count FROM quiz_questions WHERE quiz_id = $1', [quiz.id]);
+
+  const payload = attempt.submitted_at
+    ? attemptPayload(attempt, quiz, [], await reviewIfReady(attempt, quiz))
+    : null;
+  // ضمانة تانية فوق شرط المسلّم: المفتاح مايخرجش من هنا بأي حال
+  if (payload) {
+    payload.attempt_key = null;
+    // **وزرار الإعادة متعطّل.** الأدمن اللي بيعاين ممكن يدوسه بالغلط، وده بيمسح إجابات
+    // الطالب ويفتحله محاولة جديدة — فعل مالوش رجوع على ورقة مش بتاعته
+    payload.can_retry = false;
+  }
+
+  res.render('quiz', {
+    quiz: {
+      title: quiz.title,
+      description: quiz.description,
+      time_limit_minutes: quiz.time_limit_minutes,
+      is_open: quiz.is_open,
+      question_count: countResult.rows[0].count,
+    },
+    preview: {
+      payload,
+      student_name: attempt.platform_name || attempt.student_name || 'طالب',
+      attempt_no: Number(attempt.attempt_no) || 1,
+      submitted: Boolean(attempt.submitted_at),
+      // الأدمن محتاج يعرف **ليه** الورقة فاضية لو كانت فاضية — القيد اللي خفاها
+      answers_hidden: Boolean(attempt.submitted_at && !payload?.review),
+      show_answers_to_student: Boolean(quiz.show_answers_to_student),
+      answers_after_close: Boolean(quiz.answers_after_close),
+      is_open: Boolean(quiz.is_open),
+      score_hidden: Boolean(attempt.submitted_at && !quiz.show_score_to_student),
+    },
+  });
+}
+
 module.exports = {
   renderQuiz, startAttempt, saveProgress, submitAttempt, getResult,
+  renderStudentPreview,
   normalizePhone, seededShuffle, gradingIsInstant, attemptPayload,
 };

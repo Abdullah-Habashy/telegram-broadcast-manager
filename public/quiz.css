@@ -227,6 +227,15 @@ body.qz-body {
 .qz-legend-item.wrong::before   { background: var(--qz-danger); }
 .qz-legend-item.pending::before { background: var(--qz-accent); }
 
+/* ---------- بانر معاينة الأدمن ----------
+   بيبان على صفحة الطالب لما الأدمن يفتحها من اللوحة. **لونه مختلف عن كل حاجة في
+   الصفحة عن قصد** — لو شبه الكروت العادية، الأدمن بيلف الصفحة وينسى إنه شايف ورقة
+   حد تاني ويحكم عليها كأنها الصفحة العامة */
+.qz-preview-banner { border: 1px dashed var(--qz-accent); background: var(--qz-accent-soft); }
+.qz-preview-banner b { color: var(--qz-accent); }
+.qz-preview-banner p { margin: 6px 0 0; font-size: 14px; }
+.qz-preview-note { color: var(--qz-warn) !important; font-weight: 600; }
+
 /* الورقة بتتقري كجُمل موجّهة للطالب: "إنت اخترت كذا" وبعدها "والصح كذا". السطر التاني
    بلون الصح عشان العين تمسكه من غير ما نحتاج نكتب عليه عنوان */
 .qz-rv-say {

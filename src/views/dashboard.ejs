@@ -10172,7 +10172,14 @@ ${reply.content}` : reply.content;
             <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}</td>
             <td>${score}</td>
             <td>${attempt.submitted_at ? fmtDate(attempt.submitted_at) : fmtDate(attempt.started_at)}</td>
-            <td><button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="openQuizAttempt(${attempt.id})">الإجابات</button></td>
+            <td>
+              <span class="row" style="gap:6px; flex-wrap:nowrap">
+                <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="openQuizAttempt(${attempt.id})">الإجابات</button>
+                ${currentUserRole === 'admin' && attempt.submitted_at ? `<a class="btn btn-ghost btn-sm" style="width:auto; text-decoration:none"
+                  href="/quiz-preview/${attempt.id}" target="_blank" rel="noopener"
+                  title="شوف الورقة بعين الطالب — نفس الصفحة اللي بيفتحها بالظبط" aria-label="معاينة بعين الطالب">👁️</a>` : ''}
+              </span>
+            </td>
           </tr>`;
         }).join('');
         box.innerHTML = `<table><thead><tr><th>الطالب</th><th>التليفون</th><th>الحالة</th><th>الدرجة</th><th>الوقت</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -10277,6 +10284,8 @@ ${reply.content}` : reply.content;
               ${needsReview ? `<button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="regradeQuizAttempt(${attemptId})">أعد التصحيح الآلي</button>` : ''}
               <button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="approveQuizAttempt(${attemptId})">✅ وافق على الورقة كلها</button>
               <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="reopenQuizAttempt(${attemptId})">اسمحله يعيد</button>
+              ${currentUserRole === 'admin' && data.attempt.submitted_at ? `<a class="btn btn-ghost btn-sm" style="width:auto; text-decoration:none"
+                href="/quiz-preview/${attemptId}" target="_blank" rel="noopener">👁️ بعين الطالب</a>` : ''}
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="hideQuizAttempt()">إخفاء</button>
             </div>
           </div>

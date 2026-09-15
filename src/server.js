@@ -17,7 +17,7 @@ const { startTeamAutoReturn } = require('./jobs/teamAutoReturn');
 const { startWhatsappRouting } = require('./jobs/whatsappRouting');
 const { startQuizFinalizer } = require('./jobs/quizFinalizer');
 const { startQuizGradingAlert } = require('./jobs/quizGradingAlert');
-const { requireAuth } = require('./middleware/requireAuth');
+const { requireAuth, requireAdminPage } = require('./middleware/requireAuth');
 
 const authRoutes = require('./routes/auth.routes');
 const contactsRoutes = require('./routes/contacts.routes');
@@ -132,6 +132,11 @@ app.post('/q/:ref/save', quizPublicController.saveProgress);
 app.post('/q/:ref/submit', quizPublicController.submitAttempt);
 // الصفحة بتسأل بيه عن الدرجة بعد التسليم — التصحيح بقى في طابور مش في نفس الطلب
 app.get('/q/:ref/result', quizPublicController.getResult);
+
+// معاينة ورقة الطالب بعين الطالب — للأدمن بس. **على مسار منفصل عن `/q/` عن قصد:**
+// `/q/` كله عام بدون مصادقة، وإضافة مسار محمي جواه كانت هتخلي القاعدة دي مش واضحة
+// لأي حد يقرا الملف بعدين
+app.get('/quiz-preview/:attemptId', requireAdminPage, quizPublicController.renderStudentPreview);
 
 // نفس التقرير للموظف المسجّل دخول بمعرّف الطالب — من غير ما يحتاج يعمل رابط عام
 app.get('/student-report/:id', requireAuth, studentReportController.renderStaffReport);

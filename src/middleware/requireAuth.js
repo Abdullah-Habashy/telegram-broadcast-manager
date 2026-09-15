@@ -35,6 +35,25 @@ async function requireAdminApi(req, res, next) {
   }
 }
 
+// نفس requireAdminApi بس **بـredirect مش JSON** — للصفحات المرندرة. الأدمن اللي جلسته
+// خلصت لازم يروح للوجين، ورسالة JSON في تاب متصفح مابتقولّهوش يعمل إيه
+async function requireAdminPage(req, res, next) {
+  if (!req.session?.userId) return res.redirect('/login');
+  try {
+    const result = await pool.query('SELECT role, is_active FROM users WHERE id = $1', [req.session.userId]);
+    const user = result.rows[0];
+    if (!user?.is_active) return req.session.destroy(() => res.redirect('/login'));
+    // **التحقق من القاعدة في كل طلب مش من الجلسة** — نفس سبب requireTicketsAccessApi:
+    // موظف اتشالت منه صلاحية الأدمن وتابه لسه مفتوح مايفضلش داخل
+    if (user.role !== 'admin') return res.status(403).render('report-not-found');
+    req.session.userRole = user.role;
+    next();
+  } catch (error) {
+    console.error('❌ Failed to verify admin permissions for a page:', error.message);
+    res.status(500).render('report-not-found');
+  }
+}
+
 // صلاحيات عرض صندوق الدعم/المتابعة التليفونية — بتتحقق من قاعدة البيانات مباشرة في كل طلب (زي
 // requireAdminApi بالظبط)، مش من قيمة مخزّنة في الجلسة من وقت تحميل الصفحة. السبب: لو موظف فاتح تاب
 // من قبل ما تتغيّر صلاحياته (أو حتى قبل ما الميزة دي تتضاف أصلًا)، وسيبه مفتوح من غير Refresh لأيام،
@@ -144,7 +163,7 @@ async function requireQuizAccessApi(req, res, next) {
 
 module.exports = {
   requireAuth, requireAuthApi, requireAdminApi, requireTicketsAccessApi, requireCallsAccessApi,
-  requireCallAssignAccessApi, requireQuizAccessApi,
+  requireCallAssignAccessApi, requireQuizAccessApi, requireAdminPage,
 };
 const pool = require('../config/db');
 const { canManageQuizzes } = require('../utils/teams');
