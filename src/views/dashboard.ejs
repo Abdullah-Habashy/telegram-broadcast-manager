@@ -10024,8 +10024,7 @@ ${reply.content}` : reply.content;
       const panel = document.getElementById('quiz-stats');
       // الزرار بيفتح ويقفل — الضغطة التانية بتخفيه بدل ما تعيد التحميل
       if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
-      panel.style.display = '';
-      panel.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      revealQuizPanel(panel);
       try {
         const data = await api(`/api/quizzes/${quizResultsId}/question-stats`);
         if (!data.submitted) {
@@ -10098,8 +10097,7 @@ ${reply.content}` : reply.content;
     async function loadQuizMissing() {
       const panel = document.getElementById('quiz-missing');
       if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
-      panel.style.display = '';
-      panel.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      revealQuizPanel(panel);
       try {
         const data = await api(`/api/quizzes/${quizResultsId}/coverage`);
         if (!data.configured) {
@@ -10196,8 +10194,7 @@ ${reply.content}` : reply.content;
 
     async function openQuizAttempt(attemptId) {
       const box = document.getElementById('quiz-attempt-detail');
-      box.style.display = '';
-      box.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      revealQuizPanel(box);
       try {
         const data = await api(`/api/quizzes/attempts/${attemptId}`);
         const name = data.attempt.platform_name || data.attempt.student_name || '—';
@@ -10287,6 +10284,19 @@ ${reply.content}` : reply.content;
 
     function hideQuizAttempt() {
       document.getElementById('quiz-attempt-detail').style.display = 'none';
+    }
+
+    // **التلات مربعات دي كلها تحت جدول النتايج في الصفحة** (الإحصائيات، مين ماحلّش،
+    // إجابات المحاولة)، والجدول بيوصل ٥٠٠ صف على اختبار حقيقي. فالموظف بيدوس الزرار
+    // على صف في أول الجدول، المحتوى بيتحط فعلًا — بس بعد ٥٠٠ صف تحت، فهو مايشوفش أي
+    // حاجة بتحصل ويفتكر الزرار باظ. التمرير هو اللي بيوصّله للمحتوى.
+    //
+    // **قبل الـawait مش بعده:** الشاشة تنزل على "بيتحمّل..." فورًا، فالضغطة يبقى ليها
+    // رد فعل فوري من غير ما يستنى النداء يرجع
+    function revealQuizPanel(element) {
+      element.style.display = '';
+      element.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     async function saveQuizGrade(attemptId, questionId) {
