@@ -89,8 +89,17 @@ function normalizeOutput(raw) {
 
 // tool اختيارية: لو مبعوتة بتستخدم بدل أداة الرد الافتراضية. ده اللي بيخلّي نفس المزوّدين
 // يخدموا الرد على الطالب والحصاد من المحادثات والملفات — نفس الطريق ونفس التحقق
-async function callAnthropic({ systemPrompt, question, tool, maxTokens, model, supportsEffort = true }) {
+// `image` اختيارية: { media_type, data } — data بـbase64. لو موجودة بتتبعت **قبل**
+// النص في نفس الرسالة، وده الترتيب اللي Anthropic بتوصي بيه: النموذج بيبص على الصورة
+// وبعدين يقرا التعليمات اللي بتقوله يعمل بيها إيه
+async function callAnthropic({ systemPrompt, question, tool, maxTokens, model, supportsEffort = true, image = null }) {
   const activeTool = tool || ANSWER_TOOL;
+  const userContent = image
+    ? [
+      { type: 'image', source: { type: 'base64', media_type: image.media_type, data: image.data } },
+      { type: 'text', text: question },
+    ]
+    : question;
   const response = await anthropicClient.messages.create({
     model: model || PROVIDERS.anthropic.model,
     max_tokens: maxTokens || 1024,
@@ -103,7 +112,7 @@ async function callAnthropic({ systemPrompt, question, tool, maxTokens, model, s
     system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral', ttl: '1h' } }],
     tools: [activeTool],
     tool_choice: { type: 'tool', name: activeTool.name },
-    messages: [{ role: 'user', content: question }],
+    messages: [{ role: 'user', content: userContent }],
   });
 
   const usage = {
@@ -171,6 +180,12 @@ async function callProvider(providerKey, args) {
   const provider = PROVIDERS[providerKey];
   if (!provider) throw new Error(`مزوّد غير معروف: ${providerKey}`);
   if (!provider.available()) throw new Error(`مفتاح ${provider.label} مش مضبوط على السيرفر`);
+  // **الصورة بتفرض Anthropic.** `callGroq` بيبعت النص بس، فالصورة كانت هتتسقط بالسكوت
+  // والنموذج يحكم على إجابة فاضية — الطالب يخد صفر وهو رافع إجابته. الرسالة صريحة
+  // عشان اللي يغيّر المزوّد يعرف ليه فشل
+  if (args.image && providerKey === 'groq') {
+    throw new Error('تصحيح الإجابة المصوّرة محتاج مزوّد بيقرا صور — غيّر مزوّد التصحيح لـClaude');
+  }
   return providerKey === 'groq'
     ? callGroq(args)
     : callAnthropic({ ...args, model: provider.model, supportsEffort: provider.supportsEffort !== false });

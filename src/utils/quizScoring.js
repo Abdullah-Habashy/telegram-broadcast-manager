@@ -1,5 +1,34 @@
+const fs = require('fs');
+const path = require('path');
 const pool = require('../config/db');
 const { gradeEssayAnswer } = require('./quizGrading');
+
+// ---------- صورة الإجابة ----------
+//
+// الصورة متخزّنة على القرص (أو على السحابة لو التخزين مفعّل) والنموذج محتاجها base64.
+// **الفشل هنا مابيرميش:** لو الملف اتمسح أو المسار بقى رابط سحابي، بنرجّع null
+// والتصحيح بيكمل على النص — وأسوأ حالة إن السؤال يروح لمراجعة موظف، مش إن الورقة كلها
+// تفشل عشان صورة واحدة.
+const IMAGE_MEDIA_TYPES = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.gif': 'image/gif',
+};
+
+function readAnswerImage(storedPath) {
+  if (!storedPath) return null;
+  // رابط كامل = الملف اتنقل للتخزين السحابي. قراءته محتاجة نداء شبكة، والتصحيح
+  // مش مكانه — بيتعامل معاها كإجابة من غير صورة ويسيبها لمراجعة الموظف
+  if (/^https?:\/\//i.test(storedPath)) return null;
+  const mediaType = IMAGE_MEDIA_TYPES[path.extname(storedPath).toLowerCase()];
+  if (!mediaType) return null;
+  try {
+    const absolute = path.join(__dirname, '..', '..', 'public', storedPath);
+    return { media_type: mediaType, data: fs.readFileSync(absolute).toString('base64') };
+  } catch (error) {
+    console.error(`❌ Failed to read the answer image ${storedPath}:`, error.message);
+    return null;
+  }
+}
 
 // ---------- إنهاء المحاولة وحساب الدرجة ----------
 //
@@ -31,8 +60,21 @@ async function gradeEssays(answers, questions) {
   const graded = await Promise.all(essays.map(async (answer) => {
     const question = questions.get(answer.question_id);
     const studentAnswer = (answer.essay_text || '').trim();
-    // إجابة فاضية مش محتاجة نموذج — صفر، وبنوفّر النداء
-    if (!studentAnswer) {
+    const answerImage = readAnswerImage(answer.answer_image_path);
+    // **الفاضي بقى: لا نص ولا صورة.** قبل الصور كان الشرط على النص لوحده، والطالب
+    // اللي رفع إجابته مصوّرة كان هياخد صفر «ساب السؤال فاضي» من غير ما النموذج يشوفها
+    // أصلًا — أسوأ عطل ممكن في الميزة دي
+    if (!studentAnswer && !answerImage) {
+      // الصورة موجودة في القاعدة بس مقدرناش نقراها؟ ده مش «ساب السؤال فاضي» — ده عطل
+      // عندنا، والسؤال بيروح لمراجعة الموظف بدل ما الطالب يتحاسب على حاجة مش ذنبه.
+      //
+      // **بنرجّع null زي حالة الفشل بالظبط.** جرّبت أرجّع صف بـscore_ratio = null،
+      // وده بيحسب `points * null = 0` فالطالب بياخد صفر — نفس العطل اللي بنتجنبه
+      if (answer.answer_image_path) {
+        console.error(`❌ Could not read the answer image for question ${answer.question_id}; leaving it for staff review.`);
+        error = 'مقدرناش نقرا صورة إجابة الطالب — محتاجة مراجعة يدوية';
+        return null;
+      }
       return { question_id: answer.question_id, verdict: 'incorrect', score_ratio: 0, reason: 'ساب السؤال فاضي', provider: null };
     }
     try {
@@ -41,6 +83,7 @@ async function gradeEssays(answers, questions) {
         referenceAnswer: question.reference_answer || '',
         gradingNotes: question.grading_notes || '',
         studentAnswer,
+        answerImage,
       });
       return { question_id: answer.question_id, ...grade };
     } catch (err) {
@@ -75,7 +118,7 @@ async function finalizeAttempt(attemptId, { late = false, force = false } = {}) 
        FROM quiz_questions q
        LEFT JOIN quiz_questions p ON p.id = q.parent_id
        WHERE q.quiz_id = $1`, [attempt.quiz_id]),
-    pool.query('SELECT question_id, selected_option, essay_text, graded_by, awarded_points FROM quiz_answers WHERE attempt_id = $1', [attemptId]),
+    pool.query('SELECT question_id, selected_option, essay_text, graded_by, awarded_points, answer_image_path FROM quiz_answers WHERE attempt_id = $1', [attemptId]),
   ]);
 
   const questions = new Map(questionsResult.rows.map((row) => [row.id, row]));

@@ -134,6 +134,10 @@ app.post('/q/:ref/submit', quizPublicController.submitAttempt);
 app.get('/q/:ref/result', quizPublicController.getResult);
 // تظلّم الطالب على درجة سؤال — عام زي باقي مسارات `/q/`، ومحمي بـattempt_key
 app.post('/q/:ref/appeal', quizPublicController.submitAppeal);
+// رفع صورة الإجابة المقالية وشيلها. **نفس حماية الحفظ:** attempt_key + الورقة لسه مفتوحة
+app.post('/q/:ref/answer-image', quizPublicController.answerImageUpload.single('image'),
+  quizPublicController.uploadAnswerImage);
+app.post('/q/:ref/answer-image/remove', quizPublicController.removeAnswerImageRow);
 
 // معاينة ورقة الطالب بعين الطالب — للأدمن بس. **على مسار منفصل عن `/q/` عن قصد:**
 // `/q/` كله عام بدون مصادقة، وإضافة مسار محمي جواه كانت هتخلي القاعدة دي مش واضحة

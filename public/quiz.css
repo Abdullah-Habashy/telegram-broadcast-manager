@@ -258,6 +258,14 @@ body.qz-body {
 .qz-appeal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .qz-appeal-actions .qz-btn { width: auto; }
 
+/* زرار التظلم تحت الدرجة: هادي ومش بارز — التظلم مخرج مش دعوة */
+#qz-appeal-cta { margin-top: 14px; }
+#qz-appeal-cta .qz-btn { width: auto; padding: 8px 18px; }
+/* علامة «متظلَّم منه» جنب السؤال في مربع التعديل */
+.qz-appeal-item-tag { display: inline-block; margin-inline-start: 6px; padding: 1px 7px;
+  border-radius: 999px; background: var(--qz-warn); color: #fff; font-size: 11px;
+  font-weight: 700; vertical-align: middle; }
+
 /* الورقة بتتقري كجُمل موجّهة للطالب: "إنت اخترت كذا" وبعدها "والصح كذا". السطر التاني
    بلون الصح عشان العين تمسكه من غير ما نحتاج نكتب عليه عنوان */
 .qz-rv-say {

@@ -121,12 +121,24 @@ function isEnabled() {
 }
 
 // بترجع الحكم بس — الحفظ وحساب الدرجة عند اللي بينده. نفس فصل المسؤوليات في generateReply
-async function gradeEssayAnswer({ question, referenceAnswer, gradingNotes, studentAnswer, provider }) {
+// `answerImage` = { media_type, data } لما الطالب يرفع إجابته مصوّرة بدل ما يكتبها.
+// بتحل محل النص مش بتتضاف ليه — إجابة واحدة لكل سؤال، فالنموذج بيحكم على مصدر واحد
+async function gradeEssayAnswer({ question, referenceAnswer, gradingNotes, studentAnswer, provider, answerImage = null }) {
   const providerKey = provider || (await activeProvider());
   const systemPrompt = buildSystemPrompt(question, referenceAnswer, gradingNotes);
+  // **التعليمة بتتغيّر مع الصورة.** من غيرها النموذج بيوصف الصورة أو يعلّق على الخط
+  // بدل ما يصحّح، والطالب بياخد "خطك مش واضح" مكان درجته
+  const userText = answerImage
+    ? 'إجابة الطالب في الصورة دي — إجابة مكتوبة بخط إيده على ورق.\n\n'
+      + 'اقرا اللي مكتوب فيها وصحّحه بنفس القواعد فوق بالظبط. **الخط والتنسيق وشكل الورقة'
+      + ' مش محسوبين عليه خالص** — زي الإملاء بالظبط. لو فيه كلمة مش واضحة، خد أقرب قراءة'
+      + ' معقولة ليها في سياق السؤال بدل ما تحسبها ناقصة.'
+      + (String(studentAnswer || '').trim() ? `\n\nوكتب معاها:\n${studentAnswer}` : '')
+    : `إجابة الطالب:\n${studentAnswer}`;
   const { output } = await callProvider(providerKey, {
     systemPrompt,
-    question: `إجابة الطالب:\n${studentAnswer}`,
+    question: userText,
+    image: answerImage,
     tool: GRADE_TOOL,
     jsonShape: GRADE_JSON_SHAPE,
     maxTokens: 512,

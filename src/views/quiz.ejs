@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260915c" />
+  <link rel="stylesheet" href="/quiz.css?v=20260915d" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -107,6 +107,11 @@
     <h2 id="qz-result-title">تم استلام إجاباتك ✅</h2>
     <div class="qz-score" id="qz-result-score" style="display:none"></div>
     <p id="qz-result-note"></p>
+    <%# زرار التظلم تحت الدرجة على طول: ده المكان اللي الطالب بيبص فيه أول ما يشوف
+        نتيجته، ولو كان تحت الورقة كلها كان محتاج يلف ٤٥ سؤال عشان يلاقيه %>
+    <div id="qz-appeal-cta" style="display:none">
+      <button class="qz-btn ghost" id="qz-appeal-open" type="button">أتظلم من درجتي</button>
+    </div>
     <%# الإعادة: بتظهر لما يكون فاضل محاولات والاختبار لسه مفتوح — السيرفر هو اللي
         بيقرر، والزرار بيعرض قراره %>
     <div id="qz-retry-box" style="display:none">
@@ -153,7 +158,7 @@
     // **بيانات التظلم بتتخزّن وقت رسم الورقة.** `labels` بتربط رقم السؤال في القاعدة
     // بالرقم اللي الطالب شايفه («سؤال ٣» / «سؤال ٣ فرع ب») — المربع بيعرض اللي على
     // الشاشة، ورقم القاعدة مالوش أي معنى عند الطالب
-    var appeals = { review: [], labels: {}, limit: 3, used: 0 };
+    var appeals = { review: [], labels: {}, limit: 3 };
 
     function el(id) { return document.getElementById(id); }
     function esc(value) {
@@ -588,7 +593,10 @@
         el('qz-result-score').style.display = '';
         el('qz-result-score').innerHTML = Math.round(data.score * 100) / 100
           + '<small> / ' + data.max_score + '</small>';
-        el('qz-result-note').textContent = 'الدرجة دي مبدئية — الفريق بيراجع الأسئلة المقالية.';
+        // **الدرجة لوحدها من غير كلام.** «الدرجة دي مبدئية — الفريق بيراجع» كانت
+        // بتخلّي كل طالب يستنى تغيير مش جاي، والتظلم بقى هو الطريق الواضح للي شايف
+        // إن فيه غلط — فالجملة اتشالت والزرار مكانها
+        el('qz-result-note').textContent = '';
       } else {
         el('qz-result-note').textContent = data.score_hidden
           ? 'الدرجة هتتعلن من الفريق.'
@@ -596,6 +604,7 @@
       }
       renderReview(data.review);
       renderRetry(data);
+      renderAppealCta();
     }
 
     // **المتبقي بيتقال في الحالتين.** الطالب اللي فاضله محاولة محتاج يعرف قبل ما يدوس،
@@ -740,11 +749,14 @@
 
     // **الزرار بيبان على السؤال الناقص بس.** السؤال اللي خد الدرجة كاملة مفيهوش حاجة
     // يتظلم منها، والزرار عليه بيخلي الطالب يفتكر إن فيه مشكلة
+    // **المتظلَّم منه لسه في القايمة.** الطالب بيعدّل تظلمه — يشيل سؤال ويحط غيره —
+    // طول ما الموظف ماحسمهوش. المحسوم (`resolved`) بيخرج: الموظف بص وحكم، والحكم
+    // مابيتسحبش بإعادة تظلم
     function canAppeal(answer) {
       return answer.answered
         && answer.awarded_points !== null && answer.awarded_points !== undefined
         && answer.awarded_points < answer.points
-        && !answer.appeal;
+        && answer.appeal !== 'resolved';
     }
 
     function appealControl(answer) {
@@ -753,7 +765,9 @@
       // ٤٠٤ مبهم. الحالة بتفضل ظاهرة (⏳ / ✔️) عشان يشوف اللي الطالب شايفه
       if (window.QZ_PREVIEW && !answer.appeal) return '';
       if (answer.appeal === 'open') {
-        return '<div class="qz-appeal-mark">⏳ تظلمت من السؤال ده — الفريق هيراجعه</div>';
+        return '<div class="qz-appeal-mark">⏳ تظلمت من السؤال ده — الفريق هيراجعه</div>'
+          + '<button class="qz-btn ghost qz-appeal-btn" type="button" data-appeal="'
+          + answer.question_id + '">عدّل تظلمك</button>';
       }
       if (answer.appeal === 'resolved') {
         return '<div class="qz-appeal-mark done">✔️ تظلمك على السؤال ده اتراجع</div>';
@@ -771,7 +785,6 @@
 
       appeals.review = review;
       appeals.labels = {};
-      appeals.used = review.filter(function (a) { return a.appeal; }).length;
 
       var number = 0;
       var open = false;
@@ -832,30 +845,58 @@
       return appeals.review.filter(canAppeal);
     }
 
+    // عدد التظلمات المفتوحة دلوقتي — هو اللي بيفرّق بين «قدّم» و«عدّل»
+    function openAppealCount() {
+      return appeals.review.filter(function (a) { return a.appeal === 'open'; }).length;
+    }
+
+    // **زرار واحد بيقول حالته.** الطالب اللي اتظلم ورجع للصفحة تاني محتاج يعرف إن
+    // تظلمه موجود، ويقدر يعدّله — زرار «أتظلم» تاني كان هيخليه يفتكر إن الأول ضاع
+    function renderAppealCta() {
+      var cta = el('qz-appeal-cta');
+      var button = el('qz-appeal-open');
+      if (!cta || !button) return;
+      // في معاينة الأدمن مفيش تقديم — بس الحالة بتفضل ظاهرة في الورقة نفسها
+      if (window.QZ_PREVIEW) { cta.style.display = 'none'; return; }
+
+      var open = openAppealCount();
+      var candidates = appealCandidates().length;
+      if (!open && !candidates) { cta.style.display = 'none'; return; }
+
+      cta.style.display = '';
+      button.textContent = open
+        ? 'عدّل تظلمك (' + open + ')'
+        : 'أتظلم من درجتي';
+    }
+
     function openAppealBox(preselectId) {
       var box = el('qz-appeal');
       var list = el('qz-appeal-list');
       var candidates = appealCandidates();
-      var remaining = Math.max(0, appeals.limit - appeals.used);
 
       showError('qz-appeal-error', '');
-      el('qz-appeal-intro').textContent = remaining
-        ? 'اختار الأسئلة اللي شايف تصحيحها غلط. تقدر تتظلم من ' + remaining
-          + ' سؤال (الحد الأقصى ' + appeals.limit + ' للورقة).'
-        : 'خلصت عدد التظلمات المسموح بيها للورقة دي (' + appeals.limit + ').';
+      var open = openAppealCount();
+      el('qz-appeal-intro').textContent = open
+        ? 'دي الأسئلة اللي اتظلمت منها. شيل أو زوّد اللي إنت عايزه وبعدين احفظ — '
+          + 'الحد الأقصى ' + appeals.limit + ' أسئلة للورقة.'
+        : 'علّم على الأسئلة اللي شايف تصحيحها غلط — الحد الأقصى ' + appeals.limit + ' للورقة.';
 
+      // **المتظلَّم منه بييجي متعلّم عليه**، فالمربع بيعرض حالة التظلم الحالية زي ما هي
+      // والطالب بيعدّلها — وده معنى «تعديل» بدل «تقديم من أول وجديد»
       list.innerHTML = candidates.map(function (answer) {
-        var checked = answer.question_id === preselectId ? ' checked' : '';
+        var isOpen = answer.appeal === 'open';
+        var checked = (isOpen || answer.question_id === preselectId) ? ' checked' : '';
         return '<label class="qz-appeal-item">'
-          + '<input type="checkbox" value="' + answer.question_id + '"' + checked
-          + (remaining ? '' : ' disabled') + ' />'
+          + '<input type="checkbox" value="' + answer.question_id + '"' + checked + ' />'
           + '<span class="qz-appeal-item-label">' + esc(appeals.labels[answer.question_id] || 'سؤال')
+          + (isOpen ? ' <span class="qz-appeal-item-tag">متظلَّم منه</span>' : '')
           + '</span>'
           + '<span class="qz-appeal-item-score">' + answer.awarded_points + ' / ' + answer.points + '</span>'
           + '</label>';
       }).join('') || '<p class="qz-appeal-empty">مفيش أسئلة متاح التظلم منها.</p>';
 
-      el('qz-appeal-submit').disabled = !remaining || !candidates.length;
+      el('qz-appeal-submit').textContent = open ? 'احفظ التعديل' : 'قدّم التظلم';
+      el('qz-appeal-submit').disabled = !candidates.length;
       box.style.display = '';
       box.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -871,10 +912,15 @@
     // سطر واحد يكسر القاعدة دي
     function sendAppeal() {
       var ids = selectedAppealIds();
-      if (!ids.length) return showError('qz-appeal-error', 'علّم على سؤال واحد على الأقل');
-      if (ids.length > appeals.limit - appeals.used) {
+      // **قايمة فاضية = سحب التظلم**، وده تصرف مشروع: الطالب راجع ورقته ولقى نفسه
+      // غلطان. الرفض هنا كان هيخليه مضطر يسيب تظلم هو نفسه مش مقتنع بيه
+      var resolvedCount = appeals.review.filter(function (a) { return a.appeal === 'resolved'; }).length;
+      // نفس حساب السيرفر بالظبط: المحسوم + المختار. الاتنين لازم يتفقوا وإلا الواجهة
+      // بتسمح بحاجة السيرفر بيرفضها
+      if (ids.length + resolvedCount > appeals.limit) {
         return showError('qz-appeal-error',
-          'تقدر تتظلم من ' + (appeals.limit - appeals.used) + ' سؤال بس دلوقتي');
+          'الحد الأقصى ' + appeals.limit + ' أسئلة للورقة'
+          + (resolvedCount ? ' — و' + resolvedCount + ' منهم اتحسم خلاص.' : '.'));
       }
       var button = el('qz-appeal-submit');
       button.disabled = true;
@@ -893,6 +939,7 @@
         if (data && data.review) {
           if (data.appeal_limit) appeals.limit = data.appeal_limit;
           renderReview(data.review);
+          renderAppealCta();
         }
         el('qz-appeal').style.display = 'none';
         el('qz-appeal-note').value = '';
@@ -907,6 +954,7 @@
       var button = event.target.closest('[data-appeal]');
       if (button) openAppealBox(Number(button.dataset.appeal));
     });
+    el('qz-appeal-open').addEventListener('click', function () { openAppealBox(null); });
     el('qz-appeal-submit').addEventListener('click', sendAppeal);
     el('qz-appeal-cancel').addEventListener('click', function () {
       el('qz-appeal').style.display = 'none';

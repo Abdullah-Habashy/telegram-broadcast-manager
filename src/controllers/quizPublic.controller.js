@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 const pool = require('../config/db');
 const { finalizeAttempt, processRegradeQueue } = require('../utils/quizScoring');
 
@@ -210,8 +213,11 @@ async function loadReviewForAttempt(attemptId, quizId) {
 //
 // الشرط بيتحسب **في السيرفر من القاعدة** مش من اللي الصفحة بعتته: الطالب بيبعت أرقام
 // أسئلة، ولو مااتفحصتش كان يقدر يتظلم من سؤال خد فيه الدرجة كاملة أو سؤال من اختبار تاني
+// **مش بيستثني المتظلَّم منه.** الطالب بيعدّل تظلمه (يشيل سؤال ويحط غيره) طول ما
+// الموظف ماحسمهوش، فالسؤال اللي عليه تظلم مفتوح لسه في القايمة — بيرجع معاه حالته
+// عشان المنادي يفرّق بين «متاح» و«متظلَّم منه دلوقتي» و«محسوم».
 const APPEALABLE_SQL = `
-  SELECT q.id AS question_id, q.points, an.awarded_points
+  SELECT q.id AS question_id, q.points, an.awarded_points, ap.status AS appeal_status
   FROM quiz_questions q
   JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
   LEFT JOIN quiz_appeals ap ON ap.question_id = q.id AND ap.attempt_id = $1
@@ -219,12 +225,11 @@ const APPEALABLE_SQL = `
     AND q.kind <> 'group'
     AND an.awarded_points IS NOT NULL
     AND an.awarded_points < q.points
-    AND ap.id IS NULL
 `;
 
 async function appealableQuestions(attemptId, quizId) {
   const { rows } = await pool.query(APPEALABLE_SQL, [attemptId, quizId]);
-  return new Map(rows.map((row) => [row.question_id, Number(row.awarded_points)]));
+  return new Map(rows.map((row) => [row.question_id, row.appeal_status || null]));
 }
 
 // **السقف مش تضييق على الطالب — هو اللي بيخلي التظلم يتقري أصلًا.** اتقاس على الإنتاج:
@@ -626,6 +631,102 @@ async function getResult(req, res) {
   });
 }
 
+// ---------- رفع صورة الإجابة المقالية ----------
+//
+// **الطالب بيحل على ورق وبيصوّر.** الكتابة على الموبايل بتخلّيه يختصر إجابته فيخسر
+// درجات مش لأنه مش عارف، والمعادلات والرسومات مالهاش أصلًا طريقة تتكتب في textarea.
+//
+// **المجلد منفصل عن باقي الصور** (`uploads/quiz-answers/`): دي إجابات طلاب، وخلطها
+// مع صور الأسئلة بيخلي أي تنضيف أو نقل للسحابة بعدين يلمس الاتنين بنفس القاعدة.
+const answerImageDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'quiz-answers');
+fs.mkdirSync(answerImageDir, { recursive: true });
+
+// الصفحة بتضغط الصورة قبل ما ترفعها، فالحد ده سقف أمان مش الحجم المتوقع — المتوقع
+// أقل من ميجا. وموجود عشان متصفح قديم مايعرفش يضغط مايوقعش الرفع من غير رسالة
+const ANSWER_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+const answerImageUpload = multer({
+  storage: multer.diskStorage({
+    destination: answerImageDir,
+    filename: (req, file, callback) => {
+      const extension = file.mimetype === 'image/png' ? '.png' : '.jpg';
+      callback(null, `${crypto.randomUUID()}${extension}`);
+    },
+  }),
+  limits: { fileSize: ANSWER_IMAGE_MAX_BYTES, files: 1 },
+  fileFilter: (req, file, callback) => {
+    // **JPEG وPNG بس.** `readAnswerImage` بيحدد الـmedia_type من الامتداد، وأي صيغة
+    // تانية بترجع null فالإجابة تروح لمراجعة يدوية من غير سبب واضح
+    if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
+      return callback(new Error('مسموح بصور JPG وPNG بس'));
+    }
+    callback(null, true);
+  },
+});
+
+// **الملف بيتكتب قبل ما نتحقق من المفتاح** — ده شكل multer. فأي رفض بعد كده لازم يمسح
+// الملف، وإلا المسار العام ده بيبقى مساحة تخزين مجانية لأي حد
+function removeAnswerImage(file) {
+  if (file?.path) fs.unlink(file.path, () => {});
+}
+
+async function uploadAnswerImage(req, res) {
+  if (!req.file) return res.status(400).json({ error: 'مفيش صورة مرفوعة' });
+
+  const attempt = await loadOpenAttempt(req.params.ref, req.body?.attempt_key);
+  if (!attempt) {
+    removeAnswerImage(req.file);
+    return res.status(404).json({ error: 'المحاولة مش موجودة' });
+  }
+  // **بعد التسليم مفيش رفع.** نفس قاعدة `saveProgress` بالظبط — الورقة اتقفلت
+  if (attempt.submitted_at) {
+    removeAnswerImage(req.file);
+    return res.status(409).json({ error: 'الاختبار اتسلّم خلاص' });
+  }
+
+  const questionId = Number(req.body?.question_id);
+  const { rows } = await pool.query(
+    "SELECT id FROM quiz_questions WHERE id = $1 AND quiz_id = $2 AND kind = 'essay'",
+    [questionId, attempt.quiz_id]);
+  if (!rows.length) {
+    removeAnswerImage(req.file);
+    return res.status(400).json({ error: 'السؤال ده مش سؤال مقالي في الاختبار' });
+  }
+
+  const stored = `uploads/quiz-answers/${req.file.filename}`;
+  // **الصورة القديمة بتتمسح.** الطالب بيصوّر تاني لما الصورة تطلع مش واضحة، وكل
+  // محاولة كانت هتسيب ملف على القرص لحد ما يسلّم
+  const { rows: previous } = await pool.query(
+    `INSERT INTO quiz_answers (attempt_id, question_id, answer_image_path, essay_text)
+     VALUES ($1, $2, $3, NULL)
+     ON CONFLICT (attempt_id, question_id) DO UPDATE
+       SET answer_image_path = EXCLUDED.answer_image_path, essay_text = NULL
+     RETURNING (SELECT answer_image_path FROM quiz_answers
+                WHERE attempt_id = $1 AND question_id = $2) AS old_path`,
+    [attempt.id, questionId, stored]);
+  const oldPath = previous[0]?.old_path;
+  if (oldPath && oldPath !== stored && !/^https?:\/\//i.test(oldPath)) {
+    fs.unlink(path.join(__dirname, '..', '..', 'public', oldPath), () => {});
+  }
+
+  res.json({ ok: true, path: `/${stored}` });
+}
+
+// بيشيل الصورة لما الطالب يرجع يكتب بدالها
+async function removeAnswerImageRow(req, res) {
+  const attempt = await loadOpenAttempt(req.params.ref, req.body?.attempt_key);
+  if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
+  if (attempt.submitted_at) return res.status(409).json({ error: 'الاختبار اتسلّم خلاص' });
+
+  const questionId = Number(req.body?.question_id);
+  const { rows } = await pool.query(
+    `UPDATE quiz_answers SET answer_image_path = NULL
+     WHERE attempt_id = $1 AND question_id = $2 RETURNING answer_image_path`,
+    [attempt.id, questionId]);
+  // الصف بيرجع القيمة الجديدة (NULL)، فالمسار القديم بيتجاب قبل التحديث
+  res.json({ ok: true, removed: rows.length > 0 });
+}
+
 // ---------- تقديم التظلّم ----------
 //
 // **محمي بـ`attempt_key` زي الحفظ والتسليم بالظبط** — المسار عام (مفيش تسجيل دخول)،
@@ -642,48 +743,56 @@ async function submitAppeal(req, res) {
 
   const requested = Array.isArray(req.body?.question_ids) ? req.body.question_ids : [];
   const ids = [...new Set(requested.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
-  if (!ids.length) return res.status(400).json({ error: 'اختار سؤال واحد على الأقل' });
 
   const allowed = await appealableQuestions(attempt.id, attempt.quiz_id);
-  const valid = ids.filter((id) => allowed.has(id));
-  if (!valid.length) {
-    return res.status(409).json({
-      error: 'الأسئلة دي مش متاح التظلم منها — يا إما خدت فيها الدرجة كاملة يا إما اتظلمت منها قبل كده',
-    });
-  }
+  // المحسوم مايتشالش ومايتعادش — الموظف بص فيه وحكم، والطالب مش بيسحب حكم
+  const resolved = [...allowed.entries()].filter(([, status]) => status === 'resolved').map(([id]) => id);
+  const valid = ids.filter((id) => allowed.get(id) !== 'resolved' && allowed.has(id));
 
-  // **السقف على الورقة كلها مش على الطلب الواحد** — وإلا الطالب بيقدّم تلاتة، ويرجع
-  // يقدّم تلاتة تانيين، والسقف مابيعملش حاجة
   const limit = await appealLimit();
-  const { rows: usedRows } = await pool.query(
-    'SELECT COUNT(*)::int AS count FROM quiz_appeals WHERE attempt_id = $1', [attempt.id]);
-  const used = usedRows[0].count;
-  if (used >= limit) {
-    return res.status(409).json({ error: `وصلت للحد الأقصى: ${limit} أسئلة تظلم للورقة الواحدة.` });
-  }
-  if (used + valid.length > limit) {
+  // **السقف على الورقة كلها.** المحسوم بيتحسب فيه: الطالب اللي اتظلم من تلاتة واتحسموا
+  // خلّص نصيبه، وإلا السقف بيبقى «تلاتة في المرة» بدل «تلاتة للورقة»
+  if (resolved.length + valid.length > limit) {
     return res.status(409).json({
-      error: `تقدر تتظلم من ${limit - used} سؤال بس — الحد الأقصى ${limit} للورقة، وإنت قدّمت ${used} قبل كده.`,
+      error: `الحد الأقصى ${limit} أسئلة للورقة`
+        + (resolved.length ? ` — و${resolved.length} منهم اتحسم خلاص.` : '.'),
     });
   }
 
-  // نص واحد لكل التظلمات المقدّمة مع بعض. الطالب بيكتب سبب واحد في المربع، ونسخه على كل
-  // سؤال أوضح للأدمن من إنه يبقى على واحد منهم بس
   const note = String(req.body?.note || '').trim().slice(0, 1000) || null;
 
-  // **`ON CONFLICT DO NOTHING` مش فحص قبل الكتابة:** الطالب على نت بطيء بيدوس مرتين،
-  // والفحص-ثم-الكتابة بينهار بين النداءين. الـUNIQUE في القاعدة هي الحكم
-  const { rows } = await pool.query(
-    `INSERT INTO quiz_appeals (attempt_id, question_id, student_note, points_at_appeal)
-     SELECT $1, q.id, $3, an.awarded_points
-     FROM quiz_questions q
-     JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
-     WHERE q.id = ANY($2::int[])
-     ON CONFLICT (attempt_id, question_id) DO NOTHING
-     RETURNING question_id`,
-    [attempt.id, valid, note]);
-
-  res.json({ ok: true, submitted: rows.map((row) => row.question_id) });
+  // **التقديم استبدال مش إضافة.** الطالب بيبعت القايمة اللي عايزها كاملة، فاللي شالها
+  // بيتمسح واللي زوّدها بيتضاف — وده اللي بيخلّي «تعديل التظلم» يشتغل من غير مسار تاني.
+  // قايمة فاضية = سحب التظلم كله، وده تصرف مشروع (الطالب راجع ورقته ولقى نفسه غلطان).
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // المفتوح بس: المحسوم بيعدّي من غير ما يتلمس
+    await client.query(
+      `DELETE FROM quiz_appeals
+       WHERE attempt_id = $1 AND status = 'open' AND NOT (question_id = ANY($2::int[]))`,
+      [attempt.id, valid]);
+    let submitted = [];
+    if (valid.length) {
+      const { rows } = await client.query(
+        `INSERT INTO quiz_appeals (attempt_id, question_id, student_note, points_at_appeal)
+         SELECT $1, q.id, $3, an.awarded_points
+         FROM quiz_questions q
+         JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
+         WHERE q.id = ANY($2::int[])
+         ON CONFLICT (attempt_id, question_id) DO UPDATE SET student_note = EXCLUDED.student_note
+         RETURNING question_id`,
+        [attempt.id, valid, note]);
+      submitted = rows.map((row) => row.question_id);
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, submitted });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ---------- معاينة ورقة الطالب بعين الطالب (للأدمن) ----------
@@ -762,5 +871,6 @@ async function renderStudentPreview(req, res) {
 module.exports = {
   renderQuiz, startAttempt, saveProgress, submitAttempt, getResult,
   renderStudentPreview, submitAppeal,
+  uploadAnswerImage, removeAnswerImageRow, answerImageUpload,
   normalizePhone, seededShuffle, gradingIsInstant, attemptPayload,
 };
