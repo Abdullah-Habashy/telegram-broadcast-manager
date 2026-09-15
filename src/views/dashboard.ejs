@@ -10572,6 +10572,7 @@ ${reply.content}` : reply.content;
       loadQuizzes();
       showQuizView('list');
     });
+    document.getElementById('quiz-import-sheet-btn').addEventListener('click', openImportSheet);
     document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);
     document.getElementById('quiz-stats-btn').addEventListener('click', loadQuestionStats);
     document.getElementById('quiz-approve-btn').addEventListener('click', approveWholeQuiz);
