@@ -341,6 +341,27 @@ tr:last-child td { border-bottom: none; }
 .quiz-legend-item.wrong::before   { background: var(--danger); }
 .quiz-legend-item.pending::before { background: var(--text-muted); }
 
+/* ---------- التظلّم في شاشة التصحيح ----------
+   الكارت المتظلَّم منه بياخد إطار كامل مش شريط جانبي زي باقي الألوان: التظلم حالة
+   فوق التصحيح مش بديل عنه، فلازم يبان من غير ما يخفي لون الدرجة */
+.quiz-answer-card.has-appeal { border: 1px solid var(--warning); }
+.quiz-appeal-note { margin: 8px 0; padding: 8px 10px; border-radius: 8px;
+  background: var(--warning-tint); color: var(--warning); font-size: .88rem; }
+.quiz-appeal-note.resolved { background: var(--success-tint); color: var(--success); }
+.quiz-appeal-note div { margin-top: 4px; }
+.quiz-appeal-note .card-desc { color: inherit; opacity: .8; }
+.quiz-appeals-banner { border: 1px solid var(--warning); background: var(--warning-tint); }
+
+/* الوميض بعد التنقّل: الموظف لازم يعرف وصل لأنهي كارت وسط ٤٥ كارت متشابهين */
+.quiz-answer-card.flash { animation: quiz-answer-flash 1.6s ease-out; }
+@keyframes quiz-answer-flash {
+  0%, 30% { box-shadow: 0 0 0 3px var(--warning); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-answer-card.flash { animation: none; box-shadow: 0 0 0 3px var(--warning); }
+}
+
 .selection-hint { margin-top: 6px; color: var(--primary); font-size: 12.5px; font-weight: 600; }
 .image-picker-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .image-file-name { color: var(--text-muted); font-size: 13px; }

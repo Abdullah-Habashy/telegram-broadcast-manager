@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260915b" />
+  <link rel="stylesheet" href="/quiz.css?v=20260915c" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -120,6 +120,23 @@
       كده، زي بوابة الدخول بالظبط. الطالب بيرجع بنفس الرابط ونفس الرقم في أي وقت ويلاقيها %>
   <div id="qz-review"></div>
 
+  <%# ===== تقديم التظلّم =====
+      تحت ورقة التصحيح عن قصد: الطالب بيقرا ورقته الأول وبعدين يقرر. المربع بيتفتح
+      بزرار من على أي سؤال، وبيعلّم على السؤال اللي اتفتح منه %>
+  <div class="qz-card qz-appeal" id="qz-appeal" style="display:none">
+    <h2>تقديم تظلّم</h2>
+    <p id="qz-appeal-intro"></p>
+    <div class="qz-appeal-list" id="qz-appeal-list"></div>
+    <label class="qz-appeal-note-label" for="qz-appeal-note">تحب تقول حاجة للمصحّح؟ (اختياري)</label>
+    <textarea class="qz-textarea" id="qz-appeal-note" rows="3"
+      placeholder="مثلًا: إجابتي نفس المعنى بس بصيغة تانية"></textarea>
+    <div class="qz-appeal-actions">
+      <button class="qz-btn" id="qz-appeal-submit" type="button">قدّم التظلم</button>
+      <button class="qz-btn ghost" id="qz-appeal-cancel" type="button">إلغاء</button>
+    </div>
+    <div class="qz-error" id="qz-appeal-error" style="display:none"></div>
+  </div>
+
 </div>
 
 <script>
@@ -132,6 +149,11 @@
     var base = window.location.pathname.replace(/\/+$/, '');
 
     var state = { key: null, questions: [], deadline: null, timer: null, dirty: false, submitting: false };
+
+    // **بيانات التظلم بتتخزّن وقت رسم الورقة.** `labels` بتربط رقم السؤال في القاعدة
+    // بالرقم اللي الطالب شايفه («سؤال ٣» / «سؤال ٣ فرع ب») — المربع بيعرض اللي على
+    // الشاشة، ورقم القاعدة مالوش أي معنى عند الطالب
+    var appeals = { review: [], labels: {}, limit: 3, used: 0 };
 
     function el(id) { return document.getElementById(id); }
     function esc(value) {
@@ -551,6 +573,7 @@
     }
 
     function renderResult(data) {
+      if (data.appeal_limit) appeals.limit = data.appeal_limit;
       el('qz-gate').style.display = 'none';
       el('qz-exam').style.display = 'none';
       el('qz-result').style.display = '';
@@ -711,14 +734,44 @@
       if (answer.reason) {
         body += '<div class="qz-rv-reason">' + esc(answer.reason) + '</div>';
       }
+      body += appealControl(answer);
       return body;
+    }
+
+    // **الزرار بيبان على السؤال الناقص بس.** السؤال اللي خد الدرجة كاملة مفيهوش حاجة
+    // يتظلم منها، والزرار عليه بيخلي الطالب يفتكر إن فيه مشكلة
+    function canAppeal(answer) {
+      return answer.answered
+        && answer.awarded_points !== null && answer.awarded_points !== undefined
+        && answer.awarded_points < answer.points
+        && !answer.appeal;
+    }
+
+    function appealControl(answer) {
+      // **في معاينة الأدمن مفيش أزرار تظلم.** الأدمن مش بيتظلم، والأهم إن `base` في
+      // المعاينة بيبقى `/quiz-preview/:id` فالتقديم كان هيروح لمسار مش موجود ويرجع
+      // ٤٠٤ مبهم. الحالة بتفضل ظاهرة (⏳ / ✔️) عشان يشوف اللي الطالب شايفه
+      if (window.QZ_PREVIEW && !answer.appeal) return '';
+      if (answer.appeal === 'open') {
+        return '<div class="qz-appeal-mark">⏳ تظلمت من السؤال ده — الفريق هيراجعه</div>';
+      }
+      if (answer.appeal === 'resolved') {
+        return '<div class="qz-appeal-mark done">✔️ تظلمك على السؤال ده اتراجع</div>';
+      }
+      if (!canAppeal(answer)) return '';
+      return '<button class="qz-btn ghost qz-appeal-btn" type="button" data-appeal="'
+        + answer.question_id + '">أتظلم من السؤال ده</button>';
     }
 
     // الشجرة زي شاشة الحل بالظبط: الأب كارت واحد وفروعه جواه. الفرق إن كل فرع بيتلوّن
     // بحكمه هو — الفروع بتتصحّح كل واحد لوحده
     function renderReview(review) {
       var box = el('qz-review');
-      if (!review || !review.length) { box.innerHTML = ''; return; }
+      if (!review || !review.length) { box.innerHTML = ''; el('qz-appeal').style.display = 'none'; return; }
+
+      appeals.review = review;
+      appeals.labels = {};
+      appeals.used = review.filter(function (a) { return a.appeal; }).length;
 
       var number = 0;
       var open = false;
@@ -746,6 +799,11 @@
           return;
         }
         var verdict = verdictOf(answer);
+        // الفرع بياخد رقم أبوه + حرفه، والسؤال العادي بياخد رقمه. بيتسجّل قبل الرسم
+        // عشان المربع يلاقيه جاهز
+        appeals.labels[answer.question_id] = answer.is_part
+          ? 'سؤال ' + number + ' فرع ' + (answer.label || '')
+          : 'سؤال ' + (number + 1);
         if (answer.is_part) {
           html += '<div class="qz-part qz-rv-part ' + verdict.key + '">'
             + '<div class="qz-part-head"><span class="qz-part-label">' + esc(answer.label || '') + '</span>'
@@ -765,6 +823,95 @@
       if (open) html += '</div>';
       box.innerHTML = html;
     }
+    // ---------- مربع التظلّم ----------
+    //
+    // **المربع بيعرض كل الأسئلة القابلة للتظلم مش اللي اتفتح منه بس.** الطالب اللي
+    // شايف سؤالين غلط بيحب يقدّمهم مرة واحدة، والزرار على كل سؤال لوحده كان معناه
+    // تقديم منفصل لكل واحد — وتلات رسايل عند الأدمن بدل واحدة
+    function appealCandidates() {
+      return appeals.review.filter(canAppeal);
+    }
+
+    function openAppealBox(preselectId) {
+      var box = el('qz-appeal');
+      var list = el('qz-appeal-list');
+      var candidates = appealCandidates();
+      var remaining = Math.max(0, appeals.limit - appeals.used);
+
+      showError('qz-appeal-error', '');
+      el('qz-appeal-intro').textContent = remaining
+        ? 'اختار الأسئلة اللي شايف تصحيحها غلط. تقدر تتظلم من ' + remaining
+          + ' سؤال (الحد الأقصى ' + appeals.limit + ' للورقة).'
+        : 'خلصت عدد التظلمات المسموح بيها للورقة دي (' + appeals.limit + ').';
+
+      list.innerHTML = candidates.map(function (answer) {
+        var checked = answer.question_id === preselectId ? ' checked' : '';
+        return '<label class="qz-appeal-item">'
+          + '<input type="checkbox" value="' + answer.question_id + '"' + checked
+          + (remaining ? '' : ' disabled') + ' />'
+          + '<span class="qz-appeal-item-label">' + esc(appeals.labels[answer.question_id] || 'سؤال')
+          + '</span>'
+          + '<span class="qz-appeal-item-score">' + answer.awarded_points + ' / ' + answer.points + '</span>'
+          + '</label>';
+      }).join('') || '<p class="qz-appeal-empty">مفيش أسئلة متاح التظلم منها.</p>';
+
+      el('qz-appeal-submit').disabled = !remaining || !candidates.length;
+      box.style.display = '';
+      box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function selectedAppealIds() {
+      return Array.prototype.slice
+        .call(document.querySelectorAll('#qz-appeal-list input[type="checkbox"]:checked'))
+        .map(function (input) { return Number(input.value); });
+    }
+
+    // **بـ.then() مش async/await زي باقي الصفحة.** الصفحة دي بتتفتح على موبايلات
+    // الطلاب، ومكتوبة كلها ES5 (var / function / .then) عن قصد للتوافق — فمينفعش
+    // سطر واحد يكسر القاعدة دي
+    function sendAppeal() {
+      var ids = selectedAppealIds();
+      if (!ids.length) return showError('qz-appeal-error', 'علّم على سؤال واحد على الأقل');
+      if (ids.length > appeals.limit - appeals.used) {
+        return showError('qz-appeal-error',
+          'تقدر تتظلم من ' + (appeals.limit - appeals.used) + ' سؤال بس دلوقتي');
+      }
+      var button = el('qz-appeal-submit');
+      button.disabled = true;
+      showError('qz-appeal-error', '');
+      return post('/appeal', {
+        attempt_key: state.key,
+        question_ids: ids,
+        note: el('qz-appeal-note').value,
+      }).then(function () {
+        // **بنعيد تحميل الورقة من السيرفر مش بنعدّل الشاشة بإيدنا.** حالة التظلم بتيجي
+        // مع كل سؤال، فإعادة التحميل بتخلي الشاشة تطابق القاعدة بالظبط — والتعديل
+        // اليدوي كان بيخلي الاتنين يفترقوا لو السيرفر رفض واحد من الأسئلة
+        return fetch(base + '/result?attempt_key=' + encodeURIComponent(state.key))
+          .then(function (response) { return response.json(); });
+      }).then(function (data) {
+        if (data && data.review) {
+          if (data.appeal_limit) appeals.limit = data.appeal_limit;
+          renderReview(data.review);
+        }
+        el('qz-appeal').style.display = 'none';
+        el('qz-appeal-note').value = '';
+      }).catch(function (error) {
+        showError('qz-appeal-error', error.message);
+        button.disabled = false;
+      });
+    }
+
+    // تفويض الحدث: أزرار التظلم بتتولّد مع الورقة، فالمستمع على الحاوية مش على كل زرار
+    el('qz-review').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-appeal]');
+      if (button) openAppealBox(Number(button.dataset.appeal));
+    });
+    el('qz-appeal-submit').addEventListener('click', sendAppeal);
+    el('qz-appeal-cancel').addEventListener('click', function () {
+      el('qz-appeal').style.display = 'none';
+    });
+
     // ---------- تشغيل المعاينة ----------
     //
     // **بيعدّي على البوابة كلها.** الطالب بيدخل رقمه عشان نعرف هو مين؛ في المعاينة

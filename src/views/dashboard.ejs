@@ -10166,10 +10166,15 @@ ${reply.content}` : reply.content;
                 ? '<span class="badge badge-danger">محتاجة مراجعتك</span>'
                 : '<span class="badge badge-success">اتصحّح</span>';
           const score = attempt.score === null ? '—' : `${Math.round(attempt.score * 100) / 100} / ${attempt.max_score}`;
+          // التظلم بيحوّل الورقة لطابور شغل — العلامة في القايمة هي اللي بتخلي الموظف
+          // يلاقيها من غير ما يفتح ٥٠٠ ورقة واحدة واحدة
+          const appealMark = attempt.open_appeals
+            ? ` <span class="badge badge-warning">⚖️ ${attempt.open_appeals} تظلم</span>`
+            : '';
           return `<tr>
             <td>${escapeHtml(name)}${attempt.matched ? '' : ' <span class="badge badge-muted">مش مطابق للمنصة</span>'}${attempt.attempt_no > 1 ? ` <span class="badge badge-muted">محاولة ${attempt.attempt_no}</span>` : ''}</td>
             <td>${escapeHtml(attempt.phone)}</td>
-            <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}</td>
+            <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}${appealMark}</td>
             <td>${score}</td>
             <td>${attempt.submitted_at ? fmtDate(attempt.submitted_at) : fmtDate(attempt.started_at)}</td>
             <td>
@@ -10248,8 +10253,18 @@ ${reply.content}` : reply.content;
             : '<span class="badge badge-muted">تصحيح آلي</span>';
 
           const tone = gradeTone(answer);
+          // التظلم بيتعرض جوه الكارت نفسه: الموظف بيقرا شكوى الطالب وهو شايف الإجابة
+          // والمرجع قدامه، مش في قايمة منفصلة لازم يفتكرها وهو بيصحّح
+          const appealBox = answer.appeal_status ? `
+            <div class="quiz-appeal-note ${answer.appeal_status}">
+              <b>${answer.appeal_status === 'open' ? '⚖️ الطالب متظلّم من السؤال ده' : '✔️ تظلم اتراجع'}</b>
+              ${answer.appeal_note ? `<div>«${escapeHtml(answer.appeal_note)}»</div>` : ''}
+              <div class="card-desc">درجته وقت التظلم: ${answer.points_at_appeal ?? '—'} من ${answer.points}</div>
+            </div>` : '';
           return `
-            <div class="card quiz-answer-card ${tone.key}" style="background:var(--surface-sunken); margin-bottom:10px${answer.is_part ? '; margin-inline-start:18px' : ''}">
+            <div class="card quiz-answer-card ${tone.key}${answer.appeal_status === 'open' ? ' has-appeal' : ''}"
+              id="quiz-answer-${answer.question_id}"
+              style="background:var(--surface-sunken); margin-bottom:10px${answer.is_part ? '; margin-inline-start:18px' : ''}">
               <div class="row-between" style="gap:8px; flex-wrap:wrap">
                 ${heading}
                 <span class="row" style="gap:6px; flex-wrap:wrap">
@@ -10257,6 +10272,7 @@ ${reply.content}` : reply.content;
                   <span class="badge badge-muted">${answer.awarded_points === null ? '—' : answer.awarded_points} / ${answer.points}</span>
                 </span>
               </div>
+              ${appealBox}
               ${image}
               <div style="margin-top:10px"><span class="card-desc">إجابة الطالب:</span>
                 <div style="white-space:pre-wrap">${studentText}</div></div>
@@ -10276,6 +10292,28 @@ ${reply.content}` : reply.content;
             </div>`;
         }).join('');
 
+        // **البانر بيجمع التظلمات فوق الورقة وبيوصّل لكل واحد.** ورقة فيها ٤٥ سؤال
+        // والتظلم على سؤال ٣٧ معناه إن الموظف يلف الورقة كلها يدوّر عليه — والزرار
+        // بينقله على طول. نفس درس المربعات اللي بتتفتح بره الشاشة
+        const openAppeals = (data.answers || []).filter((a) => a.appeal_status === 'open');
+        let appealNumber = 0;
+        const appealLabels = new Map();
+        (data.answers || []).forEach((a) => {
+          if (a.kind === 'group') { appealNumber += 1; appealLabels.set(a.question_id, `سؤال ${appealNumber}`); return; }
+          if (a.is_part) { appealLabels.set(a.question_id, `سؤال ${appealNumber} فرع ${a.label || ''}`); return; }
+          appealNumber += 1;
+          appealLabels.set(a.question_id, `سؤال ${appealNumber}`);
+        });
+        const appealsBanner = openAppeals.length ? `
+          <div class="card quiz-appeals-banner" style="margin-bottom:12px">
+            <b>⚖️ ${openAppeals.length} تظلم مفتوح على الورقة دي</b>
+            <div class="card-desc" style="margin:4px 0 8px">اضغط على السؤال عشان تروحله وتعدّل درجته — التظلم بيتقفل لوحده أول ما تعتمد الدرجة.</div>
+            <div class="row" style="gap:6px; flex-wrap:wrap">
+              ${openAppeals.map((a) => `<button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                onclick="goToQuizAnswer(${a.question_id})">${escapeHtml(appealLabels.get(a.question_id) || 'سؤال')}</button>`).join('')}
+            </div>
+          </div>` : '';
+
         const needsReview = data.attempt.grading_status === 'partial';
         box.innerHTML = `
           <div class="row-between" style="margin-bottom:12px; gap:12px; flex-wrap:wrap">
@@ -10290,11 +10328,24 @@ ${reply.content}` : reply.content;
             </div>
           </div>
           ${data.attempt.grading_error ? `<div class="card-desc" style="margin-bottom:10px">⚠️ التصحيح الآلي فشل: ${escapeHtml(data.attempt.grading_error)}</div>` : ''}
+          ${appealsBanner}
           ${QUIZ_COLOR_LEGEND}
           ${answers}`;
       } catch (error) {
         box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
       }
+    }
+
+    // بتنقل الموظف لكارت السؤال وتعلّمه لحظة عشان عينه تلاقيه — الصفحة فيها ٤٥ كارت
+    // متشابهين، والتمرير لوحده مش كفاية إنه يعرف وصل لأنهي واحد
+    function goToQuizAnswer(questionId) {
+      const card = document.getElementById(`quiz-answer-${questionId}`);
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('flash');
+      setTimeout(() => card.classList.remove('flash'), 1600);
+      const input = document.getElementById(`quiz-grade-${questionId}`);
+      if (input) input.focus({ preventScroll: true });
     }
 
     function hideQuizAttempt() {

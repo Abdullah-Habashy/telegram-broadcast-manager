@@ -236,6 +236,28 @@ body.qz-body {
 .qz-preview-banner p { margin: 6px 0 0; font-size: 14px; }
 .qz-preview-note { color: var(--qz-warn) !important; font-weight: 600; }
 
+/* ---------- التظلّم ----------
+   الزرار على السؤال هادي عن قصد: التظلم مخرج لما التصحيح يغلط، مش دعوة يدوس عليها
+   كل طالب شايف درجته أقل من اللي متوقعها */
+.qz-appeal-btn { margin-top: 10px; width: auto; padding: 6px 14px; font-size: 13px; }
+.qz-appeal-mark { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--qz-warn); }
+.qz-appeal-mark.done { color: var(--qz-good); }
+
+.qz-appeal { border: 1px solid var(--qz-accent); }
+.qz-appeal h2 { margin-top: 0; }
+.qz-appeal-list { margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
+/* الصف كله قابل للضغط مش المربع الصغير بس — الطالب على موبايل بيدوس بصباعه */
+.qz-appeal-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--qz-line); border-radius: 8px; cursor: pointer; }
+.qz-appeal-item:has(input:checked) { border-color: var(--qz-accent); background: var(--qz-accent-soft); }
+.qz-appeal-item input { width: 18px; height: 18px; flex: none; accent-color: var(--qz-accent); }
+.qz-appeal-item-label { flex: 1; font-weight: 600; }
+.qz-appeal-item-score { color: var(--qz-muted); font-size: 13px; flex: none; }
+.qz-appeal-empty { color: var(--qz-muted); }
+.qz-appeal-note-label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--qz-muted); }
+.qz-appeal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.qz-appeal-actions .qz-btn { width: auto; }
+
 /* الورقة بتتقري كجُمل موجّهة للطالب: "إنت اخترت كذا" وبعدها "والصح كذا". السطر التاني
    بلون الصح عشان العين تمسكه من غير ما نحتاج نكتب عليه عنوان */
 .qz-rv-say {
