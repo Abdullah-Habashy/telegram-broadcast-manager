@@ -1956,6 +1956,19 @@
       return `${(value / (1024 * 1024)).toFixed(1)} ميجا`;
     }
 
+    // تكلفة تصحيح ورقة أو اختبار بالدولار. **مرآة لـ`formatCost` في
+    // `src/utils/aiPricing.js`** — الواجهة مابتعملش require، فلو غيّرت الصيغة هناك
+    // غيّرها هنا.
+    //
+    // **بالسنت تحت السنت الواحد:** تصحيح الورقة بيكلّف حوالي ١١ سنت وسؤال واحد أقل من
+    // سنت، و`toFixed(2)` بيحوّل كل ده لـ$0.00 — رقم مالوش أي معنى للمتابعة
+    function formatCost(dollars) {
+      const value = Number(dollars) || 0;
+      if (value === 0) return '—';
+      if (value < 0.01) return `${(value * 100).toFixed(2)}¢`;
+      return `$${value.toFixed(2)}`;
+    }
+
     // رابط تنزيل باسم الملف وحجمه. **مش <embed> ولا معاينة جوه الفقاعة** — الموظف بيفتح
     // عشرات المحادثات، وتحميل PDF في كل واحدة بيقفل الصفحة على موبايل
     function attachmentLinkHtml(message) {
@@ -8988,6 +9001,11 @@ ${reply.content}` : reply.content;
         quiz.needs_review_count ? `<span class="badge badge-danger">${quiz.needs_review_count} محتاجة مراجعتك</span>` : '',
         quiz.is_open ? '<span class="badge badge-success">مفتوح</span>' : '<span class="badge badge-muted">مقفول</span>',
         quiz.time_limit_minutes ? `<span class="badge badge-muted">⏱️ ${quiz.time_limit_minutes} دقيقة</span>` : '',
+        // تكلفة التصحيح الآلي للاختبار كله. بتبان جنب باقي الأرقام عشان تبقى رقم
+        // متابَع مع كل فتحة للصفحة، مش حاجة تتكشف في فاتورة آخر الشهر
+        quiz.grading_cost > 0
+          ? `<span class="badge badge-muted" title="تكلفة التصحيح الآلي للاختبار ده كله — بتزيد مع كل ورقة جديدة تتصحّح">💰 ${formatCost(quiz.grading_cost)}</span>`
+          : '',
       ].filter(Boolean).join(' ');
 
       return `
@@ -10217,6 +10235,7 @@ ${reply.content}` : reply.content;
             <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}${appealMark}</td>
             <td>${score}</td>
             <td>${attempt.submitted_at ? fmtDate(attempt.submitted_at) : fmtDate(attempt.started_at)}</td>
+            <td class="quiz-cost-cell" title="${attempt.grading_cost > 0 ? 'تكلفة تصحيح الورقة دي' : 'لسه ماتصححتش آليًا'}">${formatCost(attempt.grading_cost)}</td>
             <td>
               <span class="row" style="gap:6px; flex-wrap:nowrap">
                 <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="openQuizAttempt(${attempt.id})">الإجابات</button>
@@ -10227,7 +10246,7 @@ ${reply.content}` : reply.content;
             </td>
           </tr>`;
         }).join('');
-        box.innerHTML = `<table><thead><tr><th>الطالب</th><th>التليفون</th><th>الحالة</th><th>الدرجة</th><th>الوقت</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        box.innerHTML = `<table><thead><tr><th>الطالب</th><th>التليفون</th><th>الحالة</th><th>الدرجة</th><th>الوقت</th><th title="تكلفة التصحيح الآلي للورقة دي">💰</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         // طول ما فيه محاولة في الطابور بنعيد التحميل لوحدنا — التصحيح ماشي في الخلفية
         // والموظف مالوش دعوة يفضل يضغط تحديث عشان يعرف خلص ولا لأ
         clearTimeout(quizRegradeTimer);

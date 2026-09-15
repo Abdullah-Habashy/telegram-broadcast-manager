@@ -352,6 +352,10 @@ tr:last-child td { border-bottom: none; }
 .quiz-appeal-note .card-desc { color: inherit; opacity: .8; }
 .quiz-appeals-banner { border: 1px solid var(--warning); background: var(--warning-tint); }
 
+/* عمود تكلفة التصحيح في جدول النتايج — أرقام صغيرة، فخط مونوسبيس عشان تتقارن بالعين */
+.quiz-cost-cell { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem;
+  color: var(--text-muted); white-space: nowrap; }
+
 /* إجابة الطالب المصوّرة في شاشة التصحيح — بحجم مقروء، والضغط بيفتحها كاملة.
    الموظف بيراجع حكم النموذج على صورة، فالصورة الصغيرة بتخليه يعتمد من غير ما يقرا */
 .quiz-answer-image { display: block; max-width: 100%; max-height: 420px; border-radius: 8px;

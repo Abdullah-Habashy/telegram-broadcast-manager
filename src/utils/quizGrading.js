@@ -135,7 +135,7 @@ async function gradeEssayAnswer({ question, referenceAnswer, gradingNotes, stude
       + ' معقولة ليها في سياق السؤال بدل ما تحسبها ناقصة.'
       + (String(studentAnswer || '').trim() ? `\n\nوكتب معاها:\n${studentAnswer}` : '')
     : `إجابة الطالب:\n${studentAnswer}`;
-  const { output } = await callProvider(providerKey, {
+  const { output, usage } = await callProvider(providerKey, {
     systemPrompt,
     question: userText,
     image: answerImage,
@@ -145,7 +145,9 @@ async function gradeEssayAnswer({ question, referenceAnswer, gradingNotes, stude
   });
   const grade = normalizeGrade(output);
   if (!grade) throw new Error('النموذج رجّع حكم غير مفهوم');
-  return { ...grade, provider: providerKey, model: PROVIDERS[providerKey]?.model || null };
+  // الاستهلاك بيترجع مع الحكم عشان اللي بيحفظ الدرجة يحفظه معاها في نفس الصف — من غير
+  // كده التكلفة بتتقدّر بدل ما تتقاس
+  return { ...grade, provider: providerKey, model: PROVIDERS[providerKey]?.model || null, usage: usage || null };
 }
 
 module.exports = { gradeEssayAnswer, isEnabled, GRADE_FIELDS };

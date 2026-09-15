@@ -162,13 +162,18 @@ async function finalizeAttempt(attemptId, { late = false, force = false } = {}) 
 
   for (const grade of graded) {
     const question = questions.get(grade.question_id);
+    const u = grade.usage || {};
     await pool.query(
       `UPDATE quiz_answers
        SET is_correct = $1, awarded_points = $2, ai_verdict = $3, ai_reason = $4, ai_provider = $5,
-           graded_by = 'auto', graded_at = NOW()
+           graded_by = 'auto', graded_at = NOW(),
+           ai_model = $8, input_tokens = $9, output_tokens = $10,
+           cache_read_tokens = $11, cache_write_tokens = $12
        WHERE attempt_id = $6 AND question_id = $7`,
       [grade.verdict === 'correct', Number((Number(question.points) * grade.score_ratio).toFixed(2)),
-        grade.verdict, grade.reason, grade.provider, attemptId, grade.question_id]
+        grade.verdict, grade.reason, grade.provider, attemptId, grade.question_id,
+        grade.model || null, u.input_tokens ?? null, u.output_tokens ?? null,
+        u.cache_read_tokens ?? null, u.cache_write_tokens ?? null]
     );
   }
 

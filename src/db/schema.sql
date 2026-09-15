@@ -1310,6 +1310,23 @@ CREATE TABLE IF NOT EXISTS quiz_answers (
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_answers_attempt ON quiz_answers (attempt_id);
 
+-- ---------- استهلاك النموذج في تصحيح الإجابة ----------
+--
+-- **ليه بنسجّلهم:** السؤال «الاختبار ده كلّف كام؟» مكانش ليه إجابة غير التخمين، والتخمين
+-- هنا بيفرق أضعاف. الأعمدة دي هي اللي بتخلي التكلفة رقم مقروء جنب كل ورقة.
+--
+-- **وتوكنز الكاش لازمة زي الدخل بالظبط** (نفس سبب `ai_reply_log` فوق): البرومبت الثابت
+-- ~١٧٨٠ توكن بيتبعت مع كل سؤال وهو نفسه لكل طلاب السؤال، فبيتقرا بعُشر السعر. حساب
+-- التكلفة من `input_tokens` لوحده بيضخّم الرقم أضعاف — حصل فعلًا يوم ١٥ سبتمبر ٢٠٢٦.
+--
+-- **و`ai_model` مش `ai_provider`:** المزوّد الواحد عنده أكتر من نموذج بأسعار مختلفة
+-- (Opus بخمس أضعاف Haiku)، فالتسعير محتاج اسم النموذج نفسه.
+ALTER TABLE quiz_answers ADD COLUMN IF NOT EXISTS ai_model VARCHAR(60);
+ALTER TABLE quiz_answers ADD COLUMN IF NOT EXISTS input_tokens INTEGER;
+ALTER TABLE quiz_answers ADD COLUMN IF NOT EXISTS output_tokens INTEGER;
+ALTER TABLE quiz_answers ADD COLUMN IF NOT EXISTS cache_read_tokens INTEGER;
+ALTER TABLE quiz_answers ADD COLUMN IF NOT EXISTS cache_write_tokens INTEGER;
+
 -- ---------- صورة الإجابة المقالية ----------
 --
 -- الطالب بيحل على ورق وبيصوّر إجابته بدل ما يكتبها — أسرع بكتير في الكيمياء والمعادلات،

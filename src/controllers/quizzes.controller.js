@@ -8,6 +8,7 @@ const { queueLength, attemptConcurrency, MAX_CONCURRENCY } = require('../utils/q
 const { parseQuizDocument } = require('../utils/quizDocImport');
 const quizDocImages = require('../utils/quizDocImages');
 const { storeFile } = require('../utils/objectStorage');
+const aiPricing = require('../utils/aiPricing');
 
 // ---------- إدارة الاختبارات من اللوحة ----------
 
@@ -48,7 +49,13 @@ async function listQuizzes(req, res) {
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NULL) AS in_progress_count,
             -- محتاج تدخّل: تصحيح آلي فشل أو سؤال مقالي لسه من غير درجة
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.grading_status = 'partial') AS needs_review_count,
-            (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.grading_status = 'regrading') AS regrading_count
+            (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.grading_status = 'regrading') AS regrading_count,
+            -- إجمالي ما دفعناه على تصحيح الاختبار ده. بيبان جنب زرار النتايج عشان
+            -- التكلفة تبقى رقم متابَع مش مفاجأة في فاتورة آخر الشهر
+            (SELECT COALESCE(SUM(${aiPricing.costSql('an', 'ai_model')}), 0)::float8
+             FROM quiz_answers an
+             JOIN quiz_attempts a ON a.id = an.attempt_id
+             WHERE a.quiz_id = q.id) AS grading_cost
      FROM quizzes q ORDER BY q.created_at DESC`);
   res.json(rows.map((row) => ({ ...row, url: quizUrl(req, row) })));
 }
@@ -556,13 +563,20 @@ async function listAttempts(req, res) {
             a.attempt_no, s.name AS platform_name,
             -- التظلمات المفتوحة بتحوّل الورقة لطابور شغل: الموظف بيرتّب بيها شغله،
             -- فالعدد لازم يبان في القايمة مش جوه الورقة بس
-            COALESCE(ap.open_count, 0)::int AS open_appeals
+            COALESCE(ap.open_count, 0)::int AS open_appeals,
+            -- تكلفة تصحيح الورقة دي. **بتتحسب في القاعدة مش في الكود** — جمعها في
+            -- الكنترولر معناه جلب كل صفوف الإجابات للذاكرة عشان رقم واحد
+            COALESCE(cost.total, 0)::float8 AS grading_cost
      FROM quiz_attempts a
      LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
      LEFT JOIN LATERAL (
        SELECT COUNT(*) AS open_count FROM quiz_appeals
        WHERE attempt_id = a.id AND status = 'open'
      ) ap ON true
+     LEFT JOIN LATERAL (
+       SELECT SUM(${aiPricing.costSql('an', 'ai_model')}) AS total
+       FROM quiz_answers an WHERE an.attempt_id = a.id
+     ) cost ON true
      WHERE a.quiz_id = $1
      ORDER BY a.submitted_at DESC NULLS FIRST, a.started_at DESC`, [quizId]);
   res.json(rows.map((row) => ({
