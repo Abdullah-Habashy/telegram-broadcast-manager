@@ -1062,6 +1062,15 @@ th.perf-sorted { color: var(--primary); }
 /* الرسالة الصوتية اللي الموظف بعتها. عرض كامل جوّه الفقاعة عشان شريط التشغيل يبان،
    و preload="none" في الـ HTML عشان محادثة فيها تسجيلات كتير ما تحمّلهمش كلهم مرة واحدة */
 .ticket-message-voice { display: block; width: 100%; min-width: 220px; margin-top: 6px; }
+/* مرفق PDF في المحادثة: رابط تنزيل باسم الملف وحجمه. الاسم بيتقص بـellipsis لأن أسماء
+   الملفات اللي الطلاب بيبعتوها بتبقى طويلة ("ورقة امتحان الباب الاول نهائي.pdf") */
+.ticket-message-file { display: flex; align-items: center; gap: 8px; max-width: 100%; margin-top: 6px;
+  padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, .06); text-decoration: none;
+  color: inherit; font-size: .9rem; }
+.ticket-message-file:hover { background: rgba(0, 0, 0, .12); }
+.ticket-message .ticket-message-file .file-icon { flex: none; font-size: 1.1rem; }
+.ticket-message .ticket-message-file .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ticket-message .ticket-message-file .file-size { flex: none; opacity: .7; font-size: .8rem; }
 /* وقت التسجيل: الزرار بيتحوّل لأحمر ينبض مع عدّاد الثواني */
 #ticket-voice-btn.recording {
   background: var(--danger-tint); color: var(--danger);

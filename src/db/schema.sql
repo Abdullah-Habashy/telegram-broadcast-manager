@@ -204,6 +204,18 @@ CREATE TABLE IF NOT EXISTS incoming_messages (
 );
 ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS image_path TEXT;
 ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS telegram_file_id TEXT;
+
+-- ---------- مرفق PDF ----------
+--
+-- **أعمدة منفصلة عن `image_path` عن قصد**، زي `voice_path` بالظبط: الصورة بتتعرض في
+-- الفقاعة، والملف بيبقى رابط تنزيل باسمه وحجمه. لو حطّينا الاتنين في عمود واحد، كل
+-- مكان بيعرض مرفق كان لازم يخمّن نوعه من الامتداد.
+--
+-- و`file_name` هو الاسم الأصلي **للعرض بس** — الملف على القرص اسمه UUID. الاسم ده
+-- بيكتبه اللي بيبعت، فمابيتحوّلش لاسم ملف حقيقي في أي حالة
+ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS file_path TEXT;
+ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS file_size INTEGER;
 -- تمييز رسائل الطالب (star = رسالة حلوة/إشادة، complaint = شكوى) عشان تتجمّع في مكان واحد بدل ما
 -- تتوه وسط باقي المحادثات
 ALTER TABLE incoming_messages ADD COLUMN IF NOT EXISTS flag VARCHAR(20);
@@ -343,6 +355,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_support_messages_broadcast_recipient
 -- العرض يعرف يفرّق: الصورة بتتعرض <img> والصوت <audio controls>، والاتنين ممكن يبقوا فاضيين
 -- (رسالة نصية عادية). الاتجاه ده واحد بس — الطالب مابيبعتش صوت، بيتردّ عليه يبعت مكتوب أو صورة
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS voice_path TEXT;
+
+-- نفس التلاتة في الاتجاه التاني: الموظف بيبعت مذكرة أو نموذج إجابة PDF للطالب
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_path TEXT;
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS file_size INTEGER;
 
 ALTER TABLE support_messages ADD COLUMN IF NOT EXISTS is_welcome BOOLEAN NOT NULL DEFAULT FALSE;
 -- ترحيل لمرة واحدة للرسايل اللي اتبعتت قبل وجود العمود. الرسايل التلقائية (sent_by IS NULL) نوعين بس:

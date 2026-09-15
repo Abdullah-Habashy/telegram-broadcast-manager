@@ -8,26 +8,57 @@ const ticketsController = require('../controllers/tickets.controller');
 const teamsController = require('../controllers/teams.controller');
 const voiceController = require('../controllers/voice.controller');
 const { MAX_BYTES: VOICE_MAX_BYTES } = require('../utils/voiceNote');
+const pdfAttachment = require('../utils/pdfAttachment');
 const { requireAuthApi, requireTicketsAccessApi, requireAdminApi } = require('../middleware/requireAuth');
 
 const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'support');
 fs.mkdirSync(uploadDir, { recursive: true });
+// مرفق الرد: صورة أو ملف PDF. **حقلين منفصلين مش حقل واحد** — الحدود والصيغ
+// المسموحة مختلفة، والاسم بيقول للكنترولر يبعت بأنهي طريقة من غير ما يخمّن من الامتداد
 const upload = multer({
   storage: multer.diskStorage({
     destination: uploadDir,
     filename: (req, file, callback) => {
-      const extension = file.mimetype === 'image/png' ? '.png' : '.jpg';
+      const extension = file.fieldname === 'file'
+        ? '.pdf'
+        : (file.mimetype === 'image/png' ? '.png' : '.jpg');
+      // **الاسم على القرص UUID مش اسم اللي رفعه.** الاسم الأصلي بيتخزّن في القاعدة للعرض بس
       callback(null, `${crypto.randomUUID()}${extension}`);
     },
   }),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  // **الحد الواحد ده حد الـPDF، والصورة ليها حد أصغر بيتفحص في الكنترولر.** multer
+  // بياخد حد واحد للنسخة كلها، وتليجرام مابياخدش صورة أكبر من ١٠ ميجا في sendPhoto —
+  // فالحد الأصغر لازم يتفحص بعد الرفع، ورسالته بتقول "الصورة" مش "الملف"
+  limits: { fileSize: pdfAttachment.MAX_BYTES, files: 1 },
   fileFilter: (req, file, callback) => {
+    if (file.fieldname === 'file') {
+      const isPdf = file.mimetype === pdfAttachment.MIME || /\.pdf$/i.test(file.originalname || '');
+      if (!isPdf) return callback(new Error('مسموح بملفات PDF فقط'));
+      return callback(null, true);
+    }
     if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
       return callback(new Error('مسموح بصور JPG وPNG فقط'));
     }
     callback(null, true);
   },
 });
+
+// **رسالة الرفض لازم توصل.** multer بيرمي الخطأ زي أي خطأ تاني فبيروح للمعالج العام في
+// `server.js` ويرجّع ٥٠٠ "حصل خطأ في السيرفر" — والموظف مش عارف إن ملفه كبير ولا إن
+// صيغته غلط، ومع مرفق بيوصل ٢٠ ميجا احتمال الوصول للحد بيزيد
+function reportUploadError(err, req, res, next) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'المرفق أكبر من ٢٠ ميجا. صغّره أو قسّمه.' });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: 'ابعت مرفق واحد بس في الرسالة.' });
+    }
+    return res.status(400).json({ error: 'مشكلة في رفع المرفق — جرّب تاني.' });
+  }
+  if (err && err.message) return res.status(400).json({ error: err.message });
+  return next(err);
+}
 
 // رفع التسجيلات الصوتية — منفصل عن رفع الصور: الصيغ مختلفة والحدود مختلفة، والامتداد بيتاخد
 // من نوع المحتوى عشان ffmpeg يعرف يقرا الحاوية صح
@@ -78,7 +109,12 @@ router.post('/:id/urgent', ticketsController.toggleTicketUrgent);
 
 router.patch('/:id/next-follow-up-message', ticketsController.updateNextFollowUpMessage);
 router.patch('/:id', ticketsController.updateTicket);
-router.post('/:id/reply', upload.single('image'), ticketsController.replyToTicket);
+router.post(
+  '/:id/reply',
+  upload.fields([{ name: 'image', maxCount: 1 }, { name: 'file', maxCount: 1 }]),
+  reportUploadError,
+  ticketsController.replyToTicket
+);
 router.patch('/:id/idea', ticketsController.updateIdeaProgress);
 router.get('/:id/idea-log', ticketsController.getIdeaProgressLog);
 router.get('/:id/recent-exam-marks', ticketsController.getRecentExamMarks);

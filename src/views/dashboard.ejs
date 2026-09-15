@@ -1933,6 +1933,41 @@
       }[character]));
     }
 
+    // ---------- عرض المرفقات ----------
+    //
+    // **مسار المرفق في القاعدة نوعين:** `uploads/...` لما الملف على قرص السيرفر، أو رابط
+    // كامل `https://...` لما التخزين السحابي مفعّل (`utils/objectStorage.js`). حطّ `/`
+    // قدام رابط كامل بيطلّع `/https://...` — فالدالة دي بتفرّق بينهم.
+    //
+    // التخزين السحابي مقفول حاليًا فكل المسارات محلية، بس أول ما يتفعّل المرفقات الجديدة
+    // بتبقى روابط كاملة والقديمة تفضل محلية — والاتنين لازم يشتغلوا في نفس الشاشة
+    function attachmentUrl(stored) {
+      const value = String(stored || '');
+      return /^https?:\/\//i.test(value) ? value : `/${value}`;
+    }
+
+    // الموظف على موبايل بشبكة ضعيفة بيقرر يفتح الملف ولا لأ من الرقم ده.
+    // **مرآة لـ `formatBytes` في `src/utils/pdfAttachment.js`** — الواجهة مابتعملش require،
+    // فلو غيّرت الصيغة هناك غيّرها هنا
+    function formatFileSize(bytes) {
+      const value = Number(bytes);
+      if (!Number.isFinite(value) || value <= 0) return '';
+      if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} كيلو`;
+      return `${(value / (1024 * 1024)).toFixed(1)} ميجا`;
+    }
+
+    // رابط تنزيل باسم الملف وحجمه. **مش <embed> ولا معاينة جوه الفقاعة** — الموظف بيفتح
+    // عشرات المحادثات، وتحميل PDF في كل واحدة بيقفل الصفحة على موبايل
+    function attachmentLinkHtml(message) {
+      if (!message.file_path) return '';
+      const size = formatFileSize(message.file_size);
+      return `<a class="ticket-message-file" href="${attachmentUrl(message.file_path)}" target="_blank" rel="noopener">
+        <span class="file-icon">📄</span>
+        <span class="file-name">${escapeHtml(message.file_name || 'ملف.pdf')}</span>
+        ${size ? `<span class="file-size">${size}</span>` : ''}
+      </a>`;
+    }
+
     // ---------- فلتر اختيار متعدد (checkbox dropdown) ----------
     // القيم المحددة بتتخزن كـ comma-separated جوه نفس الـ input اللي كان <select> عادي، عشان كل كود
     // بناء الاستعلام والمزامنة بين التابات ومسح الفلاتر يفضل شغال زي ما هو من غير أي تعديل
@@ -2460,7 +2495,8 @@
                   <button type="button" class="btn btn-ghost btn-sm" data-open-ticket="${m.ticket_id}">فتح التذكرة</button>
                 </div>
                 ${m.content ? `<div class="ticket-preview">${escapeHtml(m.content)}</div>` : ''}
-                ${m.image_path ? `<img class="ticket-message-image" style="max-width:160px; margin-top:6px" src="/${escapeHtml(m.image_path)}" alt="صورة مرفقة">` : ''}
+                ${m.image_path ? `<img class="ticket-message-image" style="max-width:160px; margin-top:6px" src="${attachmentUrl(m.image_path)}" alt="صورة مرفقة">` : ''}
+                ${attachmentLinkHtml(m)}
                 <div class="ticket-list-meta"><span>${fmtDate(m.received_at)}</span></div>
               </div>`;
           }).join('');
@@ -2681,7 +2717,9 @@
         ? escapeHtml(message.is_ai ? '🤖 رد آلي' : (message.sender_name || 'فريق الدعم')) + ' · ' : '';
       // تمييز رسائل الطالب (نجمة = رسالة حلوة، إكس = شكوى)، والرد (quote) والتفاعل بإيموجي — كلهم
       // بيشتغلوا على رسائل الطالب الواردة بس
-      const replyPreviewText = (message.content ? message.content : (message.image_path ? '📷 صورة' : '')).slice(0, 120);
+      const replyPreviewText = (message.content
+        ? message.content
+        : (message.image_path ? '📷 صورة' : (message.file_path ? '📄 ملف' : ''))).slice(0, 120);
       const incomingTools = message.direction === 'incoming' && message.incoming_message_id ? `
         <div class="msg-tools">
           <button type="button" class="msg-tool-btn ${message.flag === 'star' ? 'active-star' : ''}" data-flag-action="star"
@@ -2725,8 +2763,9 @@
             </div>` : ''}
           ${incomingTools}
           ${replyQuoteHtml}
-          ${message.image_path ? `<img class="ticket-message-image" src="/${escapeHtml(message.image_path)}" alt="صورة مرفقة">` : ''}
-          ${message.voice_path ? `<audio class="ticket-message-voice" controls preload="none" src="/${escapeHtml(message.voice_path)}"></audio>` : ''}
+          ${message.image_path ? `<img class="ticket-message-image" src="${attachmentUrl(message.image_path)}" alt="صورة مرفقة">` : ''}
+          ${message.voice_path ? `<audio class="ticket-message-voice" controls preload="none" src="${attachmentUrl(message.voice_path)}"></audio>` : ''}
+          ${attachmentLinkHtml(message)}
           ${message.content ? `<div class="ticket-message-content">${escapeHtml(message.content)}</div>` : ''}
           <div class="ticket-message-meta">${senderPrefix}${fmtDate(message.occurred_at)}${message.edited_at ? ' · معدّلة' : ''}</div>
         </div>`;
@@ -6382,6 +6421,14 @@ ${reply.content}` : reply.content;
               </label>
               <span id="ticket-reply-image-name" class="reply-image-indicator" style="display:none" title=""></span>
               <button type="button" class="btn btn-danger-ghost icon-action-btn" id="clear-ticket-reply-image" style="display:none" title="إزالة الصورة" aria-label="إزالة الصورة">✕</button>
+              <!-- إرفاق PDF: مذكرة أو نموذج إجابة. زرار منفصل عن الصورة لأن الصيغ والحدود
+                   مختلفة، والسيرفر بياخد مرفق واحد بس فاختيار واحد بيلغي التاني -->
+              <label class="btn btn-ghost icon-action-btn" title="إرفاق ملف PDF" aria-label="إرفاق ملف PDF">
+                📄
+                <input type="file" id="ticket-reply-file" accept="application/pdf,.pdf" style="display:none">
+              </label>
+              <span id="ticket-reply-file-name" class="reply-image-indicator" style="display:none" title=""></span>
+              <button type="button" class="btn btn-danger-ghost icon-action-btn" id="clear-ticket-reply-file" style="display:none" title="إزالة الملف" aria-label="إزالة الملف">✕</button>
               <div class="idea-picker-wrap" id="idea-picker-wrap">
                 <button type="button" class="btn btn-ghost icon-action-btn idea-picker-toggle" id="idea-picker-toggle"
                   title="تسجيل رقم الفكرة" aria-label="تسجيل رقم الفكرة"
@@ -6667,19 +6714,37 @@ ${reply.content}` : reply.content;
         const replyImage = document.getElementById('ticket-reply-image');
         const replyImageName = document.getElementById('ticket-reply-image-name');
         const clearReplyImage = document.getElementById('clear-ticket-reply-image');
+        const replyFile = document.getElementById('ticket-reply-file');
+        const replyFileName = document.getElementById('ticket-reply-file-name');
+        const clearReplyFile = document.getElementById('clear-ticket-reply-file');
+
+        // **مرفق واحد بس في الرسالة** — السيرفر بيرفض الاتنين، فاختيار واحد بيفضّي التاني
+        // هنا بدل ما الموظف يكتب رسالته ويدوس إرسال وياخد رفض
+        function showAttachment(indicator, clearButton, file, icon) {
+          indicator.textContent = file ? icon : '';
+          indicator.title = file ? file.name : '';
+          indicator.style.display = file ? 'inline-flex' : 'none';
+          clearButton.style.display = file ? 'inline-flex' : 'none';
+        }
+        function clearAttachment(input, indicator, clearButton) {
+          input.value = '';
+          indicator.textContent = '';
+          indicator.title = '';
+          indicator.style.display = 'none';
+          clearButton.style.display = 'none';
+        }
         replyImage.addEventListener('change', () => {
           const file = replyImage.files[0];
-          replyImageName.textContent = file ? '📷' : '';
-          replyImageName.title = file ? file.name : '';
-          replyImageName.style.display = file ? 'inline-flex' : 'none';
-          clearReplyImage.style.display = file ? 'inline-flex' : 'none';
+          if (file) clearAttachment(replyFile, replyFileName, clearReplyFile);
+          showAttachment(replyImageName, clearReplyImage, file, '📷');
         });
-        clearReplyImage.addEventListener('click', () => {
-          replyImage.value = '';
-          replyImageName.textContent = '';
-          replyImageName.style.display = 'none';
-          clearReplyImage.style.display = 'none';
+        clearReplyImage.addEventListener('click', () => clearAttachment(replyImage, replyImageName, clearReplyImage));
+        replyFile.addEventListener('change', () => {
+          const file = replyFile.files[0];
+          if (file) clearAttachment(replyImage, replyImageName, clearReplyImage);
+          showAttachment(replyFileName, clearReplyFile, file, '📄');
         });
+        clearReplyFile.addEventListener('click', () => clearAttachment(replyFile, replyFileName, clearReplyFile));
 
         // —— بيكر رقم الفكرة ——
         const ideaPickerToggle = document.getElementById('idea-picker-toggle');
@@ -6856,14 +6921,19 @@ ${reply.content}` : reply.content;
       const textarea = document.getElementById('ticket-reply-content');
       const content = textarea.value.trim();
       const image = document.getElementById('ticket-reply-image').files[0];
-      if (!content && !image) return showToast('اكتب نصًا أو أرفق صورة');
-      if (image && content.length > 1024) return showToast('النص مع الصورة يجب ألا يتجاوز 1024 حرفًا');
+      const file = document.getElementById('ticket-reply-file').files[0];
+      if (!content && !image && !file) return showToast('اكتب نصًا أو أرفق صورة أو ملف PDF');
+      // الحدود دي مكررة في السيرفر — دي عشان الموظف مايستنى رفع ٢٠ ميجا قبل الرفض
+      if ((image || file) && content.length > 1024) return showToast('النص مع المرفق يجب ألا يتجاوز 1024 حرفًا');
+      if (image && image.size > 10 * 1024 * 1024) return showToast('الصورة أكبر من ١٠ ميجا. صغّرها أو ابعتها ملف PDF.');
+      if (file && file.size > 20 * 1024 * 1024) return showToast('الملف أكبر من ٢٠ ميجا. قسّمه أو صغّره.');
       const button = document.getElementById('send-ticket-reply');
       button.disabled = true;
       try {
         const formData = new FormData();
         formData.append('content', content);
         if (image) formData.append('image', image);
+        if (file) formData.append('file', file);
         if (currentReplyToMessageId) formData.append('reply_to_message_id', currentReplyToMessageId);
         const response = await fetch(`/api/tickets/${currentTicketId}/reply`, { method: 'POST', body: formData });
         const data = await response.json().catch(() => ({}));

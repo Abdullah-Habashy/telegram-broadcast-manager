@@ -6,12 +6,18 @@ const { displayName, platformNameFor } = require('../../utils/studentName');
 const push = require('../../utils/push');
 const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
 const { isWithinWorkingHours, currentCairoTime, formatArabicTime } = require('../../utils/workingHours');
+const pdfAttachment = require('../../utils/pdfAttachment');
+// **كل رسالة رايحة للطالب بتاخد الكيبورد.** مابيتبعتش لوحده، ولو اتحط عند `/start` بس
+// كان اللي دخلوا البوت قبل الميزة عمرهم ما يشوفوا الزراير — وتيليجرام بيستبدل القديم
+// بالجديد فمفيش تكرار عند الطالب
+const { STUDENT_MENU_OPTIONS } = require('../studentMenu');
+const { storeFile } = require('../../utils/objectStorage');
 
 const incomingUploadDir = path.join(__dirname, '..', '..', '..', 'public', 'uploads', 'incoming');
 fs.mkdirSync(incomingUploadDir, { recursive: true });
 
 // لو التذكرة متعيّنة لموظف بنعلّمه بس، لو لسه بلا موظف بنعلّم كل الموظفين النشطين عشان حد ياخدها
-async function notifyEmployeesOfIncomingMessage(ticket, { studentName, content, imagePath }) {
+async function notifyEmployeesOfIncomingMessage(ticket, { studentName, content, imagePath, filePath }) {
   if (!push.enabled || !ticket) return;
 
   let recipientIds;
@@ -25,7 +31,7 @@ async function notifyEmployeesOfIncomingMessage(ticket, { studentName, content, 
 
   await push.sendToUsers(recipientIds, {
     title: `رسالة جديدة من ${studentName}`,
-    body: content?.trim() ? content.trim().slice(0, 180) : (imagePath ? '📷 صورة' : ''),
+    body: content?.trim() ? content.trim().slice(0, 180) : (imagePath ? '📷 صورة' : (filePath ? pdfAttachment.LABEL : '')),
     tag: `ticket-${ticket.id}`,
     url: `/?ticket=${ticket.id}`,
   });
@@ -48,11 +54,27 @@ async function downloadTelegramPhoto(ctx, fileId) {
   return { imagePath: `uploads/incoming/${filename}`, absolutePath };
 }
 
-async function processIncomingMessage(bot, ctx, { content, imagePath = null, absolutePath = null, fileId = null, telegramMessageId = null, replyToTelegramMessageId = null }) {
+// **الفحص على البايتات قبل الكتابة على القرص.** النوع المعلَن جاي من تطبيق تليجرام عند
+// الطالب، والامتداد بيكتبه هو — الاتنين ممكن يكذبوا. وملف HTML متسمّي `.pdf` بيتخدم من
+// دومينّا بنوع `application/pdf`، فمافيش تنفيذ، بس برضه مافيش سبب نخزّن حاجة مش اللي قالها
+async function downloadTelegramDocument(ctx, fileId) {
+  const fileUrl = await ctx.telegram.getFileLink(fileId);
+  const response = await fetch(fileUrl);
+  if (!response.ok) throw new Error(`Telegram file download returned ${response.status}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!pdfAttachment.isPdfBuffer(buffer)) return null;
+  const filename = `${crypto.randomUUID()}.pdf`;
+  const absolutePath = path.join(incomingUploadDir, filename);
+  fs.writeFileSync(absolutePath, buffer);
+  return { filePath: `uploads/incoming/${filename}`, absolutePath, size: buffer.length };
+}
+
+async function processIncomingMessage(bot, ctx, { content, imagePath = null, absolutePath = null, fileId = null, telegramMessageId = null, replyToTelegramMessageId = null, filePath = null, fileName = null, fileSize = null }) {
   const chatId = ctx.chat.id;
   const { username, first_name, last_name } = ctx.from;
 
-  let imageStored = false;
+  // بيمنع مسح الملف المحلي في الكاتش بعد ما الصف اتكتب — الصف بقى بيشاور عليه
+  let attachmentStored = false;
   try {
     const contactResult = await pool.query(
       `INSERT INTO contacts (chat_id, telegram_username, first_name, last_name, source, last_contacted_at)
@@ -67,13 +89,17 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
     );
     const contactId = contactResult.rows[0].id;
 
-    await pool.query(
+    const insertedMessage = await pool.query(
       `INSERT INTO incoming_messages
-         (contact_id, content, image_path, telegram_file_id, telegram_message_id, reply_to_telegram_message_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [contactId, content || '', imagePath, fileId, telegramMessageId, replyToTelegramMessageId]
+         (contact_id, content, image_path, telegram_file_id, telegram_message_id, reply_to_telegram_message_id,
+          file_path, file_name, file_size)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id`,
+      [contactId, content || '', imagePath, fileId, telegramMessageId, replyToTelegramMessageId,
+        filePath, fileName, fileSize]
     );
-    imageStored = Boolean(imagePath);
+    const incomingMessageId = insertedMessage.rows[0].id;
+    attachmentStored = Boolean(imagePath || filePath);
 
     // لو دي تذكرة جديدة تمامًا (أول تواصل حقيقي مع الطالب ده)، لازم نجهّز رسالة الترحيب الموحدة زيها
     // زي بالظبط لو كان بدأ بـ /start — مش كل الطلاب بيبدأوا محادثتهم فعليًا بأمر /start (بعضهم بيكتب
@@ -150,8 +176,9 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
         contact_id: contactId,
         student_name: studentName,
         chat_id: chatId,
-        content: content || (imagePath ? '📷 صورة' : ''),
+        content: content || (imagePath ? '📷 صورة' : (filePath ? pdfAttachment.LABEL : '')),
         image_path: imagePath,
+        file_path: filePath,
         received_at: new Date().toISOString(),
       });
     } catch (eventErr) {
@@ -159,7 +186,7 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
     }
 
     // إشعار على تليفون الموظف (Web Push) حتى لو المتصفح مقفول
-    notifyEmployeesOfIncomingMessage(ticketRow, { studentName, content, imagePath }).catch((pushErr) =>
+    notifyEmployeesOfIncomingMessage(ticketRow, { studentName, content, imagePath, filePath }).catch((pushErr) =>
       console.error('❌ Failed to send push notification:', pushErr.message)
     );
 
@@ -184,11 +211,35 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
         if (imagePath) {
           const caption = `${metadata}${content ? `\n\n${content}` : ''}`.slice(0, 1024);
           await bot.telegram.sendPhoto(settings.forward_chat_id, { source: absolutePath }, { caption });
+        } else if (filePath) {
+          const caption = `${metadata}${content ? `\n\n${content}` : ''}`.slice(0, 1024);
+          await bot.telegram.sendDocument(
+            settings.forward_chat_id,
+            { source: absolutePath, filename: fileName || 'ملف.pdf' },
+            { caption }
+          );
         } else {
           await bot.telegram.sendMessage(settings.forward_chat_id, `${metadata}\n\n${content}`);
         }
       } catch (forwardError) {
         console.error('❌ Failed to forward incoming message:', forwardError.message);
+      }
+    }
+
+    // ---------- الملف بيروح للسحابة بعد ما خلصنا منه محليًا ----------
+    //
+    // **بعد التحويل مش قبله** — التحويل للجروب بياخد الملف من القرص، فنقله قبل كده بيكسره.
+    //
+    // والصور الواردة لسه بتفضل على القرص (شغل مفتوح)، إنما ملف PDF بيوصل عشرين ميجا —
+    // مية ألف طالب × ورقة واحدة يعني القرص، والنسخة الاحتياطية اليومية على نفس القرص
+    if (filePath) {
+      const uploaded = await storeFile(absolutePath, filePath, { keepLocal: true });
+      // بترجّع المسار المحلي زي ما هو لو التخزين مقفول أو الرفع فشل — ساعتها مافيش تحديث
+      // ولا مسح، والملف بيفضل مخدوم من القرص عادي
+      if (uploaded !== filePath) {
+        await pool.query('UPDATE incoming_messages SET file_path = $2 WHERE id = $1', [incomingMessageId, uploaded]);
+        // المسح بعد التحديث: العكس معناه إن فشل التحديث بيسيب صف بيشاور على ملف مامش
+        fs.unlink(absolutePath, () => {});
       }
     }
 
@@ -221,19 +272,19 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
         const message = settings.outside_hours_reply_message
           .replaceAll('{start}', formatArabicTime(settings.working_hours_start))
           .replaceAll('{end}', formatArabicTime(settings.working_hours_end));
-        await ctx.reply(message);
+        await ctx.reply(message, STUDENT_MENU_OPTIONS);
       } catch (replyError) {
         console.error('❌ Failed to send outside-hours reply:', replyError.message);
       }
     } else if (settings.auto_reply_enabled === 'true' && settings.auto_reply_message) {
       try {
-        await ctx.reply(settings.auto_reply_message);
+        await ctx.reply(settings.auto_reply_message, STUDENT_MENU_OPTIONS);
       } catch (replyError) {
         console.error('❌ Failed to send auto reply:', replyError.message);
       }
     }
   } catch (error) {
-    if (absolutePath && !imageStored) fs.unlink(absolutePath, () => {});
+    if (absolutePath && !attachmentStored) fs.unlink(absolutePath, () => {});
     console.error('❌ Failed to process an incoming message:', error.message);
   }
 }
@@ -250,37 +301,93 @@ function registerMessageHandler(bot) {
     });
   });
 
-  // وسائط البوت مش بيقراها: فيديو، رسالة صوتية، ملف، ملصق. قبل كده كانت بتتجاهل بالسكوت —
+  // وسائط البوت مش بيقراها: فيديو، رسالة صوتية، ملصق. قبل كده كانت بتتجاهل بالسكوت —
   // الطالب يبعت فيديو لسؤاله وميحصلش أي حاجة: لا اتسجّل، ولا الموظف شافه، ولا حتى الطالب عرف
   // إنها مـوصلتش. دلوقتي بتتسجّل في المحادثة كسطر واضح (عشان الموظف يعرف إن الطالب حاول)،
-  // والطالب بياخد رد يقوله يبعت مكتوب أو صورة
+  // والطالب بياخد رد يقوله يبعت مكتوب أو صورة أو PDF
+  //
+  // **`document` مابقاش في القايمة دي** — ملف PDF بقى بيتقبل تحت، وأي ملف تاني بيعدّي
+  // على نفس الدالة برسالة تقوله يحوّله PDF
   const UNSUPPORTED_MEDIA = [
     ['video', '🎥 فيديو'],
     ['video_note', '🎥 فيديو دائري'],
     ['voice', '🎤 رسالة صوتية'],
     ['audio', '🎵 ملف صوتي'],
-    ['document', '📎 ملف'],
     ['sticker', '🏷️ ملصق'],
     ['animation', '🎞️ صورة متحركة'],
   ];
-  UNSUPPORTED_MEDIA.forEach(([type, label]) => {
-    bot.on(type, async (ctx) => {
-      const caption = String(ctx.message.caption || '').trim();
-      await processIncomingMessage(bot, ctx, {
-        content: caption ? `${label} — ${caption}` : `${label} (اتطلب منه يبعت مكتوب أو صورة)`,
-        telegramMessageId: ctx.message.message_id,
-        replyToTelegramMessageId: ctx.message.reply_to_message?.message_id ?? null,
-      });
-      try {
+
+  // السطر بيتسجّل في المحادثة، والطالب بياخد رد. الرد الافتراضي من الإعدادات بيتكلم عن
+  // الصوت والفيديو، فالملف بياخد رده الخاص عشان يقوله يعمل إيه بالظبط
+  async function recordUnsupportedMedia(ctx, label, replyText = null) {
+    const caption = String(ctx.message.caption || '').trim();
+    await processIncomingMessage(bot, ctx, {
+      content: caption ? `${label} — ${caption}` : `${label} (اتطلب منه يبعت مكتوب أو صورة أو PDF)`,
+      telegramMessageId: ctx.message.message_id,
+      replyToTelegramMessageId: ctx.message.reply_to_message?.message_id ?? null,
+    });
+    try {
+      let reply = replyText;
+      if (!reply) {
         const setting = await pool.query(
           "SELECT value FROM settings WHERE key = 'media_not_supported_message'"
         );
-        const reply = setting.rows[0]?.value;
-        if (reply) await ctx.reply(reply);
-      } catch (error) {
-        console.error('❌ Failed to answer an unsupported media message:', error.message);
+        reply = setting.rows[0]?.value;
       }
-    });
+      if (reply) await ctx.reply(reply, STUDENT_MENU_OPTIONS);
+    } catch (error) {
+      console.error('❌ Failed to answer an unsupported media message:', error.message);
+    }
+  }
+
+  UNSUPPORTED_MEDIA.forEach(([type, label]) => {
+    bot.on(type, (ctx) => recordUnsupportedMedia(ctx, label));
+  });
+
+  // ---------- ملف PDF من الطالب ----------
+  //
+  // الطالب بيبعت ورقة امتحان مصوّرة أو مذكرة، والموظف كان بيشوف "📎 ملف" والملف نفسه
+  // بيتسقط. بقى بينزّل ويتخزّن ويبان في المحادثة كرابط تنزيل باسمه وحجمه
+  bot.on('document', async (ctx) => {
+    const document = ctx.message.document || {};
+    const isPdf = document.mime_type === pdfAttachment.MIME || /\.pdf$/i.test(document.file_name || '');
+    if (!isPdf) {
+      return recordUnsupportedMedia(ctx, '📎 ملف', 'الملف ده مش بنقدر نفتحه هنا. لو حوّلته PDF وبعته تاني هيوصل 🙏');
+    }
+
+    // **الحد ده حد تليجرام مش حدنا:** getFile للبوتات مابيفكّش أكبر من ٢٠ ميجا، فالتنزيل
+    // كان هيرمي والطالب يستنى رد مايجيش. الرفض هنا بيقوله الرقم ويقوله يعمل إيه
+    const declaredSize = Number(document.file_size) || 0;
+    if (declaredSize > pdfAttachment.MAX_BYTES) {
+      return recordUnsupportedMedia(
+        ctx,
+        `${pdfAttachment.LABEL} كبير (${pdfAttachment.formatBytes(declaredSize)})`,
+        `الملف كبير شوية (${pdfAttachment.formatBytes(declaredSize)}). أكبر حجم بنقدر نستقبله ٢٠ ميجا — قسّمه أو صغّره وابعته تاني 🙏`
+      );
+    }
+
+    let downloaded = null;
+    try {
+      downloaded = await downloadTelegramDocument(ctx, document.file_id);
+      // رجّعت null يعني البايتات مش بايتات PDF — الملف مالمسش القرص أصلًا
+      if (!downloaded) {
+        return recordUnsupportedMedia(ctx, '📎 ملف', 'الملف ده مكتوب عليه PDF بس محتواه حاجة تانية. ابعت الملف الأصلي 🙏');
+      }
+      await processIncomingMessage(bot, ctx, {
+        content: String(ctx.message.caption || '').trim(),
+        filePath: downloaded.filePath,
+        fileName: pdfAttachment.safeName(document.file_name),
+        fileSize: downloaded.size,
+        absolutePath: downloaded.absolutePath,
+        fileId: document.file_id,
+        telegramMessageId: ctx.message.message_id,
+        replyToTelegramMessageId: ctx.message.reply_to_message?.message_id ?? null,
+      });
+    } catch (error) {
+      if (downloaded?.absolutePath) fs.unlink(downloaded.absolutePath, () => {});
+      console.error('❌ Failed to receive an incoming document:', error.message);
+      await ctx.reply('تعذر حفظ الملف. حاول إرساله مرة أخرى.', STUDENT_MENU_OPTIONS);
+    }
   });
 
   bot.on('photo', async (ctx) => {
@@ -300,7 +407,7 @@ function registerMessageHandler(bot) {
     } catch (error) {
       if (downloaded?.absolutePath) fs.unlink(downloaded.absolutePath, () => {});
       console.error('❌ Failed to receive an incoming photo:', error.message);
-      await ctx.reply('تعذر حفظ الصورة. حاول إرسالها مرة أخرى.');
+      await ctx.reply('تعذر حفظ الصورة. حاول إرسالها مرة أخرى.', STUDENT_MENU_OPTIONS);
     }
   });
 }

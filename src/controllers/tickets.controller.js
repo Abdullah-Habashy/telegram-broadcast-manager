@@ -8,6 +8,11 @@ const path = require('path');
 const botManager = require('../bot/botManager');
 const push = require('../utils/push');
 const { withStudentMenu, STUDENT_MENU_OPTIONS } = require('../bot/studentMenu');
+const pdfAttachment = require('../utils/pdfAttachment');
+
+// **حد تيليجرام لـ sendPhoto، مش حدنا.** حد multer على مسار الرد أكبر من كده (حد الـPDF
+// ٢٠ ميجا) لأنه حد واحد للنسخة كلها، فالصورة بتتفحص بعد الرفع في `replyToTicket`
+const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 const VALID_STATUSES = ['new', 'in_progress', 'waiting_student', 'resolved', 'closed'];
 const VALID_PRIORITIES = ['low', 'normal', 'urgent'];
@@ -18,6 +23,29 @@ const VALID_CATEGORIES = ['general', 'registration', 'fees', 'results', 'platfor
 const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
 // شرط اللون البنفسجي — مشترك مع شاشة المتابعة ومع فلتر "مردش من أسبوع"
 const { SILENT_WEEK_SQL } = require('../utils/silentStudent');
+
+// معاينة الرسالة في سطر واحد: نصها، وإلا وصف مرفقها — بتتعرض في قايمة التذاكر وفي
+// اقتباس الرد في الاتجاهين وفي الرسايل المميّزة.
+//
+// **بقت دالة لأن الصيغة كانت مكتوبة بالإيد في ٥ استعلامات.** أول مرفق جديد (الـPDF)
+// كان لازم يتضاف ٥ مرات، وأي موضع يتنسى بيعرض للموظف سطر فاضي مكان الرسالة —
+// مش رسالة خطأ، فاضي، وهو مش عارف إن الطالب بعت حاجة أصلًا.
+//
+// الـalias لازم يكون جدول فيه `content` و`image_path` و`file_path` — يعني
+// `incoming_messages` أو `support_messages`
+//
+// **`withVoice` لـ `support_messages` بس.** `voice_path` مش موجود في `incoming_messages`
+// أصلًا (الطالب مابيبعتش صوت، الاتجاه واحد) فذكره هناك بيرمي خطأ عمود مش موجود.
+// وقبل الخيار ده كانت **٣٢١ رسالة صوتية على الإنتاج معاينتها فاضية** — الموظف بيفتح
+// قايمة التذاكر ويشوف سطر فاضي مكان آخر رسالة، مش عارف إننا بعتنا صوت
+function messagePreviewSql(alias, { withVoice = false } = {}) {
+  const voiceCase = withVoice
+    ? `\n         WHEN ${alias}.voice_path IS NOT NULL THEN '🎤 رسالة صوتية'`
+    : '';
+  return `COALESCE(NULLIF(${alias}.content, ''),
+    CASE WHEN ${alias}.image_path IS NOT NULL THEN '📷 صورة'
+         WHEN ${alias}.file_path IS NOT NULL THEN '${pdfAttachment.LABEL}'${voiceCase} END)`;
+}
 const BOOTCAMP_MARKS_JOIN_SQL = `
   LEFT JOIN LATERAL (
     SELECT ${BOOTCAMP_MARKS_SELECT_SQL}
@@ -90,6 +118,13 @@ const STUDENT_FILTER_JOIN_SQL = `
 
 function removeUploadedImage(file) {
   if (file?.path) fs.unlink(file.path, () => {});
+}
+
+// **مرفق الرد بقى نوعين (صورة أو PDF) وmulter بيحطهم في `req.files` مش `req.file`.**
+// أي مخرج من الدالة قبل ما الرسالة تتبعت لازم يمسح **اللي اترفع فعلًا** مش حقل بعينه —
+// الحقل المتنسي معناه ملف قاعد على القرص لرسالة اترفضت أصلًا
+function removeUploadedAttachments(req) {
+  Object.values(req.files || {}).flat().forEach(removeUploadedImage);
 }
 
 // restrictToUserId: بيتحدد بس للموظف (مش الأدمن) — يقصر التذاكر الظاهرة له على المسندة له تحديدًا
@@ -312,11 +347,11 @@ async function listTickets(req, res) {
        LEFT JOIN LATERAL (
          SELECT message.content, message.direction
          FROM (
-           SELECT COALESCE(NULLIF(im.content, ''), CASE WHEN im.image_path IS NOT NULL THEN '📷 صورة' END) AS content,
+           SELECT ${messagePreviewSql('im')} AS content,
              im.received_at AS occurred_at, 'incoming' AS direction
            FROM incoming_messages im WHERE im.contact_id = c.id
            UNION ALL
-           SELECT COALESCE(NULLIF(sm.content, ''), CASE WHEN sm.image_path IS NOT NULL THEN '📷 صورة' END) AS content,
+           SELECT ${messagePreviewSql('sm', { withVoice: true })} AS content,
              sm.sent_at AS occurred_at, 'outgoing' AS direction
            FROM support_messages sm WHERE sm.ticket_id = t.id AND sm.deleted_at IS NULL
          ) message
@@ -441,6 +476,9 @@ async function getTicket(req, res) {
           im.content, im.received_at AS occurred_at, NULL::text AS sender_name, im.image_path,
           NULL::int AS message_id, NULL::int AS sent_by, NULL::timestamptz AS edited_at,
           NULL::text AS voice_path, FALSE AS is_ai,
+          -- ⚠️ التلاتة دول مضافين في **نفس الترتيب** في فرع support_messages تحت.
+          -- اختلاف الترتيب بين فرعي UNION بيرمي خطأ نوع وقت التشغيل مش وقت الفحص
+          im.file_path, im.file_name, im.file_size,
           im.id AS incoming_message_id, im.flag, im.agent_reaction,
           NULL::int AS reply_to_incoming_message_id,
           -- الطالب عمل Reply: بندوّر على الرسالة الأصلية في الجدولين بالترتيب — رسايلنا الأول
@@ -455,14 +493,14 @@ async function getTicket(req, res) {
         FROM incoming_messages im
         JOIN tickets t ON t.contact_id = im.contact_id
         LEFT JOIN LATERAL (
-          SELECT COALESCE(NULLIF(sm.content, ''), CASE WHEN sm.image_path IS NOT NULL THEN '📷 صورة' END) AS preview
+          SELECT ${messagePreviewSql('sm', { withVoice: true })} AS preview
           FROM support_messages sm
           WHERE sm.ticket_id = t.id AND sm.telegram_message_id = im.reply_to_telegram_message_id
             AND sm.deleted_at IS NULL
           LIMIT 1
         ) replied_out ON im.reply_to_telegram_message_id IS NOT NULL
         LEFT JOIN LATERAL (
-          SELECT COALESCE(NULLIF(prev.content, ''), CASE WHEN prev.image_path IS NOT NULL THEN '📷 صورة' END) AS preview
+          SELECT ${messagePreviewSql('prev')} AS preview
           FROM incoming_messages prev
           WHERE prev.contact_id = im.contact_id AND prev.telegram_message_id = im.reply_to_telegram_message_id
           LIMIT 1
@@ -473,9 +511,10 @@ async function getTicket(req, res) {
           sm.content, sm.sent_at AS occurred_at, u.name AS sender_name, sm.image_path,
           sm.id AS message_id, sm.sent_by, sm.edited_at,
           sm.voice_path, sm.is_ai,
+          sm.file_path, sm.file_name, sm.file_size,
           NULL::int AS incoming_message_id, NULL::text AS flag, NULL::text AS agent_reaction,
           sm.reply_to_incoming_message_id,
-          COALESCE(NULLIF(replied.content, ''), CASE WHEN replied.image_path IS NOT NULL THEN '📷 صورة' END) AS reply_to_preview,
+          ${messagePreviewSql('replied')} AS reply_to_preview,
           'incoming'::text AS reply_to_direction,
           (sm.reply_to_incoming_message_id IS NOT NULL) AS is_reply
         FROM support_messages sm
@@ -699,18 +738,47 @@ async function notifyTicketAssignment(ticketId, userId) {
 async function replyToTicket(req, res) {
   const ticketId = Number(req.params.id);
   const content = String(req.body.content || '').trim();
-  if (!content && !req.file) {
-    removeUploadedImage(req.file);
-    return res.status(400).json({ error: 'اكتب نصًا أو أرفق صورة' });
+  // **`upload.fields` بيملا `req.files` و`req.file` بتفضل فاضية.** الحقل هو اللي بيقول
+  // للكنترولر يبعت بأنهي طريقة (sendPhoto / sendDocument) من غير ما يخمّن من الامتداد
+  const imageFile = req.files?.image?.[0] || null;
+  const documentFile = req.files?.file?.[0] || null;
+  const attachment = imageFile || documentFile;
+
+  if (!content && !attachment) {
+    removeUploadedAttachments(req);
+    return res.status(400).json({ error: 'اكتب نصًا أو أرفق صورة أو ملف PDF' });
   }
-  if ((!req.file && content.length > 4096) || (req.file && content.length > 1024)) {
-    removeUploadedImage(req.file);
-    return res.status(400).json({ error: req.file ? 'النص مع الصورة يجب ألا يتجاوز 1024 حرفًا' : 'الرد أطول من الحد المسموح' });
+  // **مرفق واحد بس.** تيليجرام بيبعت صورة أو ملف في الرسالة الواحدة، والنص بيبقى caption
+  // لواحد منهم — والاتنين مع بعض معناه رسالتين أو نص ضايع. multer بيرفض التانية بـ
+  // LIMIT_FILE_COUNT، والفحص هنا عشان الحد ده يفضل مكتوب في الكنترولر كمان
+  if (imageFile && documentFile) {
+    removeUploadedAttachments(req);
+    return res.status(400).json({ error: 'ابعت مرفق واحد بس — صورة أو ملف' });
+  }
+  // حد الـ caption في تيليجرام ١٠٢٤ حرف، والرسالة النصية لوحدها ٤٠٩٦
+  if ((!attachment && content.length > 4096) || (attachment && content.length > 1024)) {
+    removeUploadedAttachments(req);
+    return res.status(400).json({
+      error: attachment ? 'النص مع المرفق يجب ألا يتجاوز 1024 حرفًا' : 'الرد أطول من الحد المسموح',
+    });
+  }
+  // **حد الصورة أصغر من حد multer عن قصد.** multer بياخد حد واحد للنسخة كلها وهو حد
+  // الـPDF، وتيليجرام مابيقبلش صورة أكبر من ١٠ ميجا في sendPhoto — فلو ماتفحصتش هنا
+  // كانت بترفع كاملة وبعدين تفشل عند تيليجرام برسالة إنجليزية مبهمة
+  if (imageFile && imageFile.size > IMAGE_MAX_BYTES) {
+    removeUploadedAttachments(req);
+    return res.status(413).json({ error: 'الصورة أكبر من ١٠ ميجا. صغّرها أو ابعتها ملف PDF.' });
+  }
+  // **النوع المعلَن والامتداد الاتنين جايين من متصفح الموظف.** الملف على القرص خلاص،
+  // فالحقيقة الوحيدة هي بايتاته — وملف مش PDF بيوصل تيليجرام ويفشل هناك
+  if (documentFile && !pdfAttachment.isPdfOnDisk(documentFile.path)) {
+    removeUploadedAttachments(req);
+    return res.status(400).json({ error: 'الملف ده مكتوب عليه PDF بس محتواه حاجة تانية.' });
   }
 
   const bot = botManager.getBot();
   if (!bot) {
-    removeUploadedImage(req.file);
+    removeUploadedAttachments(req);
     return res.status(503).json({ error: 'البوت غير متصل حاليًا' });
   }
 
@@ -724,7 +792,7 @@ async function replyToTicket(req, res) {
       [ticketId, req.session.userId]
     );
     if (!ticketResult.rows[0]) {
-      removeUploadedImage(req.file);
+      removeUploadedAttachments(req);
       return res.status(404).json({ error: 'التذكرة غير موجودة' });
     }
 
@@ -792,24 +860,44 @@ async function replyToTicket(req, res) {
     const replyOptions = withStudentMenu(replyToTelegramMessageId
       ? { reply_parameters: { message_id: Number(replyToTelegramMessageId), allow_sending_without_reply: true } }
       : {});
-    const localImagePath = req.file ? `uploads/support/${req.file.filename}` : null;
-    let imagePath = localImagePath;
-    const telegramMessage = req.file
-      ? await bot.telegram.sendPhoto(
-          ticketResult.rows[0].chat_id,
-          { source: path.join(__dirname, '..', '..', 'public', localImagePath) },
-          content ? { caption: content, ...replyOptions } : replyOptions
-        )
-      : await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, content, replyOptions);
+    const localAttachmentPath = attachment ? `uploads/support/${attachment.filename}` : null;
+    const absoluteAttachmentPath = localAttachmentPath
+      ? path.join(__dirname, '..', '..', 'public', localAttachmentPath)
+      : null;
+    // الاسم الأصلي للعرض والتنزيل بس — الملف على القرص اسمه UUID، والاسم ده بيكتبه
+    // الموظف فبيتنضّف قبل أي استخدام
+    const documentName = documentFile ? pdfAttachment.safeName(documentFile.originalname) : null;
+
+    let attachmentPath = localAttachmentPath;
+    let telegramMessage;
+    if (imageFile) {
+      telegramMessage = await bot.telegram.sendPhoto(
+        ticketResult.rows[0].chat_id,
+        { source: absoluteAttachmentPath },
+        content ? { caption: content, ...replyOptions } : replyOptions
+      );
+    } else if (documentFile) {
+      // `filename` هو اللي الطالب بيشوفه في تيليجرام — من غيره بيشوف الـUUID
+      telegramMessage = await bot.telegram.sendDocument(
+        ticketResult.rows[0].chat_id,
+        { source: absoluteAttachmentPath, filename: documentName },
+        content ? { caption: content, ...replyOptions } : replyOptions
+      );
+    } else {
+      telegramMessage = await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, content, replyOptions);
+    }
     telegramSent = true;
 
     // **الرفع بعد الإرسال مش قبله.** تيليجرام بياخد الملف من القرص، فنقله قبل الإرسال
-    // بيكسر الإرسال نفسه. وبعد ما الرسالة وصلت الطالب، الصورة بقت أرشيف — مكانها سحابة
-    if (localImagePath) imagePath = await storeFile(path.join(__dirname, '..', '..', 'public', localImagePath), localImagePath);
+    // بيكسر الإرسال نفسه. وبعد ما الرسالة وصلت الطالب، المرفق بقى أرشيف — مكانه سحابة
+    if (localAttachmentPath) attachmentPath = await storeFile(absoluteAttachmentPath, localAttachmentPath);
     const result = await pool.query(
-      `INSERT INTO support_messages (ticket_id, sent_by, content, image_path, telegram_message_id, reply_to_incoming_message_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [ticketId, req.session.userId, content, imagePath, telegramMessage.message_id, replyToIncomingMessageId]
+      `INSERT INTO support_messages (ticket_id, sent_by, content, image_path, telegram_message_id,
+         reply_to_incoming_message_id, file_path, file_name, file_size)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [ticketId, req.session.userId, content, imageFile ? attachmentPath : null, telegramMessage.message_id,
+        replyToIncomingMessageId, documentFile ? attachmentPath : null, documentName,
+        documentFile ? documentFile.size : null]
     );
     await pool.query(
       `UPDATE tickets SET
@@ -821,7 +909,7 @@ async function replyToTicket(req, res) {
     );
     res.json(result.rows[0]);
   } catch (error) {
-    if (!telegramSent) removeUploadedImage(req.file);
+    if (!telegramSent) removeUploadedAttachments(req);
     console.error('❌ Failed to reply to ticket:', error.message);
     res.status(500).json({ error: 'فشل إرسال الرد إلى تيليجرام' });
   }
@@ -1043,7 +1131,8 @@ async function listFlaggedMessages(req, res) {
     );
     const listParams = [...params, limit, offset];
     const result = await pool.query(
-      `SELECT im.id, im.content, im.image_path, im.received_at, im.flag,
+      `SELECT im.id, im.content, im.image_path, im.file_path, im.file_name, im.file_size,
+        im.received_at, im.flag,
         t.id AS ticket_id, c.first_name, c.last_name, c.telegram_username, c.chat_id,
         tafra_match.name AS tafra_name
        FROM incoming_messages im
