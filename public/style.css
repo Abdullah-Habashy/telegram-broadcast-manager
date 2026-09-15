@@ -352,6 +352,11 @@ tr:last-child td { border-bottom: none; }
 .quiz-appeal-note .card-desc { color: inherit; opacity: .8; }
 .quiz-appeals-banner { border: 1px solid var(--warning); background: var(--warning-tint); }
 
+/* إجابة الطالب المصوّرة في شاشة التصحيح — بحجم مقروء، والضغط بيفتحها كاملة.
+   الموظف بيراجع حكم النموذج على صورة، فالصورة الصغيرة بتخليه يعتمد من غير ما يقرا */
+.quiz-answer-image { display: block; max-width: 100%; max-height: 420px; border-radius: 8px;
+  border: 1px solid var(--border); margin-top: 4px; object-fit: contain; }
+
 /* الوميض بعد التنقّل: الموظف لازم يعرف وصل لأنهي كارت وسط ٤٥ كارت متشابهين */
 .quiz-answer-card.flash { animation: quiz-answer-flash 1.6s ease-out; }
 @keyframes quiz-answer-flash {

@@ -269,6 +269,24 @@ body.qz-body {
   border-radius: 999px; background: var(--qz-warn); color: #fff; font-size: 11px;
   font-weight: 700; vertical-align: middle; }
 
+/* ---------- إجابة مصوّرة ----------
+   الطالب بيحل على ورق وبيصوّر: أسرع من الكتابة على الموبايل، والمعادلات والرسومات
+   مالهاش طريقة تتكتب أصلًا. الكتابة والصورة بديلين — واحد بس بيبان في المرة */
+.qz-essay-alt { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.qz-essay-or { color: var(--qz-muted); font-size: 13px; flex: none; }
+.qz-upload-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
+  border: 1px dashed var(--qz-accent); border-radius: 10px; color: var(--qz-accent);
+  font-weight: 600; font-size: 14px; cursor: pointer; }
+.qz-upload-btn:active { background: var(--qz-accent-soft); }
+.qz-essay-image { margin-top: 10px; }
+.qz-essay-image img { display: block; max-width: 100%; border-radius: 10px; border: 1px solid var(--qz-line); }
+.qz-essay-image-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.qz-essay-image-actions .qz-btn { width: auto; padding: 6px 14px; font-size: 13px; }
+.qz-essay-image-state { color: var(--qz-muted); font-size: 13px; }
+/* نفس الصورة في ورقة التصحيح — الطالب لازم يشوف اللي المصحّح شافه */
+.qz-rv-answer-image { display: block; max-width: 100%; border-radius: 10px;
+  border: 1px solid var(--qz-line); margin: 6px 0 10px; }
+
 /* الورقة بتتقري كجُمل موجّهة للطالب: "إنت اخترت كذا" وبعدها "والصح كذا". السطر التاني
    بلون الصح عشان العين تمسكه من غير ما نحتاج نكتب عليه عنوان */
 .qz-rv-say {

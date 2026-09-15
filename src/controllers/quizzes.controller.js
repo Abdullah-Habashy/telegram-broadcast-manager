@@ -608,7 +608,10 @@ async function getAttempt(req, res) {
       points: Number(row.points),
       options: normalizeOptions(row.options),
       image: row.image_path || null,
-      answer_image: row.answer_image_path || null,
+      // نفس تطبيع quizPublic: المسار نسبي في القاعدة وممكن يبقى رابط كامل
+      answer_image: row.answer_image_path
+        ? (/^https?:\/\//i.test(row.answer_image_path) ? row.answer_image_path : `/${row.answer_image_path}`)
+        : null,
       is_part: row.parent_id !== null,
       awarded_points: row.awarded_points === null ? null : Number(row.awarded_points),
       points_at_appeal: row.points_at_appeal === null ? null : Number(row.points_at_appeal),

@@ -10234,10 +10234,14 @@ ${reply.content}` : reply.content;
           const optionText = (option) => (option
             ? escapeHtml(option.text) + (option.image ? ' 🖼️' : '')
             : '—');
+          // الإجابة المصوّرة بتتعرض للموظف بحجم كامل: هو بيراجع حكم النموذج على صورة
+          // ما شافهاش، والصورة الصغيرة بتخليه يعتمد من غير ما يقرا
           const studentText = isMcq
             ? (answer.selected_option === null || answer.selected_option === undefined
               ? '<i>ماختارش</i>' : optionText(options[answer.selected_option]))
-            : (answer.essay_text ? escapeHtml(answer.essay_text) : '<i>ساب السؤال فاضي</i>');
+            : (answer.answer_image
+              ? `<a href="${escapeHtml(answer.answer_image)}" target="_blank" rel="noopener"><img class="quiz-answer-image" src="${escapeHtml(answer.answer_image)}" alt="إجابة الطالب المصوّرة"></a>`
+              : (answer.essay_text ? escapeHtml(answer.essay_text) : '<i>ساب السؤال فاضي</i>'));
           const reference = isMcq
             ? optionText(options[answer.correct_option])
             : escapeHtml(answer.reference_answer);

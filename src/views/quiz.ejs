@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260915e" />
+  <link rel="stylesheet" href="/quiz.css?v=20260915f" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -265,7 +265,24 @@
     // الاختيار ممكن يكون نص أو صورة أو الاتنين
     function answerField(question) {
       if (question.kind !== 'mcq') {
-        return '<textarea class="qz-textarea" data-q="' + question.id + '" placeholder="اكتب إجابتك هنا..."></textarea>';
+        // **كتابة أو صورة، مش الاتنين.** الطالب بيحل على ورق في الكيمياء (معادلات
+        // ورسومات مالهاش طريقة تتكتب في textarea)، والاختيار بينهم بيبان في الشاشة:
+        // أول ما يرفع صورة الكتابة بتتخفي، وأول ما يشيلها بترجع
+        return '<div class="qz-essay-answer" data-answer="' + question.id + '">'
+          + '<textarea class="qz-textarea" data-q="' + question.id + '" placeholder="اكتب إجابتك هنا..."></textarea>'
+          + '<div class="qz-essay-alt" data-alt="' + question.id + '">'
+          + '<span class="qz-essay-or">أو</span>'
+          + '<label class="qz-upload-btn">📷 صوّر إجابتك من الورقة'
+          + '<input type="file" accept="image/jpeg,image/png" capture="environment" data-img="'
+          + question.id + '" style="display:none" /></label>'
+          + '</div>'
+          + '<div class="qz-essay-image" data-preview="' + question.id + '" style="display:none">'
+          + '<img alt="إجابتك المصوّرة" />'
+          + '<div class="qz-essay-image-actions">'
+          + '<span class="qz-essay-image-state"></span>'
+          + '<button type="button" class="qz-btn ghost" data-remove-img="' + question.id + '">شيل الصورة وارجع اكتب</button>'
+          + '</div></div>'
+          + '</div>';
       }
       // **القيمة رقم الاختيار الأصلي مش مكانه في القايمة.** الترتيب ممكن يكون متخلط،
       // والرقم اللي بيتبعت للسيرفر لازم يفضل معناه واحد قبل الخلط وبعده
@@ -406,7 +423,11 @@
           return;
         }
         var textarea = document.querySelector('textarea[data-q="' + question.id + '"]');
-        if (textarea && textarea.value.trim()) done.push(question.id);
+        // **الصورة إجابة زي الكتابة بالظبط.** من غير السطر ده الطالب اللي صوّر كل
+        // إجاباته بيشوف «٠ من ١٥» وشريط تقدّم فاضي، ويفتكر إن مفيش حاجة اتحفظت
+        var preview = document.querySelector('[data-preview="' + question.id + '"]');
+        var hasImage = preview && preview.style.display !== 'none' && preview.querySelector('img').getAttribute('src');
+        if ((textarea && textarea.value.trim()) || hasImage) done.push(question.id);
       });
       return done;
     }
@@ -435,6 +456,10 @@
           var textarea = document.querySelector('textarea[data-q="' + questionId + '"]');
           if (textarea) textarea.value = answer.essay_text;
         }
+        // الصورة المرفوعة قبل كده بترجع مكانها، والكتابة بتفضل مخفية زي ما سابها
+        if (answer.answer_image) {
+          showEssayImage(Number(questionId), answer.answer_image, 'محفوظة');
+        }
       });
     }
 
@@ -454,6 +479,21 @@
         // الخروج من الخانة أوضح لحظة للحفظ: الطالب خلص السؤال ده وبيروح للي بعده
         textarea.addEventListener('blur', function () { saveProgress(); });
       });
+      // رفع الصورة وشيلها. التفويض على الحاوية لأن الأسئلة بتتولّد
+      var questionsBox = el('qz-questions');
+      questionsBox.addEventListener('change', function (event) {
+        var input = event.target.closest('[data-img]');
+        if (!input || !input.files || !input.files[0]) return;
+        var questionId = Number(input.getAttribute('data-img'));
+        uploadEssayImage(questionId, input.files[0]);
+        // بيتفضّى عشان الطالب يقدر يرفع نفس الملف تاني لو المحاولة الأولى فشلت
+        input.value = '';
+      });
+      questionsBox.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-remove-img]');
+        if (button) removeEssayImage(Number(button.getAttribute('data-remove-img')));
+      });
+
       // **٤٥ ثانية مش ١٥.** الحفظ عند الخروج من كل خانة شغّال برضه، فده شبكة أمان
       // للطالب اللي قاعد في نفس السؤال بيكتب. ١٥ ثانية × آلاف الطلاب = تلات أضعاف
       // الحِمل على السيرفر مقابل ٣٠ ثانية كتابة إضافية في أسوأ حالة
@@ -735,9 +775,13 @@
     // المقالي: كلامه هو، وبعده الصح. الطالب محتاج يقارن بنفسه — الدرجة لوحدها
     // مابتعلّمهوش حاجة
     function reviewEssay(answer, verdict) {
-      var body = answer.essay_text
-        ? say('إنت كتبت:') + '<div class="qz-rv-text">' + esc(answer.essay_text) + '</div>'
-        : say('إنت سيبت السؤال ده فاضي.');
+      // الإجابة المصوّرة بتتعرض زي ما هي — الطالب لازم يشوف اللي المصحّح شافه بالظبط
+      var body = answer.answer_image
+        ? say('إجابتك اللي صوّرتها:')
+          + '<img class="qz-rv-answer-image" src="' + esc(answer.answer_image) + '" alt="إجابتك المصوّرة" />'
+        : answer.essay_text
+          ? say('إنت كتبت:') + '<div class="qz-rv-text">' + esc(answer.essay_text) + '</div>'
+          : say('إنت سيبت السؤال ده فاضي.');
       if (answer.reference_answer) {
         // اللي جاوب صح بياخدها كـ"إجابة نموذجية" مش "الصح" — هو أصلًا كان صح، والعنوان
         // اللي بيقول "الصح" فوق إجابة اتحسبت كاملة بيلخبطه
@@ -878,6 +922,106 @@
       syncReviewToggle();
       if (reviewShown) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+    // ---------- صورة الإجابة المقالية ----------
+    //
+    // **الضغط في المتصفح مش على السيرفر.** صورة من كاميرا موبايل حديث ٤–٨ ميجا،
+    // والنموذج بيقبل ٥ ميجا بعد الـbase64 (اللي بيكبّر الحجم ٣٣٪). والأهم إن الطالب
+    // على نت موبايل: رفع ٦ ميجا ممكن ياخد دقيقة ويفشل، و٦٠٠ كيلو بتوصل في ثواني.
+    // ١٦٠٠ بكسل كفاية تمامًا لقراءة خط اليد.
+    var IMAGE_MAX_SIDE = 1600;
+    var IMAGE_QUALITY = 0.85;
+
+    function compressImage(file) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          var scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(img.width, img.height));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function (blob) {
+            // **الفشل بيرجّع الملف الأصلي مش بيرمي.** متصفح قديم مايعرفش toBlob
+            // مايمنعش الطالب من تسليم إجابته — السيرفر حده ١٠ ميجا فأغلب الصور هتعدّي
+            resolve(blob || file);
+          }, 'image/jpeg', IMAGE_QUALITY);
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          reject(new Error('مقدرناش نقرا الصورة — جرّب صورة تانية'));
+        };
+        img.src = url;
+      });
+    }
+
+    function essayImageNodes(questionId) {
+      return {
+        wrap: document.querySelector('[data-answer="' + questionId + '"]'),
+        textarea: document.querySelector('textarea[data-q="' + questionId + '"]'),
+        alt: document.querySelector('[data-alt="' + questionId + '"]'),
+        preview: document.querySelector('[data-preview="' + questionId + '"]'),
+      };
+    }
+
+    function showEssayImage(questionId, src, stateText) {
+      var n = essayImageNodes(questionId);
+      if (!n.preview) return;
+      if (src) n.preview.querySelector('img').src = src;
+      n.preview.querySelector('.qz-essay-image-state').textContent = stateText || '';
+      n.preview.style.display = '';
+      if (n.textarea) n.textarea.style.display = 'none';
+      if (n.alt) n.alt.style.display = 'none';
+    }
+
+    function hideEssayImage(questionId) {
+      var n = essayImageNodes(questionId);
+      if (!n.preview) return;
+      n.preview.style.display = 'none';
+      n.preview.querySelector('img').removeAttribute('src');
+      if (n.textarea) n.textarea.style.display = '';
+      if (n.alt) n.alt.style.display = '';
+    }
+
+    function uploadEssayImage(questionId, file) {
+      showEssayImage(questionId, URL.createObjectURL(file), 'بيترفع...');
+      return compressImage(file).then(function (blob) {
+        var form = new FormData();
+        form.append('image', blob, 'answer.jpg');
+        form.append('attempt_key', state.key);
+        form.append('question_id', String(questionId));
+        return fetch(base + '/answer-image', { method: 'POST', body: form })
+          .then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+              if (!response.ok) throw new Error(data.error || 'مقدرناش نرفع الصورة');
+              return data;
+            });
+          });
+      }).then(function (data) {
+        showEssayImage(questionId, data.path, 'اتحفظت ✅');
+        // الصورة بديل للكتابة، فالنص بيتفضّى — والسيرفر عامل نفس الحاجة في القاعدة
+        var n = essayImageNodes(questionId);
+        if (n.textarea) n.textarea.value = '';
+        state.dirty = true;
+        updateProgress();
+      }).catch(function (error) {
+        hideEssayImage(questionId);
+        showError('qz-exam-error', error.message);
+      });
+    }
+
+    function removeEssayImage(questionId) {
+      return fetch(base + '/answer-image/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attempt_key: state.key, question_id: questionId }),
+      }).then(function () {
+        hideEssayImage(questionId);
+        updateProgress();
+      });
+    }
+
     // ---------- مربع التظلّم ----------
     //
     // **المربع بيعرض كل الأسئلة القابلة للتظلم مش اللي اتفتح منه بس.** الطالب اللي

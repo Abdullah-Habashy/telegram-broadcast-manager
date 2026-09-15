@@ -197,7 +197,10 @@ async function loadReviewForAttempt(attemptId, quizId) {
     is_correct: row.is_correct,
     verdict: row.ai_verdict,
     reason: row.graded_by === 'auto' ? row.ai_reason : null,
-    answer_image: row.answer_image_path || null,
+    // **الشرطة البادئة هنا مش في الواجهة.** المسار في القاعدة نسبي
+    // (`uploads/...`) وممكن يبقى رابط كامل لو التخزين السحابي اتفعّل — فالتطبيع
+    // بيحصل مرة واحدة في السيرفر بدل ما كل شاشة تخمّن
+    answer_image: answerImageUrl(row.answer_image_path),
     // حالة التظلم بتترجع مع السؤال عشان الصفحة تعرف تعرض «اتظلمت» بدل الزرار — من
     // غيرها الطالب بيدوس تاني وياخد رفض مش مفهوم
     appeal: row.appeal_status || null,
@@ -325,11 +328,21 @@ function attemptPayload(attempt, quiz, questions, review) {
   };
 }
 
+// المسار في القاعدة نسبي، وبيبقى رابط كامل لو التخزين السحابي اتفعّل. نفس منطق
+// `attachmentUrl` في اللوحة — الشاشة مالهاش دعوة تفرّق بين الاتنين
+function answerImageUrl(stored) {
+  if (!stored) return null;
+  return /^https?:\/\//i.test(stored) ? stored : `/${stored}`;
+}
+
 async function loadSavedAnswers(attemptId) {
   const { rows } = await pool.query(
-    'SELECT question_id, selected_option, essay_text FROM quiz_answers WHERE attempt_id = $1', [attemptId]);
+    'SELECT question_id, selected_option, essay_text, answer_image_path FROM quiz_answers WHERE attempt_id = $1', [attemptId]);
   return Object.fromEntries(rows.map((row) => [row.question_id, {
     selected_option: row.selected_option, essay_text: row.essay_text,
+    // **لازمة للاستكمال:** الطالب اللي رفع صورة وقفل الصفحة ورجع محتاج يلاقيها،
+    // وإلا بيفتكر إنها ضاعت ويرفعها تاني
+    answer_image: answerImageUrl(row.answer_image_path),
   }]));
 }
 
