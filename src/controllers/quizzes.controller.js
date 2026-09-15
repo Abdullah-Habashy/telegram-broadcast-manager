@@ -41,7 +41,7 @@ function normalizeSlug(raw) {
 async function listQuizzes(req, res) {
   const { rows } = await pool.query(
     `SELECT q.id, q.title, q.description, q.token, q.slug, q.time_limit_minutes, q.is_open,
-            q.show_score_to_student, q.show_answers_to_student, q.answers_after_close,
+            q.show_score_to_student, q.show_answers_to_student, q.answers_after_close, q.allow_appeals,
             q.shuffle_questions, q.shuffle_options, q.target_bootcamp_id, q.max_attempts, q.created_at,
             (SELECT COUNT(*)::int FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS question_count,
             (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a.quiz_id = q.id AND a.submitted_at IS NOT NULL) AS submitted_count,
@@ -185,10 +185,12 @@ async function createQuiz(req, res) {
     req.body?.show_score_to_student !== false, req.body?.show_answers_to_student !== false,
     normalizeBootcampId(req.body?.target_bootcamp_id),
     req.body?.answers_after_close === true,
+    // مفتوح إلا لو اتقفل صراحةً — نفس منطق `show_answers_to_student`
+    req.body?.allow_appeals !== false,
     req.body?.shuffle_questions === true, req.body?.shuffle_options === true,
     normalizeMaxAttempts(req.body?.max_attempts), req.session.userId];
-  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, show_answers_to_student, target_bootcamp_id, answers_after_close, shuffle_questions, shuffle_options, max_attempts, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`;
+  const insert = `INSERT INTO quizzes (title, description, token, slug, time_limit_minutes, show_score_to_student, show_answers_to_student, target_bootcamp_id, answers_after_close, allow_appeals, shuffle_questions, shuffle_options, max_attempts, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`;
 
   // الموظف اختار الرابط بنفسه؟ التعارض بيترد عليه برسالة. مااخترش؟ بنولّد كود ونعيد
   // المحاولة لحد ما يعدّي — الاحتمال ضعيف بس السكوت عنه معناه اختبار من غير رابط مختصر
@@ -229,8 +231,9 @@ async function updateQuiz(req, res) {
               is_open = $4, show_score_to_student = $5, show_answers_to_student = $6,
               target_bootcamp_id = $7, answers_after_close = $8,
               shuffle_questions = $9, shuffle_options = $10, max_attempts = $11,
-              slug = COALESCE($12, slug), updated_at = NOW()
-       WHERE id = $13 RETURNING *`,
+              allow_appeals = $12,
+              slug = COALESCE($13, slug), updated_at = NOW()
+       WHERE id = $14 RETURNING *`,
       [title, String(req.body?.description || '').trim() || null,
         Number.isFinite(timeLimit) && timeLimit > 0 ? timeLimit : null,
         req.body?.is_open !== false, req.body?.show_score_to_student !== false,
@@ -238,7 +241,12 @@ async function updateQuiz(req, res) {
         normalizeBootcampId(req.body?.target_bootcamp_id),
         req.body?.answers_after_close === true,
         req.body?.shuffle_questions === true, req.body?.shuffle_options === true,
-        normalizeMaxAttempts(req.body?.max_attempts), requested, quizId]));
+        normalizeMaxAttempts(req.body?.max_attempts),
+        // ⚠️ **لازم يتبعت في كل طلب تحديث.** الحقل اللي مش في الطلب بياخد الافتراضي
+        // (مفتوح) مش قيمته الحالية — نفس العطل اللي حصل مع `show_answers_to_student`
+        // لما زرار القفل والفتح كان بيرجّعه لافتراضيه
+        req.body?.allow_appeals !== false,
+        requested, quizId]));
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'الرابط المختصر ده مستخدم في اختبار تاني — اختار غيره' });
     throw error;

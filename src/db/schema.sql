@@ -1125,6 +1125,15 @@ ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS show_answers_to_student BOOLEAN NOT
 -- تصحيح، أول ما يتقفل يبان للكل مرة واحدة. بيشتغل فوق show_answers_to_student مش بدالها
 ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS answers_after_close BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- ---------- فتح وقفل التظلّم لكل اختبار ----------
+--
+-- **لكل اختبار مش إعداد عام:** الاختبار اللي خلص ودرجاته اتعلنت مايفضلش مفتوح للتظلم
+-- للأبد، والاختبار الجديد بيبدأ مفتوح. إعداد واحد للنظام كله كان معناه إن قفل القديم
+-- بيقفل الجديد معاه.
+--
+-- الافتراضي `TRUE`: الاختبارات الموجودة بتفضل مفتوحة زي ما هي، والقفل قرار صريح.
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS allow_appeals BOOLEAN NOT NULL DEFAULT TRUE;
+
 -- **عدد المحاولات المسموحة للطالب الواحد.** ١ = المحاولة الواحدة اللي كانت هي القاعدة
 -- الوحيدة قبل كده، وهي الافتراضي — فأي اختبار قديم أو جديد بيفضل بمحاولة واحدة لحد ما
 -- حد يغيّرها بإيده

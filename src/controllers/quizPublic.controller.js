@@ -260,7 +260,12 @@ async function appealLimit() {
 // **السقف بيترجع مع أي رد فيه ورقة تصحيح.** الصفحة محتاجة تعرفه قبل ما الطالب يختار،
 // مش تكتشفه من رسالة رفض بعد ما يكون علّم على عشرة أسئلة وكتب سببه
 async function payloadWithAppeals(attempt, quiz, questions, review) {
-  return { ...attemptPayload(attempt, quiz, questions, review), appeal_limit: await appealLimit() };
+  return {
+    ...attemptPayload(attempt, quiz, questions, review),
+    appeal_limit: await appealLimit(),
+    // الصفحة بتخفي الزرار على أساسها. **مش وسيلة الحماية** — دي في السيرفر
+    appeals_open: quiz.allow_appeals !== false,
+  };
 }
 
 // التصحيح بيتحمّل لما يكون فيه تصحيح فعلًا: المحاولة اتسلّمت، والتصحيح خلص (graded) أو خلص
@@ -483,7 +488,8 @@ async function createAttempt(quiz, studentId, studentName, phone, attemptNo) {
 // المحاولة بتتعرف بمفتاحها مش بالتليفون: الرقم مش سر، والمفتاح بيتولّد مرة واحدة ومابيتعرضش
 async function loadOpenAttempt(ref, attemptKey) {
   const { rows } = await pool.query(
-    `SELECT a.id, a.quiz_id, a.submitted_at, a.deadline_at, q.is_open, q.show_score_to_student, q.title
+    `SELECT a.id, a.quiz_id, a.submitted_at, a.deadline_at, q.is_open, q.show_score_to_student,
+            q.title, q.allow_appeals
      FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id
      WHERE (LOWER(q.slug) = LOWER($1) OR q.token = $1) AND a.attempt_key = $2`, [ref, attemptKey]);
   return rows[0] || null;
@@ -613,7 +619,8 @@ function kickGradingQueue() {
 async function getResult(req, res) {
   const { rows } = await pool.query(
     `SELECT a.id, a.quiz_id, a.submitted_at, a.grading_status, a.score, a.max_score,
-            q.show_score_to_student, q.show_answers_to_student, q.answers_after_close, q.is_open
+            q.show_score_to_student, q.show_answers_to_student, q.answers_after_close, q.is_open,
+            q.allow_appeals
      FROM quiz_attempts a JOIN quizzes q ON q.id = a.quiz_id
      WHERE (LOWER(q.slug) = LOWER($1) OR q.token = $1) AND a.attempt_key = $2`,
     [req.params.ref, req.query?.attempt_key || '']);
@@ -641,6 +648,7 @@ async function getResult(req, res) {
     review,
     // نفس السبب: الصفحة اللي وصلها التصحيح من هنا محتاجة السقف زي اللي وصلها من start
     appeal_limit: await appealLimit(),
+    appeals_open: attempt.allow_appeals !== false,
   });
 }
 
@@ -753,6 +761,11 @@ async function submitAppeal(req, res) {
   const attempt = await loadOpenAttempt(req.params.ref, req.body?.attempt_key);
   if (!attempt) return res.status(404).json({ error: 'المحاولة مش موجودة' });
   if (!attempt.submitted_at) return res.status(409).json({ error: 'سلّم ورقتك الأول' });
+  // **القفل بيتفحص في السيرفر مش في الواجهة بس.** إخفاء الزرار بيمنع الضغط، مش الطلب —
+  // والطالب اللي فاتح الصفحة من قبل القفل لسه عنده الزرار على شاشته
+  if (attempt.allow_appeals === false) {
+    return res.status(403).json({ error: 'التظلم مقفول على الاختبار ده' });
+  }
 
   const requested = Array.isArray(req.body?.question_ids) ? req.body.question_ids : [];
   const ids = [...new Set(requested.map(Number).filter((n) => Number.isInteger(n) && n > 0))];

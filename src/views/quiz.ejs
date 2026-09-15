@@ -166,7 +166,7 @@
     // **بيانات التظلم بتتخزّن وقت رسم الورقة.** `labels` بتربط رقم السؤال في القاعدة
     // بالرقم اللي الطالب شايفه («سؤال ٣» / «سؤال ٣ فرع ب») — المربع بيعرض اللي على
     // الشاشة، ورقم القاعدة مالوش أي معنى عند الطالب
-    var appeals = { review: [], labels: {}, limit: 3 };
+    var appeals = { review: [], labels: {}, limit: 3, open: true };
 
     // حالة عرض ورقة التصحيح. `false` أول ما الصفحة تفتح — الطالب بيشوف درجته الأول
     // وبيقرر هو يراجع امتى. **معرّف هنا مش جنب `toggleReview`** لأن `renderReview`
@@ -632,6 +632,7 @@
 
     function renderResult(data) {
       if (data.appeal_limit) appeals.limit = data.appeal_limit;
+      if (data.appeals_open !== undefined) appeals.open = data.appeals_open !== false;
       el('qz-gate').style.display = 'none';
       el('qz-exam').style.display = 'none';
       el('qz-result').style.display = '';
@@ -821,6 +822,8 @@
       // المعاينة بيبقى `/quiz-preview/:id` فالتقديم كان هيروح لمسار مش موجود ويرجع
       // ٤٠٤ مبهم. الحالة بتفضل ظاهرة (⏳ / ✔️) عشان يشوف اللي الطالب شايفه
       if (window.QZ_PREVIEW && !answer.appeal) return '';
+      // مقفول: الزرار بيختفي، بس الحالة بتفضل ظاهرة للطالب اللي اتظلم قبل القفل
+      if (!appeals.open && !answer.appeal) return '';
       if (answer.appeal === 'open') {
         return '<div class="qz-appeal-mark">⏳ تظلمت من السؤال ده — الفريق هيراجعه</div>'
           + '<button class="qz-btn ghost qz-appeal-btn" type="button" data-appeal="'
@@ -1044,6 +1047,8 @@
       if (!cta || !button) return;
       // في معاينة الأدمن مفيش تقديم — بس الحالة بتفضل ظاهرة في الورقة نفسها
       if (window.QZ_PREVIEW) { cta.style.display = 'none'; return; }
+      // الأدمن قافل التظلم على الاختبار ده
+      if (!appeals.open) { cta.style.display = 'none'; return; }
 
       var open = openAppealCount();
       var candidates = appealCandidates().length;
@@ -1124,6 +1129,7 @@
       }).then(function (data) {
         if (data && data.review) {
           if (data.appeal_limit) appeals.limit = data.appeal_limit;
+          if (data.appeals_open !== undefined) appeals.open = data.appeals_open !== false;
           renderReview(data.review);
           renderAppealCta();
         }
