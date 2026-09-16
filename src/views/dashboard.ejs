@@ -915,6 +915,7 @@
                 <button type="button" class="btn btn-primary btn-sm" id="quiz-stats-btn" style="width:auto">📊 إحصائيات الأسئلة</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-missing-btn" style="width:auto">🔎 مين ماحلّش</button>
                 <a class="btn btn-ghost btn-sm" id="quiz-export-btn" style="width:auto; text-decoration:none" href="#">⬇️ تصدير Excel</a>
+                <button type="button" class="btn btn-ghost btn-sm" id="quiz-import-sheet-btn" style="width:auto">⬆️ استورد إجابات من شيت</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-regrade-all-btn" style="width:auto">أعد تصحيح كل المحاولات</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
               </div>
@@ -927,6 +928,10 @@
           <div class="card" id="quiz-stats" style="display:none"></div>
           <!-- ===== المتخلّفين عن الاختبار ===== -->
           <div class="card" id="quiz-missing" style="display:none"></div>
+          <!-- ===== استيراد إجابات من شيت =====
+               الاختبار اتحل على Google Forms والإجابات في ملف — الاستيراد بيجيبها للنظام
+               عشان التصحيح الآلي والتظلم يشتغلوا عليها زي أي ورقة -->
+          <div class="card" id="quiz-import-sheet" style="display:none"></div>
           <div class="card" id="quiz-attempt-detail" style="display:none"></div>
         </div>
       </section>
@@ -10453,6 +10458,174 @@ ${reply.content}` : reply.content;
         <span class="quiz-legend-item wrong">غلط</span>
         <span class="quiz-legend-item pending">مستني تصحيح</span>
       </div>`;
+
+    // ---------- استيراد إجابات من شيت ----------
+    //
+    // **الملف بيتخزّن في المتصفح بين الخطوتين.** الربط بيتعمل على الأعمدة اللي رجعت من
+    // القراءة، والحفظ بيرفع نفس الملف تاني — أبسط من تخزينه على السيرفر بين الطلبين،
+    // والملف صغير أصلًا
+    let importSheetFile = null;
+    let importSheetData = null;
+
+    function openImportSheet() {
+      const panel = document.getElementById('quiz-import-sheet');
+      if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+      importSheetFile = null;
+      importSheetData = null;
+      panel.style.display = '';
+      panel.innerHTML = `
+        <div class="row-between" style="margin-bottom:10px; gap:12px; flex-wrap:wrap">
+          <b>⬆️ استورد إجابات من شيت</b>
+          <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="quiz-sheet-hide">إخفاء</button>
+        </div>
+        <p class="card-desc" style="margin-bottom:10px">ملف Excel (.xlsx) أو .csv فيه إجابات الطلاب — زي اللي Google Forms بيصدّره. لازم يكون فيه عمود لرقم الموبايل.</p>
+        <label class="btn btn-primary btn-sm" style="width:auto">
+          اختار الملف
+          <input type="file" id="quiz-sheet-file" accept=".xlsx,.csv" style="display:none">
+        </label>
+        <div id="quiz-sheet-result" style="margin-top:12px"></div>`;
+      // المربع تحت جدول النتايج اللي بيوصل ٥٠٠ صف — من غير ده بيتفتح بعيد عن الشاشة
+      revealQuizPanel(panel);
+      document.getElementById('quiz-sheet-hide').addEventListener('click', () => {
+        panel.style.display = 'none';
+      });
+      document.getElementById('quiz-sheet-file').addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file) parseImportSheet(file);
+      });
+    }
+
+    async function parseImportSheet(file) {
+      const box = document.getElementById('quiz-sheet-result');
+      box.innerHTML = '<div class="empty-state">بنقرا الملف...</div>';
+      try {
+        const form = new FormData();
+        form.append('sheet', file);
+        const response = await fetch(`/api/quizzes/${quizResultsId}/parse-sheet`, { method: 'POST', body: form });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'مقدرناش نقرا الملف');
+        importSheetFile = file;
+        importSheetData = data;
+        renderImportMapping(data);
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    // **الربط بيتعرض كله مش المقترح بس.** الموظف محتاج يشوف الأعمدة اللي النظام تجاهلها
+    // عشان يكتشف سؤال ماترابطش — العرض المختصر بيخفي بالظبط اللي محتاج مراجعة
+    function renderImportMapping(data) {
+      const options = (questionId) => data.questions.map((q) =>
+        `<option value="${q.id}"${q.id === questionId ? ' selected' : ''}>${q.number}. ${escapeHtml(q.text || '(سؤال بصورة)')}${q.label ? ` (${escapeHtml(q.label)})` : ''}</option>`).join('');
+
+      const firstRow = data.sample[0] || [];
+      const rows = data.mapping.columns.map((col) => `
+        <tr>
+          <td style="max-width:280px; overflow:hidden; text-overflow:ellipsis">${escapeHtml(col.header || '(بلا عنوان)')}</td>
+          <td><span class="card-desc">${escapeHtml(String(firstRow[col.index] == null ? '' : firstRow[col.index]).slice(0, 40))}</span></td>
+          <td>
+            <select class="compact-select quiz-map-role" data-index="${col.index}">
+              <option value="ignore"${col.role === 'ignore' ? ' selected' : ''}>تجاهل</option>
+              <option value="phone"${col.role === 'phone' ? ' selected' : ''}>📱 رقم الموبايل</option>
+              <option value="name"${col.role === 'name' ? ' selected' : ''}>الاسم</option>
+              <option value="question"${col.role === 'question' ? ' selected' : ''}>سؤال</option>
+            </select>
+          </td>
+          <td>
+            <select class="compact-select quiz-map-question" data-index="${col.index}"${col.role === 'question' ? '' : ' disabled'}>
+              <option value="">—</option>${options(col.question_id)}
+            </select>
+          </td>
+        </tr>`).join('');
+
+      document.getElementById('quiz-sheet-result').innerHTML = `
+        <div class="card-desc" style="margin-bottom:8px">
+          <b>${data.rows_count}</b> صف في الملف · اتربط <b>${data.matched_questions}</b> من <b>${data.total_questions}</b> سؤال تلقائيًا.
+          ${data.matched_questions < data.total_questions ? '<span style="color:var(--warning)"> راجع الأعمدة اللي تحت — فيه أسئلة ماترابطتش.</span>' : ''}
+        </div>
+        <div style="overflow-x:auto">
+          <table><thead><tr><th>عمود الملف</th><th>أول قيمة</th><th>الدور</th><th>السؤال</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>
+        <div class="row" style="gap:8px; margin-top:12px; flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" style="width:auto" id="quiz-sheet-preview">معاينة من غير حفظ</button>
+          <button type="button" class="btn btn-primary btn-sm" style="width:auto" id="quiz-sheet-save">استورد واحفظ</button>
+        </div>
+        <div id="quiz-sheet-report" style="margin-top:12px"></div>`;
+
+      document.getElementById('quiz-sheet-preview').addEventListener('click', () => runImportSheet(true));
+      document.getElementById('quiz-sheet-save').addEventListener('click', () => runImportSheet(false));
+
+      // تغيير الدور بيفتح أو يقفل قايمة السؤال — الصف اللي دوره "تجاهل" مالوش سؤال
+      document.querySelectorAll('.quiz-map-role').forEach((select) => {
+        select.addEventListener('change', () => {
+          const question = document.querySelector(`.quiz-map-question[data-index="${select.dataset.index}"]`);
+          if (question) question.disabled = select.value !== 'question';
+        });
+      });
+    }
+
+    function collectImportMapping() {
+      const columns = [];
+      let phoneIndex = null;
+      let nameIndex = null;
+      document.querySelectorAll('.quiz-map-role').forEach((select) => {
+        const index = Number(select.dataset.index);
+        const role = select.value;
+        if (role === 'phone') phoneIndex = index;
+        if (role === 'name') nameIndex = index;
+        const question = document.querySelector(`.quiz-map-question[data-index="${index}"]`);
+        columns.push({
+          index,
+          role,
+          header: (importSheetData.headers || [])[index] || '',
+          question_id: role === 'question' && question && question.value ? Number(question.value) : null,
+        });
+      });
+      return { columns, phone_index: phoneIndex, name_index: nameIndex };
+    }
+
+    async function runImportSheet(dryRun) {
+      const box = document.getElementById('quiz-sheet-report');
+      if (!importSheetFile) return showToast('اختار الملف الأول');
+      const mapping = collectImportMapping();
+      if (mapping.phone_index === null) return showToast('حدّد عمود رقم الموبايل');
+      if (!mapping.columns.some((c) => c.role === 'question' && c.question_id)) {
+        return showToast('اربط عمود واحد على الأقل بسؤال');
+      }
+      if (!dryRun && !confirm(`هيتضاف ${importSheetData.rows_count} صف للاختبار ده والتصحيح الآلي هيشتغل عليهم. تمام؟`)) return;
+
+      box.innerHTML = '<div class="empty-state">بيشتغل...</div>';
+      try {
+        const form = new FormData();
+        form.append('sheet', importSheetFile);
+        form.append('mapping', JSON.stringify(mapping));
+        if (dryRun) form.append('dry_run', 'true');
+        const response = await fetch(`/api/quizzes/${quizResultsId}/import-sheet`, { method: 'POST', body: form });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'الاستيراد فشل');
+
+        const line = (label, value) => (value ? `<div>${label}: <b>${value}</b></div>` : '');
+        box.innerHTML = `
+          <div class="card">
+            <b>${data.dry_run ? '🔎 معاينة — مفيش حاجة اتحفظت' : '✅ الاستيراد خلص'}</b>
+            <div class="card-desc" style="margin-top:6px">
+              ${line('صفوف الملف', data.rows)}
+              ${line(data.dry_run ? 'هيتستوردوا' : 'اتستوردوا', data.imported)}
+              ${line('إجابات', data.answers)}
+              ${line('اترابطوا بحساب على المنصة', data.matched_students)}
+              ${line('اتخطّوا (بلا رقم موبايل)', data.skipped_no_phone)}
+              ${line('اتخطّوا (الرقم له ورقة بالفعل)', data.skipped_duplicate)}
+              ${line('⚠️ خيارات مش متطابقة (اتجاهلت)', data.unmatched_options)}
+            </div>
+            ${data.unmatched_options ? '<div class="card-desc" style="margin-top:8px; color:var(--warning)">إجابات اختيار من متعدد مش مطابقة لأي خيار في السؤال — راجع إن الخيارات في الفورم مكتوبة زي اللي في الاختبار.</div>' : ''}
+            ${data.grading_started ? '<div class="card-desc" style="margin-top:8px">التصحيح الآلي بدأ — الدرجات هتظهر خلال دقايق.</div>' : ''}
+          </div>`;
+        if (!data.dry_run) loadQuizAttempts();
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
 
     function revealQuizPanel(element) {
       element.style.display = '';
