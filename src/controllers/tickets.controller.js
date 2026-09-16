@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const botManager = require('../bot/botManager');
 const push = require('../utils/push');
-const { withStudentMenu, STUDENT_MENU_OPTIONS } = require('../bot/studentMenu');
+const { withStudentMenu, studentMenuOptions } = require('../bot/studentMenu');
 const pdfAttachment = require('../utils/pdfAttachment');
 
 // **حد تيليجرام لـ sendPhoto، مش حدنا.** حد multer على مسار الرد أكبر من كده (حد الـPDF
@@ -830,7 +830,8 @@ async function replyToTicket(req, res) {
           .split('{name}')
           .join(ticketResult.rows[0].agent_name);
         try {
-          const introTelegramMessage = await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, introText, STUDENT_MENU_OPTIONS);
+          const introTelegramMessage = await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, introText,
+            await studentMenuOptions(ticketResult.rows[0].chat_id));
           await pool.query(
             `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id)
              VALUES ($1, $2, $3, $4)`,
@@ -857,7 +858,7 @@ async function replyToTicket(req, res) {
     // لسه يتبعت عادي (بدون quote) بدل ما العملية كلها تفشل
     // قايمة الطالب بتتبعت مع رد الموظف كمان: أغلب الطلاب مابياخدوش رسالة آلية بعد الترحيب،
     // فلو ماتبعتتش هنا كان اللي دخلوا البوت قبل الميزة مش هيشوفوا الزراير أبدًا
-    const replyOptions = withStudentMenu(replyToTelegramMessageId
+    const replyOptions = await withStudentMenu(ticketResult.rows[0].chat_id, replyToTelegramMessageId
       ? { reply_parameters: { message_id: Number(replyToTelegramMessageId), allow_sending_without_reply: true } }
       : {});
     const localAttachmentPath = attachment ? `uploads/support/${attachment.filename}` : null;

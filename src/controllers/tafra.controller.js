@@ -9,6 +9,8 @@ const { BOOTCAMP_MARKS_SELECT_SQL } = require('../utils/bootcampMarks');
 const { inferGenderFromName } = require('../utils/genderInference');
 const { UNREACHED_NAMES_SQL } = require('../utils/callOutcomes');
 const { SILENT_WEEK_SQL, SILENT_CALLS_WEEK_SQL } = require('../utils/silentStudent');
+// نفس تعريف «مشترك» اللي البوت بيستخدمه بالحرف — الأدمن لازم يشوف نفس الرقم اللي الطالب عايشه
+const studentAccess = require('../utils/studentAccess');
 
 // نفس علامة الباب المستخدمة في صندوق الدعم — بس هنا بنجيبها مباشرة عن طريق s.tafra_student_id
 // من غير ما نحتاج نلف على جدول contacts، لأن استعلامات الطلاب أصلاً بتبدأ من tafra_students
@@ -361,6 +363,52 @@ function buildTafraStudentFilters(query, { includeEnrollmentDates = false } = {}
   }
 
   return { where, params, whereParams, examJoinSql, examSelectSql, enrollmentDatesJoinSql, enrollmentDatesSelectSql };
+}
+
+// ---------- الكورسات اللي بتفتح الدعم الكامل ----------
+//
+// **مين يوصل للتيم العلمي ولتيم المتابعة.** الطالب اللي في كورس متعلّم هنا بيشوف الزراير
+// التلاتة في البوت؛ اللي مش في أي كورس منهم بيشوف الدعم الفني بس.
+//
+// ليه عمود في القاعدة مش قايمة مكتوبة في الكود: الأبواب بتتضاف على المنصة على مدار السنة
+// (التالت والرابع والخامس جايين)، ولو القايمة في الكود كان كل باب جديد محتاج نشر —
+// والطلاب الدافعين يفضلوا محرومين لحد ما حد ياخد باله.
+//
+// **التأسيس مجاني ومفتوح لأي حد**، فمتعلّمش عن قصد — لو اتعلّم بالغلط التيم العلمي بيتفتح
+// لكل اللي دخلوا المنصة.
+async function listSupportBootcamps(req, res) {
+  const { rows } = await pool.query(`
+    SELECT b.tafra_bootcamp_id AS id, b.name, b.is_available, b.grants_support,
+           COUNT(e.*) FILTER (WHERE e.enrollment_type IN ('enroll', 'renew'))::int AS students
+    FROM tafra_bootcamps b
+    LEFT JOIN tafra_enrollments e ON e.tafra_bootcamp_id = b.tafra_bootcamp_id
+    GROUP BY b.tafra_bootcamp_id, b.name, b.is_available, b.grants_support
+    ORDER BY b.grants_support DESC, students DESC, b.name`);
+
+  // الأثر الفعلي: كام طالب في البوت هيشوف الزراير التلاتة بالإعداد الحالي. الاسم والعدد
+  // لوحدهم مابيقولوش ده، والأدمن محتاج يشوف النتيجة مش القايمة بس
+  const { rows: [impact] } = await pool.query(`
+    SELECT
+      COUNT(*)::int AS in_bot,
+      COUNT(*) FILTER (WHERE ${studentAccess.SUBSCRIBED_SQL.replace('$1', 'c.chat_id')})::int AS with_full_support
+    FROM contacts c WHERE c.chat_id IS NOT NULL`);
+
+  res.json({ bootcamps: rows, impact });
+}
+
+async function saveSupportBootcamps(req, res) {
+  const raw = req.body?.bootcamp_ids;
+  if (!Array.isArray(raw)) return res.status(400).json({ error: 'قايمة الكورسات مش مبعوتة' });
+  const ids = raw.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+
+  // **UPDATE واحد على الجدول كله** — اللي في القايمة بيتعلّم واللي بره بيتشال. لو حدّثنا
+  // المعلّمين بس، الكورس اللي الأدمن شاله كان هيفضل متعلّم من غير ما حد يلاحظ
+  const result = await pool.query(
+    'UPDATE tafra_bootcamps SET grants_support = (tafra_bootcamp_id = ANY($1::bigint[]))',
+    [ids]
+  );
+  console.log(`🎓 Support access updated: ${ids.length} bootcamp(s) now grant full support.`);
+  res.json({ ok: true, selected: ids.length, touched: result.rowCount });
 }
 
 async function listStudents(req, res) {
@@ -1744,6 +1792,7 @@ module.exports = {
   syncExams, getExamSyncStatus, exportStudentsReport, listStudentContactIds, buildTafraStudentFilters, BOOTCAMP_MARKS_JOIN_SQL,
   triggerAutoSyncIfDue, triggerExamAutoSyncIfDue, triggerEnrollmentAutoSyncIfDue,
   syncSelectedBootcamps, getSelectiveSyncStatus,
+  listSupportBootcamps, saveSupportBootcamps,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
   syncNewBotReachability, getNewBotReachabilitySyncStatus, getFollowUpBotStartLog,
   searchStudentsForLink, linkContactToStudent, unlinkContactFromStudent,

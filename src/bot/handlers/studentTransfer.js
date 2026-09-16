@@ -1,8 +1,9 @@
 const pool = require('../../config/db');
 const { TEAMS } = require('../../utils/teams');
 const {
-  SCIENCE_BUTTON, TECH_BUTTON, FOLLOWUP_BUTTON, STUDENT_MENU_OPTIONS,
+  SCIENCE_BUTTON, TECH_BUTTON, FOLLOWUP_BUTTON, studentMenuOptions,
 } = require('../studentMenu');
+const { isSubscribedStudent } = require('../../utils/studentAccess');
 
 // ===================== الطالب بيحوّل نفسه لتيم متخصص =====================
 //
@@ -21,6 +22,18 @@ const {
 //
 // نفس ترتيب studentReport.js: الهاندلر ده **قبل message.js** عشان كلمة "سؤال علمي" ما تتسجّلش
 // كرسالة واردة عند موظف المتابعة — هي أمر مش سؤال.
+//
+// ---------- مين يوصل لمين ----------
+//
+//   الدعم الفني  → **أي طالب**، مشترك أو لأ. أعطال المنصة بتحصل لأي حد.
+//   الدعم العلمي → المشتركين في كورس مدفوع بس (`utils/studentAccess.js`). التيم أربع أنفار،
+//                  والكورس المجاني لوحده فيه ٤٠٢٢ طالب.
+//   تيم المتابعة → مش محتاج فحص: دي الحالة الافتراضية لكل تذكرة، والزرار معناه "رجّعني"
+//                  مش "ودّيني". غير المشترك مش بيشوف الزرار، لكن لو كتبها بإيده بترجّعه
+//                  لمكانه الطبيعي — ومنعها كانت هتسيبه محبوس مع الدعم الفني.
+//
+// **الفحص هنا مش تجميل.** الكيبورد بيخفي الزرار عن غير المشترك، لكن `/science` والكتابة
+// بالعربي شغالين للكل — فده هو الباب اللي بيتقفل فعلًا.
 
 // التذكرة واحدة لكل جهة اتصال (قيد UNIQUE على contact_id)، فمفيش لبس في "أنهي تذكرة"
 const TICKET_SQL = `
@@ -31,6 +44,12 @@ const TICKET_SQL = `
 // نص واحد لحالة "التذكرة مع موظف واتساب": بيتقال للطالب سواء طلب تيم متخصص أو طلب يرجع
 // للمتابعة، والحالتين ممنوعتين بنفس السبب
 const WHATSAPP_HOLD_REPLY = 'فيه حد من الفريق بيكلمك دلوقتي 💬 كمّل معاه وهو هيوصّلك للي محتاجه.';
+
+// **الرفض بيدّي مخرج مش باب مقفول.** الطالب اللي طلب دعم علمي وهو مش مشترك عنده حاجتين
+// يعملهم: يسأل عن الاشتراك، أو يستخدم الدعم الفني لو مشكلته في المنصة أصلًا
+const NOT_SUBSCRIBED_REPLY = 'الدعم العلمي متاح لطلاب الكورسات المدفوعة 🧪\n\n'
+  + `لو مشكلتك في المنصة نفسها اضغط «${TECH_BUTTON}» وهنساعدك على طول.\n`
+  + 'ولو حابب تشترك اكتبلنا وهنوضّحلك كل حاجة.';
 
 // الرد بيتغيّر حسب سبب المنع — "مش هينفع" لوحدها بتخلي الطالب يعيد المحاولة من غير فايدة
 function blockedReply(team, holderTeamKey) {
@@ -47,8 +66,13 @@ module.exports = function registerStudentTransferHandler(bot) {
   const requestTeam = async (ctx, teamKey) => {
     if (ctx.chat.type !== 'private') return;
     const team = TEAMS[teamKey];
+    const menu = () => studentMenuOptions(ctx.chat.id);
 
     try {
+      // الفحص قبل أي حاجة تانية: الطالب المرفوض مايتعملّهوش تحويل ولا يتقاله "اكتب سؤالك"
+      if (teamKey === 'science' && !(await isSubscribedStudent(ctx.chat.id))) {
+        return ctx.reply(NOT_SUBSCRIBED_REPLY, await menu());
+      }
       const { rows } = await pool.query(TICKET_SQL, [ctx.chat.id]);
       const ticket = rows[0];
       // مفيش تذكرة = الطالب ما بعتش ولا رسالة لسه. التحويل قبل أي سؤال بيدّي المتخصص
@@ -56,14 +80,17 @@ module.exports = function registerStudentTransferHandler(bot) {
       if (!ticket) {
         return ctx.reply(
           `اكتب ${teamKey === 'science' ? 'سؤالك' : 'مشكلتك'} الأول وهوصّله لـ${team.label} على طول.`,
-          STUDENT_MENU_OPTIONS
+          await menu()
         );
       }
       // **لاحظ:** المنع الحقيقي جوه performTransfer (transferGuard) تحت قفل الصف. الفحص هنا
       // عشان الرسالة تبقى مفهومة للطالب بس — مش عشان الحماية، والاتنين مش بديل لبعض.
       // التبديل بين العلمي والفني مسموح: الطالب سأل سؤال علمي وبعدين اتعطّل عنده حاجة تقنية
-      if (ticket.transfer_team === team.key || ticket.transfer_team === 'whatsapp') {
-        return ctx.reply(blockedReply(team, ticket.transfer_team), STUDENT_MENU_OPTIONS);
+      // الفني بيعدّي من قفل الواتساب — نفس استثناء `transferGuard` بالظبط، والاتنين
+      // لازم يتغيّروا مع بعض وإلا الطالب يتقاله ممنوع وهو مسموح
+      const blockedByWhatsapp = ticket.transfer_team === 'whatsapp' && teamKey !== 'tech';
+      if (ticket.transfer_team === team.key || blockedByWhatsapp) {
+        return ctx.reply(blockedReply(team, ticket.transfer_team), await menu());
       }
 
       // **require كسول عن قصد.** botManager بيحمّل الهاندلر ده وقت التشغيل، والكنترولر بيحمّل
@@ -75,18 +102,18 @@ module.exports = function registerStudentTransferHandler(bot) {
       // مفيش حد حاضر: performTransfer بعت رسالة الغياب للطالب بنفسه، فمنبعتش تانية فوقها
       if (!result.ok) {
         if (result.offline) return;
-        return ctx.reply(blockedReply(team, result.team?.key), STUDENT_MENU_OPTIONS);
+        return ctx.reply(blockedReply(team, result.team?.key), await menu());
       }
 
       return ctx.reply(
         `تمام ${team.icon} ${teamKey === 'science' ? 'سؤالك رايح للتيم العلمي' : 'مشكلتك رايحة للدعم الفني'}.\n`
         + `اكتب${teamKey === 'science' ? 'ه' : 'ها'} دلوقتي وهيرد عليك مباشرة.\n`
         + `ولما تخلص اضغط «${FOLLOWUP_BUTTON}» عشان ترجع لفريق المتابعة.`,
-        STUDENT_MENU_OPTIONS
+        await menu()
       );
     } catch (error) {
       console.error('❌ Failed to transfer a ticket at the student request:', error.message);
-      return ctx.reply('حصلت مشكلة وإحنا بنحوّل طلبك. جرّب تاني بعد شوية.', STUDENT_MENU_OPTIONS);
+      return ctx.reply('حصلت مشكلة وإحنا بنحوّل طلبك. جرّب تاني بعد شوية.', await studentMenuOptions(ctx.chat.id));
     }
   };
 
@@ -96,33 +123,34 @@ module.exports = function registerStudentTransferHandler(bot) {
   // في الحالة دي بيأكّد له مكانه بدل ما يسيبه محتار
   const requestFollowUp = async (ctx) => {
     if (ctx.chat.type !== 'private') return;
+    const menu = () => studentMenuOptions(ctx.chat.id);
 
     try {
       const { rows } = await pool.query(TICKET_SQL, [ctx.chat.id]);
       const ticket = rows[0];
       if (!ticket || !ticket.transfer_team) {
-        return ctx.reply('إنت مع تيم المتابعة ✅ اكتب اللي محتاجه وهيوصلهم.', STUDENT_MENU_OPTIONS);
+        return ctx.reply('إنت مع تيم المتابعة ✅ اكتب اللي محتاجه وهيوصلهم.', await menu());
       }
       // نفس قاعدة التحويل: الطالب مايسحبش نفسه من موظف الواتساب. دي محادثة إقناع مع طالب
       // مش مشترك، والخروج منها بيحصل لوحده أول ما يشترك
       if (ticket.transfer_team === 'whatsapp') {
-        return ctx.reply(WHATSAPP_HOLD_REPLY, STUDENT_MENU_OPTIONS);
+        return ctx.reply(WHATSAPP_HOLD_REPLY, await menu());
       }
 
       // **require كسول عن قصد** — نفس دايرة الاستيراد اللي في التحويل فوق بالظبط
       const { performReturn } = require('../../controllers/teams.controller');
       const result = await performReturn({ ticketId: ticket.id, by: 'student' });
       if (!result.ok) {
-        return ctx.reply('إنت مع تيم المتابعة ✅ اكتب اللي محتاجه وهيوصلهم.', STUDENT_MENU_OPTIONS);
+        return ctx.reply('إنت مع تيم المتابعة ✅ اكتب اللي محتاجه وهيوصلهم.', await menu());
       }
 
       return ctx.reply(
         'تمام 👥 رجّعناك لتيم المتابعة. اكتب اللي محتاجه وهيرد عليك.',
-        STUDENT_MENU_OPTIONS
+        await menu()
       );
     } catch (error) {
       console.error('❌ Failed to return a ticket at the student request:', error.message);
-      return ctx.reply('حصلت مشكلة وإحنا بنرجّعك للمتابعة. جرّب تاني بعد شوية.', STUDENT_MENU_OPTIONS);
+      return ctx.reply('حصلت مشكلة وإحنا بنرجّعك للمتابعة. جرّب تاني بعد شوية.', await studentMenuOptions(ctx.chat.id));
     }
   };
 

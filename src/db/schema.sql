@@ -830,6 +830,21 @@ CREATE TABLE IF NOT EXISTS tafra_bootcamps (
 );
 ALTER TABLE tafra_bootcamps ADD COLUMN IF NOT EXISTS is_available BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- الكورس ده بيدّي صاحبه حق الدعم الكامل (التيم العلمي + تيم المتابعة) ولا لأ.
+-- **مش كل اشتراك اشتراك:** كورس التأسيس مجاني ومفتوح لأي حد، فالطالب اللي فيه بس بيبقى
+-- زيه زي اللي مادخلش المنصة أصلًا — الدعم الفني بس. اللي بيدّي الحق هو الأبواب وكورس
+-- المنهج الكامل.
+-- الاختيار عمود مش قايمة مكتوبة في الكود، عشان الباب التالت والرابع لما يتضافوا
+-- يتعلّموا من اللوحة من غير نشر.
+ALTER TABLE tafra_bootcamps ADD COLUMN IF NOT EXISTS grants_support BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- بذرة أولية **مرة واحدة بس**: الباب الأول (30) وكورس المنهج كاملا (31) والباب التاني (32).
+-- شرط `NOT EXISTS` بيخلي `npm run migrate` يتعاد من غير ما يلغي أي تعليم الأدمن عمله بعد
+-- كده — من غيره أي هجرة بترجّع القايمة للتلاتة دول وتشيل الأبواب الجديدة من غير ما حد ياخد باله
+UPDATE tafra_bootcamps SET grants_support = TRUE
+WHERE tafra_bootcamp_id IN (30, 31, 32)
+  AND NOT EXISTS (SELECT 1 FROM tafra_bootcamps WHERE grants_support);
+
 CREATE TABLE IF NOT EXISTS tafra_enrollments (
     tafra_bootcamp_id BIGINT NOT NULL REFERENCES tafra_bootcamps(tafra_bootcamp_id) ON DELETE CASCADE,
     tafra_student_id BIGINT NOT NULL,

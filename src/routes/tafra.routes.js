@@ -57,6 +57,9 @@ router.post('/sync-enrollments', controller.syncEnrollments);
 router.post('/sync-selected-bootcamps', controller.syncSelectedBootcamps);
 router.get('/selective-sync-status', controller.getSelectiveSyncStatus);
 router.post('/sync-bootcamps', controller.syncBootcampNames);
+// الكورسات اللي بتفتح الدعم العلمي وتيم المتابعة للطالب في البوت
+router.get('/support-bootcamps', controller.listSupportBootcamps);
+router.put('/support-bootcamps', controller.saveSupportBootcamps);
 router.get('/exam-sync-status', controller.getExamSyncStatus);
 router.post('/sync-exams', controller.syncExams);
 

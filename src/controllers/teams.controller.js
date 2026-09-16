@@ -131,10 +131,15 @@ async function messageStudent(chatId, text) {
 //     تلقائية مش باختيار حد، فمحتاج مخرج.
 //   الطالب: يقدر ينط بين العلمي والفني بس. **ممنوع يسحبها من موظف الواتساب** — دي محادثة
 //     إقناع مع طالب مش مشترك، وسحبها في نصّها معناه إن اللي بيكلّمه يتغيّر فجأة.
+//     **استثناء واحد: الدعم الفني.** الطالب اللي بيتكلم مع موظف الإقناع لسه ممكن المنصة
+//     تقع عنده، ومنعه معناه إن العطل مالوش طريق خالص — وغير المشترك دي الجهة الوحيدة
+//     المفتوحة له أصلًا. ولما يخلص، الإرجاع بيرجّعه للمتابعة والتوجيه التلقائي بيرجّعه
+//     لموظف الواتساب خلال ٥ دقايق لوحده.
 function transferGuard({ by, actorUserId, holderTeam, holderAgentId, targetTeam }) {
   if (holderTeam.key === targetTeam.key) return 'التذكرة مع نفس التيم بالفعل';
   if (by === 'student') {
-    return holderTeam.key === 'whatsapp' ? 'التذكرة مع موظف واتساب' : null;
+    if (holderTeam.key !== 'whatsapp') return null;
+    return targetTeam.key === 'tech' ? null : 'التذكرة مع موظف واتساب';
   }
   const isHolder = Number(holderAgentId) === Number(actorUserId);
   return (isHolder && holderTeam.canHandOff) ? null : 'التذكرة محوّلة لتيم بالفعل';

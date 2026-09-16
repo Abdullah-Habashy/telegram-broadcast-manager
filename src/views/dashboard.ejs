@@ -1499,6 +1499,7 @@
         <div class="subtabs" id="settings-subtabs">
           <button type="button" class="subtab-btn active" data-subtab="tafra">ربط طفرة</button>
           <button type="button" class="subtab-btn" data-subtab="selective-sync">تحديث البيانات</button>
+          <button type="button" class="subtab-btn" data-subtab="support-access">وصول الطلاب للدعم</button>
           <button type="button" class="subtab-btn" data-subtab="call-auto-assign">إسناد المكالمات التلقائي</button>
           <button type="button" class="subtab-btn" data-subtab="bots">البوتات</button>
           <button type="button" class="subtab-btn" data-subtab="auto-reply">الرد التلقائي</button>
@@ -1551,6 +1552,30 @@
             <span id="selective-sync-selected-count" class="ticket-muted">لسه محددتش أي باب</span>
           </div>
           <div id="selective-sync-status" class="card-desc" style="margin-top:14px">لم يتم أي تحديث انتقائي بعد.</div>
+        </div>
+        </div>
+
+        <div class="subtab-section" data-subtab="support-access" style="display:none">
+        <div class="card">
+          <h2>وصول الطلاب للدعم</h2>
+          <p class="card-desc">
+            الطالب في البوت بيشوف زراير تحت مربع الكتابة. <b>🛠️ الدعم الفني مفتوح لأي طالب</b> —
+            أعطال المنصة بتحصل لأي حد. أما <b>🧪 الدعم العلمي</b> و<b>👥 تيم المتابعة</b> فبيظهروا
+            للمشتركين في الكورسات المعلّمة تحت بس.
+          </p>
+          <p class="card-desc" style="margin-top:6px">
+            ⚠️ <b>متعلّمش كورس التأسيس</b> — هو مجاني ومفتوح لأي حد، ولو اتعلّم التيم العلمي
+            بيتفتح لكل اللي دخلوا المنصة. ولما تضيف الباب التالت أو الرابع على المنصة، هيظهر
+            هنا وتعلّمه من غير أي نشر.
+          </p>
+          <div id="support-access-impact" class="card-desc" style="margin-top:10px"></div>
+          <div id="support-access-list" class="selective-sync-bootcamp-list" style="margin-top:12px">
+            <div class="empty-state">جارٍ التحميل...</div>
+          </div>
+          <div class="row" style="gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap">
+            <button type="button" class="btn btn-primary" id="save-support-access" style="width:auto">احفظ</button>
+            <span id="support-access-status" class="ticket-muted"></span>
+          </div>
         </div>
         </div>
 
@@ -8016,6 +8041,7 @@ ${reply.content}` : reply.content;
         loadTafraExamSyncStatus();
         loadSelectiveSyncBootcampList();
         loadSelectiveSyncStatus();
+        loadSupportAccess();
         loadCallAutoAssignConfig();
         loadCallAutoAssignLog();
       } catch (e) { showToast(e.message); }
@@ -8155,6 +8181,64 @@ ${reply.content}` : reply.content;
         count ? `المحدد: ${count} باب` : 'لسه محددتش أي باب';
     }
 
+    // ---------- الكورسات اللي بتفتح الدعم العلمي وتيم المتابعة ----------
+    //
+    // **الحفظ بيبعت القايمة كاملة مش التغيير.** السيرفر بيعلّم اللي في القايمة ويشيل اللي
+    // بره، فالمربع اللي اتشال بيتشال فعلًا — وده اللي بيخلي الشاشة هي الحقيقة
+    async function loadSupportAccess() {
+      const wrap = document.getElementById('support-access-list');
+      const impact = document.getElementById('support-access-impact');
+      try {
+        const data = await api('/api/tafra/support-bootcamps');
+        const rows = data.bootcamps || [];
+        const techOnly = (data.impact?.in_bot || 0) - (data.impact?.with_full_support || 0);
+        impact.innerHTML = `بالإعداد الحالي: <b>${data.impact?.with_full_support ?? '—'}</b> طالب في البوت شايف التلات زراير، `
+          + `و<b>${techOnly}</b> شايف الدعم الفني بس (من <b>${data.impact?.in_bot ?? '—'}</b>).`;
+
+        wrap.innerHTML = rows.length
+          ? rows.map((item) => `
+              <label class="multiselect-option">
+                <input type="checkbox" class="support-access-checkbox" value="${escapeHtml(String(item.id))}"
+                  ${item.grants_support ? 'checked' : ''}>
+                <span>${escapeHtml(item.name)}
+                  <span class="ticket-muted"> — ${item.students} مشترك${item.is_available ? '' : ' · مش متاح على المنصة'}</span>
+                </span>
+              </label>`).join('')
+          : '<div class="empty-state">مفيش أبواب محفوظة — حدّث أسماء الأبواب من «ربط طفرة» الأول</div>';
+      } catch (error) {
+        wrap.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function saveSupportAccess() {
+      const button = document.getElementById('save-support-access');
+      const status = document.getElementById('support-access-status');
+      const ids = [...document.querySelectorAll('.support-access-checkbox')]
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => Number(checkbox.value));
+
+      // قايمة فاضية = التيم العلمي مقفول على كل الطلاب. ده قرار ممكن يكون مقصود، بس
+      // مش حاجة تتعمل بالغلط وحد يكتشفها لما الطلاب يشتكوا
+      if (!ids.length && !confirm('مفيش ولا كورس متعلّم — يعني مفيش أي طالب هيقدر يوصل للدعم العلمي ولا لتيم المتابعة. متأكد؟')) return;
+
+      button.disabled = true;
+      status.textContent = 'بيتحفظ...';
+      try {
+        await api('/api/tafra/support-bootcamps', {
+          method: 'PUT',
+          body: JSON.stringify({ bootcamp_ids: ids }),
+        });
+        status.textContent = '';
+        showToast('اتحفظ');
+        await loadSupportAccess();
+      } catch (error) {
+        status.textContent = '';
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     async function loadSelectiveSyncBootcampList() {
       const wrap = document.getElementById('selective-sync-bootcamp-list');
       try {
@@ -8204,6 +8288,7 @@ ${reply.content}` : reply.content;
       }
     }
 
+    document.getElementById('save-support-access').addEventListener('click', saveSupportAccess);
     document.getElementById('run-selective-sync').addEventListener('click', async () => {
       const button = document.getElementById('run-selective-sync');
       const bootcampIds = [...selectedSelectiveSyncBootcampIds].map(Number);

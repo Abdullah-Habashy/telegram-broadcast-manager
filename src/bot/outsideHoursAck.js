@@ -11,7 +11,7 @@ const pool = require('../config/db');
 const { isWithinWorkingHours, currentCairoTime, nextWorkingWindowPhrase } = require('../utils/workingHours');
 const { getFirstName } = require('../utils/messagePersonalization');
 const aiReply = require('../utils/aiReply');
-const { STUDENT_MENU_OPTIONS } = require('./studentMenu');
+const { studentMenuOptions } = require('./studentMenu');
 
 // بترجع true لو بعتت فعلاً — عشان اللي بينداها يعرف إنه مايبعتش رد تاني بعدها
 async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
@@ -58,7 +58,7 @@ async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
         .catch((err) => console.error('❌ Failed to log the AI reply attempt:', err.message));
       // 'asked' بيتبعت زي 'sent' — الاتنين رسالة رايحة للطالب
       if (result.outcome === 'sent' || result.outcome === 'asked') {
-        const aiMessage = await ctx.reply(result.answer, STUDENT_MENU_OPTIONS);
+        const aiMessage = await ctx.reply(result.answer, await studentMenuOptions(ctx.chat.id));
         await pool.query(
           `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id, is_ai)
            VALUES ($1, NULL, $2, $3, TRUE)`,
@@ -71,7 +71,7 @@ async function sendOutsideHoursAck(ctx, { ticketId, contact }) {
     }
   }
 
-  const telegramMessage = await ctx.reply(text, STUDENT_MENU_OPTIONS);
+  const telegramMessage = await ctx.reply(text, await studentMenuOptions(ctx.chat.id));
   // بيتسجّل في المحادثة (بدون is_welcome) عشان الموظف يشوف الطالب استلم إيه ومايكرّرش نفس الكلام.
   // is_welcome بتفضل false لأن دي مش رسالة الترحيب — دي إشعار انتظار، ولو علّمناها كترحيب
   // كانت هتفسد فلتر حالة الترحيب في شاشة طلاب المنصة

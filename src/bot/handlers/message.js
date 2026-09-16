@@ -10,7 +10,7 @@ const pdfAttachment = require('../../utils/pdfAttachment');
 // **كل رسالة رايحة للطالب بتاخد الكيبورد.** مابيتبعتش لوحده، ولو اتحط عند `/start` بس
 // كان اللي دخلوا البوت قبل الميزة عمرهم ما يشوفوا الزراير — وتيليجرام بيستبدل القديم
 // بالجديد فمفيش تكرار عند الطالب
-const { STUDENT_MENU_OPTIONS } = require('../studentMenu');
+const { studentMenuOptions } = require('../studentMenu');
 const { storeFile } = require('../../utils/objectStorage');
 
 const incomingUploadDir = path.join(__dirname, '..', '..', '..', 'public', 'uploads', 'incoming');
@@ -272,13 +272,13 @@ async function processIncomingMessage(bot, ctx, { content, imagePath = null, abs
         const message = settings.outside_hours_reply_message
           .replaceAll('{start}', formatArabicTime(settings.working_hours_start))
           .replaceAll('{end}', formatArabicTime(settings.working_hours_end));
-        await ctx.reply(message, STUDENT_MENU_OPTIONS);
+        await ctx.reply(message, await studentMenuOptions(ctx.chat.id));
       } catch (replyError) {
         console.error('❌ Failed to send outside-hours reply:', replyError.message);
       }
     } else if (settings.auto_reply_enabled === 'true' && settings.auto_reply_message) {
       try {
-        await ctx.reply(settings.auto_reply_message, STUDENT_MENU_OPTIONS);
+        await ctx.reply(settings.auto_reply_message, await studentMenuOptions(ctx.chat.id));
       } catch (replyError) {
         console.error('❌ Failed to send auto reply:', replyError.message);
       }
@@ -334,7 +334,7 @@ function registerMessageHandler(bot) {
         );
         reply = setting.rows[0]?.value;
       }
-      if (reply) await ctx.reply(reply, STUDENT_MENU_OPTIONS);
+      if (reply) await ctx.reply(reply, await studentMenuOptions(ctx.chat.id));
     } catch (error) {
       console.error('❌ Failed to answer an unsupported media message:', error.message);
     }
@@ -386,7 +386,7 @@ function registerMessageHandler(bot) {
     } catch (error) {
       if (downloaded?.absolutePath) fs.unlink(downloaded.absolutePath, () => {});
       console.error('❌ Failed to receive an incoming document:', error.message);
-      await ctx.reply('تعذر حفظ الملف. حاول إرساله مرة أخرى.', STUDENT_MENU_OPTIONS);
+      await ctx.reply('تعذر حفظ الملف. حاول إرساله مرة أخرى.', await studentMenuOptions(ctx.chat.id));
     }
   });
 
@@ -407,7 +407,7 @@ function registerMessageHandler(bot) {
     } catch (error) {
       if (downloaded?.absolutePath) fs.unlink(downloaded.absolutePath, () => {});
       console.error('❌ Failed to receive an incoming photo:', error.message);
-      await ctx.reply('تعذر حفظ الصورة. حاول إرسالها مرة أخرى.', STUDENT_MENU_OPTIONS);
+      await ctx.reply('تعذر حفظ الصورة. حاول إرسالها مرة أخرى.', await studentMenuOptions(ctx.chat.id));
     }
   });
 }
