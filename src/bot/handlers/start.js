@@ -3,7 +3,7 @@ const { displayName, platformNameFor } = require('../../utils/studentName');
 const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
 const { notifyEmployeesOfIncomingMessage } = require('./message');
 const { sendOutsideHoursAck } = require('../outsideHoursAck');
-const { studentMenuOptions } = require('../studentMenu');
+const { studentMenuOptionsAlways } = require('../studentMenu');
 
 // عند /start: تسجيل تلقائي لجهة الاتصال (أو تحديث بياناتها لو كانت مسجّلة قبل كده). "أول مرة
 // مطلقًا" بيتحدد بوجود تذكرة من عدمه (مش بوجود صف جهة الاتصال) — لأن طلاب منصة طفرة عندهم صف
@@ -79,7 +79,7 @@ module.exports = function registerStartHandler(bot) {
       }
 
       if (!isNewTicket) {
-        await ctx.reply('أهلاً بيك تاني! ✅', await studentMenuOptions(ctx.chat.id));
+        await ctx.reply('أهلاً بيك تاني! ✅', await studentMenuOptionsAlways(ctx.chat.id));
         return;
       }
 
@@ -101,7 +101,7 @@ module.exports = function registerStartHandler(bot) {
       if (!welcomeEnabled && !ackSent) {
         // السلوك القديم — رد فوري بسيط لحد ما حد يفعّل رسالة الترحيب الموحدة من الإعدادات
         const messageText = 'أهلاً بيك! ✅ تم تسجيلك بنجاح.';
-        const telegramMessage = await ctx.reply(messageText, await studentMenuOptions(ctx.chat.id));
+        const telegramMessage = await ctx.reply(messageText, await studentMenuOptionsAlways(ctx.chat.id));
         await pool.query(
           `INSERT INTO support_messages (ticket_id, sent_by, content, telegram_message_id, is_welcome)
            VALUES ($1, NULL, $2, $3, TRUE)`,

@@ -93,6 +93,12 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS is_urgent BOOLEAN NOT NULL DEFAULT
 -- اللي مايشاركش رقمه مش عايز يشاركه، وتكرار الطلب كل رسالة بيتحوّل لمضايقة
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS phone_request_sent_at TIMESTAMPTZ;
 
+-- آخر كيبورد وصل الطالب: `full` (التلات زراير) أو `tech` (الدعم الفني بس).
+-- **لازمته إن تيليجرام مابيسمحش بتعديل رسالة اتبعتت ومعاها reply keyboard.** الكيبورد كان
+-- بيتبعت مع كل رسالة، فكل رد موظف من ٥ سبتمبر ٢٠٢٦ بقى غير قابل للتعديل من غير ما حد
+-- ياخد باله. والكيبورد أصلًا `is_persistent` وبيفضل في الشات، فإرساله عند التغيير بس كفاية.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS student_menu_kind VARCHAR(10);
+
 -- نص مخصّص لرسالة المتابعة التلقائية القادمة لهذه التذكرة وحدها. فاضي = استخدم القالب العام
 -- من الإعدادات. بيتمسح بعد الإرسال عشان يفضل "الرسالة القادمة" مش قالب دائم للطالب ده
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS next_follow_up_message TEXT;
