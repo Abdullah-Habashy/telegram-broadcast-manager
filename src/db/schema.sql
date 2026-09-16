@@ -119,6 +119,32 @@ CREATE TABLE IF NOT EXISTS whatsapp_events (
     processed_at TIMESTAMPTZ,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- ---------- تفعيل باب لطلاب بالجملة ----------
+--
+-- **سجل مين فعّل إيه لمين وإمتى.** التفعيل بيدّي طالب وصول لمحتوى مدفوع، فلازم يكون
+-- عليه أثر — مين عمله، بأي رقم، والمنصة ردّت بإيه. من غير السجل ده، سؤال زي "ليه الطالب
+-- ده عنده الباب التاني؟" مالوش إجابة.
+--
+-- صف لكل رقم مش لكل عملية: العملية الواحدة ممكن تنجح في أرقام وتفشل في غيرها، والحالة
+-- بتتخزّن لكل رقم لوحده عشان الإعادة تشتغل على اللي فشل بس.
+CREATE TABLE IF NOT EXISTS bootcamp_activations (
+    id BIGSERIAL PRIMARY KEY,
+    batch_id UUID NOT NULL,
+    tafra_bootcamp_id BIGINT NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    tafra_student_id BIGINT,
+    student_name VARCHAR(500),
+    -- matched: اتلقى ومش مشترك · already: مشترك بالفعل · unknown: مالقيناهوش على المنصة
+    -- done: اتفعّل فعلًا · failed: المنصة رفضت
+    status VARCHAR(20) NOT NULL,
+    error_message TEXT,
+    requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_bootcamp_activations_batch ON bootcamp_activations (batch_id);
+CREATE INDEX IF NOT EXISTS idx_bootcamp_activations_phone ON bootcamp_activations (phone);
+
 CREATE INDEX IF NOT EXISTS idx_whatsapp_events_unprocessed
     ON whatsapp_events (received_at) WHERE processed_at IS NULL;
 
