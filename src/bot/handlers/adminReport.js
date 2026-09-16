@@ -30,6 +30,10 @@ const ADMIN_KEYBOARD = {
 // مايفضلش هنا نص قديم يخلي الزرار يتبلع
 const STUDENT_BUTTONS = new Set([SCIENCE_BUTTON, TECH_BUTTON, FOLLOWUP_BUTTON]);
 
+// القايمة الزرقا بتتبعت مرة واحدة كل تشغيل — `setMyCommands` نداء شبكة، ومفيش داعي يتكرر
+// مع كل رسالة من الأدمن
+let commandMenuSynced = false;
+
 // الميدلوير بيشتغل على **كل** رسالة داخلة، فقراءة الإعداد من القاعدة في كل مرة معناها استعلام
 // زيادة على كل رسالة طالب. الكاش دقيقة واحدة: بيقلّل الحمل، وتأخير دقيقة بعد نقل الربط مقبول
 const CACHE_MS = 60 * 1000;
@@ -53,10 +57,21 @@ function invalidateAdminChatCache() {
 // قايمة أوامر بنطاق محادثة واحدة. القايمة العامة **فاضية بطلب صاحب المشروع** (شوف
 // `botManager.js`)، والنطاق هنا مابيلمسهاش: تيليجرام بيخزّن كل نطاق لوحده، فالطالب بيفضل
 // شايف الزرار الأزرق مختفي زي ما هو
+//
+// **الأوامر اللي بتاخد معامل متكتبة كأوامر مستقلة**: تيليجرام بيبعت الأمر زي ما هو أول ما
+// تدوس عليه في القايمة، فـ`/preview_menu كامل` كان هيحتاج الأدمن يكمّل الكتابة بإيده —
+// والقايمة أصلًا موجودة عشان مايكتبش
+const ADMIN_COMMANDS = [
+  { command: 'daily_report', description: BUTTON_LABEL },
+  { command: 'preview_menu', description: '👇 شوف قايمة الطالب بحالتك' },
+  { command: 'preview_full', description: '🧪 جرّب قايمة الطالب المشترك' },
+  { command: 'preview_tech', description: '🛠️ جرّب قايمة الطالب غير المشترك' },
+];
+
 async function ensureAdminCommandMenu(telegram, chatId) {
   try {
     await telegram.setMyCommands(
-      [{ command: 'daily_report', description: BUTTON_LABEL }],
+      ADMIN_COMMANDS,
       { scope: { type: 'chat', chat_id: Number(chatId) } }
     );
   } catch (error) {
@@ -161,7 +176,7 @@ async function sendMenuPreview(ctx, argument) {
     + (forced ? ' (بالعافية للتجربة)\n' : ' — دي حالتك الحقيقية على المنصة\n')
     + `الزراير: ${isFull ? `${SCIENCE_BUTTON} · ${TECH_BUTTON} · ${FOLLOWUP_BUTTON}` : TECH_BUTTON}\n\n`
     + 'دوس على أي زرار وهيرد عليك زي ما بيرد على الطالب بالظبط.\n'
-    + 'وجرّب التانية كمان: «/preview_menu كامل» و«/preview_menu فني».'
+    + 'وجرّب التانية من القايمة: /preview_full و /preview_tech.'
     + RESTORE_HINT,
     { reply_markup: keyboard }
   );
@@ -174,6 +189,13 @@ function registerAdminReportHandler(bot) {
 
     const adminChatId = await getAdminChatId();
     if (!adminChatId || String(ctx.chat.id) !== String(adminChatId)) return next();
+
+    // **القايمة بتتظبط لوحدها مرة كل تشغيل.** كانت بتتظبط في `/start` بس، يعني أي أمر جديد
+    // بيتضاف هنا مايبانش عند الأدمن غير لما يفتكر يبعت `/start` — وهو مش عارف إنه محتاج
+    if (!commandMenuSynced) {
+      commandMenuSynced = true;
+      await ensureAdminCommandMenu(ctx.telegram, adminChatId);
+    }
 
     const text = (ctx.message.text || '').trim();
 
@@ -189,10 +211,13 @@ function registerAdminReportHandler(bot) {
       );
     }
 
-    // تجربة قايمة الطالب — الأمر ده للأدمن بس، فمكانه هنا مش في هاندلر عام
+    // تجربة قايمة الطالب — الأوامر دي للأدمن بس، فمكانها هنا مش في هاندلر عام
     if (text === '/preview_menu' || text.startsWith('/preview_menu ')) {
       return sendMenuPreview(ctx, text.slice('/preview_menu'.length));
     }
+    // نسختين مستقلتين عشان يتدوس عليهم من القايمة على طول من غير كتابة معامل
+    if (text === '/preview_full' || text.startsWith('/preview_full@')) return sendMenuPreview(ctx, 'كامل');
+    if (text === '/preview_tech' || text.startsWith('/preview_tech@')) return sendMenuPreview(ctx, 'فني');
 
     // باقي الأوامر (`/setforward` مثلًا) بتكمّل لهاندلراتها عادي
     if (text.startsWith('/')) return next();
@@ -212,4 +237,5 @@ module.exports = registerAdminReportHandler;
 module.exports.BUTTON_LABEL = BUTTON_LABEL;
 module.exports.ADMIN_KEYBOARD = ADMIN_KEYBOARD;
 module.exports.ensureAdminCommandMenu = ensureAdminCommandMenu;
+module.exports.ADMIN_COMMANDS = ADMIN_COMMANDS;
 module.exports.invalidateAdminChatCache = invalidateAdminChatCache;
