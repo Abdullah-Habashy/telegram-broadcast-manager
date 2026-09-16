@@ -1,124 +1,116 @@
-// ---------- قايمة الطالب الثابتة تحت مربع الكتابة ----------
+// ---------- قايمة الطالب: الزرار الأزرق (Menu) ----------
 //
-// **القايمة بتتغيّر حسب اشتراك الطالب:**
-//   مشترك في كورس مدفوع → الدعم العلمي + الدعم الفني + تيم المتابعة
-//   غير مشترك (أو التأسيس المجاني بس) → الدعم الفني بس
+// **الزراير كانت كيبورد تحت مربع الكتابة، وبقت قايمة أوامر (١٦ سبتمبر ٢٠٢٦).**
 //
-// السبب إن التيم العلمي أربع أنفار، والمنصة عليها ٤٠٢٢ طالب في الكورس المجاني. الدعم
-// الفني مفتوح للكل لأن أعطال المنصة بتحصل لأي حد. تعريف «مشترك» في
-// `utils/studentAccess.js`، ومكتوب مرة واحدة عشان الزرار اللي بيبان يبقى هو الزرار
-// اللي بيشتغل.
+// السبب إن **تيليجرام بيقفل أي رسالة اتبعتت ومعاها reply keyboard ضد التعديل** — بيرد
+// `message can't be edited`. والكيبورد كان بيتبعت مع كل رسالة رايحة، فمن ٥ سبتمبر بقى
+// مفيش ولا رد موظف قابل للتعديل: ٤١٠ تعديل ناجح كلهم قبل التاريخ ده، وصفر بعده.
+// قايمة الأوامر مالهاش الأثر ده لأنها مش متعلّقة برسالة أصلًا.
 //
-// **دي مش قايمة أوامر البوت (الزرار الأزرق)** — دي `reply keyboard` بتتبعت مع الرسالة نفسها.
-// القايمة الزرقا لسه فاضية بطلب صاحب المشروع (شوف `botManager.js`)، والاتنين مالهمش علاقة
-// ببعض خالص.
+// **مين يشوف إيه:**
+//   المشترك في كورس مدفوع → الدعم العلمي + الدعم الفني + المتابعة + التقرير
+//   غير المشترك           → الدعم الفني + التقرير
+// التفرقة في `utils/studentAccess.js`، ومكتوبة مرة واحدة عشان الأمر اللي بيبان يبقى هو
+// الأمر اللي بيشتغل.
 //
-// **ليه بتتبعت مع كل رسالة آلية بدل مرة واحدة عند `/start`:** الكيبورد بيوصل الطالب مع رسالة،
-// مافيش طريقة تبعته لوحده. ولو حطّيناه في `/start` بس، الـ ١٨٠٠ طالب اللي دخلوا البوت قبل
-// النهاردة عمرهم ما هيشوفوه. تيليجرام بيستبدل الكيبورد القديم بالجديد ومابيكرّرش حاجة، فإرساله
-// مع كل رد آلي مالوش أي تكلفة ظاهرة عند الطالب. **وده كمان اللي بيحدّث القايمة لوحدها** لما
-// الطالب يشترك: أول رد آلي بعد الاشتراك بيوصله بالزراير التلاتة.
-//
-// **تيم المتابعة هو الافتراضي**: الطالب الجديد تذكرته مع المتابعة من غير ما يضغط حاجة، والزرار
-// ده معناه "رجّعني للمتابعة" لو كان محوّل لتيم متخصص.
+// **الافتراضي بيتسجّل لكل البوت** في `botManager`، والمشترك بياخد نطاق `chat` خاص بيه أول
+// ما يتعامل مع البوت. تيليجرام بيقدّم نطاق المحادثة على الافتراضي، فمفيش تعارض — ومحادثة
+// الأدمن ليها نطاقها الخاص في `handlers/adminReport.js` ومابتتأثرش بده خالص.
 const pool = require('../config/db');
 const { isSubscribedStudent } = require('../utils/studentAccess');
 
+// نصوص الزراير القديمة — **سايبينها عن قصد.** الطالب اللي لسه الكيبورد عنده (لحد ما
+// الرسالة الجاية تشيله) لازم زراره تفضل شغالة، و`handlers/studentTransfer.js` بيسمعها
 const SCIENCE_BUTTON = '🧪 الدعم العلمي';
 const TECH_BUTTON = '🛠️ الدعم الفني';
 const FOLLOWUP_BUTTON = '👥 تيم المتابعة';
 
-const STUDENT_MENU = {
-  keyboard: [
-    [{ text: SCIENCE_BUTTON }, { text: TECH_BUTTON }],
-    [{ text: FOLLOWUP_BUTTON }],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-};
+// الأوامر المتاحة لأي طالب مهما كانت حالته — أعطال المنصة بتحصل للكل، والتقرير بتاعه هو
+const DEFAULT_STUDENT_COMMANDS = [
+  { command: 'tech', description: '🛠️ مشكلة في المنصة أو الدفع' },
+  { command: 'report', description: '📊 تقريري ومستواي' },
+];
 
-// غير المشترك: زرار واحد. **مش نفس القايمة والزراير مخفية** — تيليجرام مابيخفيش زرار،
-// فالقايمة المحدودة لازم تكون قايمة تانية بالكامل
-const TECH_ONLY_MENU = {
-  keyboard: [
-    [{ text: TECH_BUTTON }],
-  ],
-  resize_keyboard: true,
-  is_persistent: true,
-};
+// المشترك بيزود عليها الدعم العلمي والرجوع للمتابعة
+const SUBSCRIBED_STUDENT_COMMANDS = [
+  { command: 'science', description: '🧪 اسأل الدعم العلمي' },
+  { command: 'tech', description: '🛠️ مشكلة في المنصة أو الدفع' },
+  { command: 'followup', description: '👥 ارجع لتيم المتابعة' },
+  { command: 'report', description: '📊 تقريري ومستواي' },
+];
 
-async function menuFor(chatId) {
-  return (await isSubscribedStudent(chatId)) ? STUDENT_MENU : TECH_ONLY_MENU;
-}
+// **أمر واحد بيشيل الكيبورد القديم.** تيليجرام مابيشيلش الكيبورد لوحده — لازم رسالة
+// واحدة تقوله يشيله. الرسالة دي بالذات بتفضل غير قابلة للتعديل، وبعدها كل حاجة نضيفة
+const REMOVE_KEYBOARD = { remove_keyboard: true };
 
-// ---------- الكيبورد بيتبعت لما يتغيّر بس ----------
-//
-// **تيليجرام مابيسمحش بتعديل رسالة اتبعتت ومعاها reply keyboard** — بيرد
-// `message can't be edited`. والكيبورد كان بيتبعت مع كل رسالة، فمن ٥ سبتمبر ٢٠٢٦ بقى
-// مفيش ولا رد موظف قابل للتعديل: ٤١٠ تعديل ناجح كلهم قبل التاريخ ده، وصفر بعده.
-//
-// والكيبورد مالوش لازمة يتكرر أصلًا: `is_persistent: true` معناه إنه بيفضل تحت مربع
-// الكتابة لحد ما كيبورد تاني يحل محله. فبنبعته أول مرة، وبعدها بس لما يتغيّر (الطالب
-// اشترك مثلًا) — والرسايل اللي بينهم تفضل قابلة للتعديل.
-async function rememberedKind(chatId) {
+async function menuState(chatId) {
   try {
-    const { rows } = await pool.query('SELECT student_menu_kind FROM contacts WHERE chat_id = $1', [chatId]);
-    return rows[0]?.student_menu_kind || null;
+    const { rows } = await pool.query(
+      'SELECT student_menu_kind, keyboard_removed_at FROM contacts WHERE chat_id = $1', [chatId]);
+    return rows[0] || {};
   } catch (error) {
-    console.error(`❌ Failed to read the student menu state of chat ${chatId}:`, error.message);
-    // الفشل هنا بيخلي الكيبورد يتبعت زي الأول — أسوأ حاجة إن الرسالة دي متتعدلش
-    return null;
+    console.error(`❌ Failed to read the menu state of chat ${chatId}:`, error.message);
+    return {};
   }
 }
 
-async function rememberKind(chatId, kind) {
+// بتسجّل قايمة الأوامر على محادثة الطالب لو حالته اتغيّرت (أو أول مرة).
+// **مابتبعتش أي رسالة** — ده الفرق كله عن الكيبورد القديم.
+async function ensureStudentCommands(telegram, chatId) {
+  if (!telegram || !chatId) return;
+  const kind = (await isSubscribedStudent(chatId)) ? 'full' : 'tech';
+  const state = await menuState(chatId);
+  if (state.student_menu_kind === kind) return;
+
   try {
+    await telegram.setMyCommands(
+      kind === 'full' ? SUBSCRIBED_STUDENT_COMMANDS : DEFAULT_STUDENT_COMMANDS,
+      { scope: { type: 'chat', chat_id: Number(chatId) } }
+    );
     await pool.query('UPDATE contacts SET student_menu_kind = $2 WHERE chat_id = $1', [chatId, kind]);
   } catch (error) {
-    console.error(`❌ Failed to store the student menu state of chat ${chatId}:`, error.message);
+    // القايمة مش لازمة لتشغيل الأوامر — الطالب لسه يقدر يكتب /tech بإيده
+    console.error(`❌ Failed to set the command menu of chat ${chatId}:`, error.message);
   }
 }
 
-// بترجّع الكيبورد لو الطالب لسه ماشافوش أو اتغيّر، و`null` لو هو نفسه اللي عنده
-async function menuIfChanged(chatId) {
-  const keyboard = await menuFor(chatId);
-  const kind = keyboard === STUDENT_MENU ? 'full' : 'tech';
-  if ((await rememberedKind(chatId)) === kind) return null;
-  await rememberKind(chatId, kind);
-  return keyboard;
+// بترجّع `{ reply_markup: { remove_keyboard: true } }` مرة واحدة بس لكل طالب لسه الكيبورد
+// القديم عنده، وبعد كده `{}` — يعني الرسايل تفضل قابلة للتعديل
+async function keyboardCleanup(chatId) {
+  const state = await menuState(chatId);
+  if (state.keyboard_removed_at) return {};
+  try {
+    await pool.query('UPDATE contacts SET keyboard_removed_at = NOW() WHERE chat_id = $1', [chatId]);
+  } catch (error) {
+    console.error(`❌ Failed to record the keyboard removal of chat ${chatId}:`, error.message);
+    return {};
+  }
+  return { reply_markup: REMOVE_KEYBOARD };
 }
 
-// أغلب مواضع الإرسال بتبعت خيارات تانية (رد على رسالة، caption...)، فالدمج بيحصل هنا في مكان
-// واحد بدل ما كل موضع يفتكر يحط `reply_markup` جنب خياراته.
-//
-// **دي بتبعت الكيبورد لو اتغيّر بس.** الرسالة اللي مامعاهاش كيبورد بتفضل قابلة للتعديل،
-// وده اللي بيخلي الموظف يقدر يصلّح كلامه
+// أغلب مواضع الإرسال بتبعت خيارات تانية (رد على رسالة، caption...)، فالدمج بيحصل هنا في
+// مكان واحد بدل ما كل موضع يفتكر يحط `reply_markup` جنب خياراته
 async function withStudentMenu(chatId, options = {}) {
-  const keyboard = await menuIfChanged(chatId);
-  return keyboard ? { ...options, reply_markup: keyboard } : { ...options };
+  return { ...options, ...(await keyboardCleanup(chatId)) };
 }
 
 async function studentMenuOptions(chatId) {
-  const keyboard = await menuIfChanged(chatId);
-  return keyboard ? { reply_markup: keyboard } : {};
+  return keyboardCleanup(chatId);
 }
 
-// **بتبعت الكيبورد دايمًا**، للمواضع اللي الطالب لازم يشوفه فيها مهما حصل: `/start`
-// ورسالة الترحيب. دي رسايل محدش بيعدّلها، فالتنازل هنا مالوش تكلفة
+// اسم متسايب عشان `/start` والترحيب مايتغيّروش — دلوقتي مفيش فرق بينهم وبين العادي، لأن
+// القايمة الزرقا بتتسجّل لوحدها ومش محتاجة رسالة تشيلها
 async function studentMenuOptionsAlways(chatId) {
-  const keyboard = await menuFor(chatId);
-  await rememberKind(chatId, keyboard === STUDENT_MENU ? 'full' : 'tech');
-  return { reply_markup: keyboard };
+  return keyboardCleanup(chatId);
 }
 
 module.exports = {
   SCIENCE_BUTTON,
   TECH_BUTTON,
   FOLLOWUP_BUTTON,
-  STUDENT_MENU,
-  TECH_ONLY_MENU,
-  menuFor,
-  menuIfChanged,
+  DEFAULT_STUDENT_COMMANDS,
+  SUBSCRIBED_STUDENT_COMMANDS,
+  ensureStudentCommands,
   studentMenuOptions,
   studentMenuOptionsAlways,
   withStudentMenu,

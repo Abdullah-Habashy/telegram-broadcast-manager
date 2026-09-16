@@ -4,6 +4,7 @@ const pool = require('../config/db');
 const env = require('../config/env');
 const { decrypt } = require('../utils/crypto');
 const registerAdminReportHandler = require('./handlers/adminReport');
+const { ensureStudentCommands } = require('./studentMenu');
 const registerStartHandler = require('./handlers/start');
 const registerForwardingHandler = require('./handlers/forwarding');
 const registerStaffLinkHandler = require('./handlers/staffLink');
@@ -41,6 +42,20 @@ function createBot(token) {
   // **أول واحد عن قصد.** رسايل حساب الأدمن (اللي بتتحوّل له رسايل البوت) مش رسايل طلاب — لو
   // عدّت على `start.js` أو `message.js` كانت هتفتح تذكرة باسمه وتتوزّع على موظف
   registerAdminReportHandler(bot);
+
+  // **قايمة الطالب بتتسجّل من هنا، مش مع الرسايل.** أول ما الطالب يتعامل مع البوت بنتأكد
+  // إن نطاق محادثته فيه الأوامر الصح لحالته. مابتبعتش رسالة ومابتعطّلش الرد: نداء
+  // الشبكة ماشي في الخلفية، والدالة نفسها بتخرج فورًا لو الحالة ما اتغيّرتش.
+  //
+  // بعد `registerAdminReportHandler` عن قصد — محادثة الأدمن ليها قايمتها الخاصة،
+  // والميدل وير اللي فوق بيرجع منها من غير ما يكمّل
+  bot.use(async (ctx, next) => {
+    if (ctx.chat?.type === 'private' && ctx.chat.id) {
+      ensureStudentCommands(ctx.telegram, ctx.chat.id)
+        .catch((error) => console.error('❌ Failed to refresh a student command menu:', error.message));
+    }
+    return next();
+  });
   registerStartHandler(bot);
   registerForwardingHandler(bot);
   registerStaffLinkHandler(bot);
@@ -85,18 +100,21 @@ async function activateToken(token) {
   const webhookUrl = `${env.publicUrl}${WEBHOOK_PATH}`;
   await bot.telegram.setWebhook(webhookUrl, { secret_token: getSecretToken() });
 
-  // ---------- قايمة أوامر البوت ----------
-  // **فاضية مؤقتًا بطلب صاحب المشروع.** ده بيخفي الزرار الأزرق من تيليجرام بس — الأمر
-  // `/report` وكلمة "تقريري" **لسه شغالين بالكامل** في handlers/studentReport.js، فأي طالب
-  // معاه الأمر بيشتغل معاه عادي.
+  // ---------- قايمة أوامر البوت (الزرار الأزرق) ----------
   //
-  // القايمة الفاضية بتتبعت في كل تشغيل مش مرة واحدة، لأن تيليجرام بيحتفظ بآخر قايمة اتسجّلت
-  // على السيرفر بتاعه — فمجرد إن الكود ما ينداهش مش كفاية يشيلها، لازم تتمسح صراحةً.
+  // **دي بقت مكان زراير الطالب** بدل الكيبورد اللي كان تحت مربع الكتابة (١٦ سبتمبر ٢٠٢٦).
+  // السبب إن تيليجرام بيقفل أي رسالة اتبعتت ومعاها كيبورد ضد التعديل، فكل ردود التيم من
+  // ٥ سبتمبر بقت مش قابلة للتعديل. القايمة دي مالهاش الأثر ده خالص — مش متعلّقة برسالة.
   //
-  // **للرجوع:** حط بدل [] السطر ده:
-  //   [{ command: 'report', description: '📊 تقريري ومستواي' }]
+  // **القايمة الافتراضية هي الآمنة للكل** (الدعم الفني + التقرير)، واللي بيستاهل أكتر
+  // بيتحطّله نطاق `chat` خاص بيه من `studentMenu.ensureStudentCommands`. تيليجرام بيقدّم
+  // نطاق المحادثة على الافتراضي، ومحادثة الأدمن ليها نطاقها الخاص فمابتتأثرش.
+  //
+  // بتتبعت في كل تشغيل مش مرة واحدة، لأن تيليجرام بيحتفظ بآخر قايمة اتسجّلت على السيرفر
+  // بتاعه — فمجرد إن الكود ما ينداهش مش كفاية يغيّرها.
   try {
-    await bot.telegram.setMyCommands([]);
+    const { DEFAULT_STUDENT_COMMANDS } = require('./studentMenu');
+    await bot.telegram.setMyCommands(DEFAULT_STUDENT_COMMANDS);
   } catch (error) {
     // فشل القايمة مايمنعش البوت يشتغل — الأوامر نفسها شغالة سواء ظهرت في القايمة أو لأ
     console.error('⚠️ Failed to update the bot command menu:', error.message);

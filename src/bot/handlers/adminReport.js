@@ -2,8 +2,9 @@ const pool = require('../../config/db');
 const { buildDailyReport } = require('../../utils/dailyReport');
 const { lastTenDigits, SQL_TRANSLATE_DIGITS } = require('../../utils/phone');
 const {
-  SCIENCE_BUTTON, TECH_BUTTON, FOLLOWUP_BUTTON, STUDENT_MENU, TECH_ONLY_MENU, menuFor,
+  DEFAULT_STUDENT_COMMANDS, SUBSCRIBED_STUDENT_COMMANDS,
 } = require('../studentMenu');
+const { isSubscribedStudent } = require('../../utils/studentAccess');
 
 // ---------- حساب الأدمن على البوت ----------
 //
@@ -25,10 +26,6 @@ const ADMIN_KEYBOARD = {
     is_persistent: true,
   },
 };
-
-// نصوص زراير الطالب، مستوردة مش مكتوبة تاني — لو اتغيّر نص زرار في `studentMenu.js`
-// مايفضلش هنا نص قديم يخلي الزرار يتبلع
-const STUDENT_BUTTONS = new Set([SCIENCE_BUTTON, TECH_BUTTON, FOLLOWUP_BUTTON]);
 
 // القايمة الزرقا بتتبعت مرة واحدة كل تشغيل — `setMyCommands` نداء شبكة، ومفيش داعي يتكرر
 // مع كل رسالة من الأدمن
@@ -114,7 +111,10 @@ async function sendDailyReport(ctx) {
 //
 // **الضغط مابيفتحش تذاكر:** محادثة الأدمن مالهاش تذكرة، و`requestTeam` بيرد "اكتب سؤالك
 // الأول" من غير ما يحوّل حاجة. فالتجربة آمنة ومابتلوّثش صندوق الدعم.
-const RESTORE_HINT = `\n\nابعت أي رسالة عادية عشان يرجع «${BUTTON_LABEL}».`;
+// عرض قايمة الأوامر زي ما الطالب هيشوفها لما يدوس زرار Menu
+function renderCommands(commands) {
+  return commands.map((c) => `   /${c.command}  —  ${c.description}`).join('\n');
+}
 
 // تشخيص طالب بالرقم — ده اللي بيجاوب "ليه الطالب ده مش شايف الدعم العلمي؟"
 async function previewForPhone(ctx, rawPhone) {
@@ -161,24 +161,22 @@ async function previewForPhone(ctx, rawPhone) {
 async function sendMenuPreview(ctx, argument) {
   const arg = (argument || '').trim();
 
-  // رقم موبايل = تشخيص، مش تجربة. كيبورد الأدمن بيفضل مكانه
+  // رقم موبايل = تشخيص لطالب بعينه، مش معاينة
   if (/[0-9\u0660-\u0669\u06F0-\u06F9]{7,}/.test(arg)) return previewForPhone(ctx, arg);
 
   const forceFull = /^(كامل|مشترك|full)$/i.test(arg);
   const forceTech = /^(فني|مجاني|مش مشترك|tech)$/i.test(arg);
-  const keyboard = forceFull ? STUDENT_MENU : forceTech ? TECH_ONLY_MENU : await menuFor(ctx.chat.id);
+  const isFull = forceFull || (!forceTech && await isSubscribedStudent(ctx.chat.id));
   const forced = forceFull || forceTech;
-  const isFull = keyboard === STUDENT_MENU;
 
   return ctx.reply(
-    '👇 دي قايمة الطالب زي ما هي.\n\n'
+    'دي قايمة الطالب — بتظهر له لما يدوس زرار «Menu» جنب مربع الكتابة.\n\n'
     + `الحالة: ${isFull ? 'مشترك' : 'مش مشترك'}`
-    + (forced ? ' (بالعافية للتجربة)\n' : ' — دي حالتك الحقيقية على المنصة\n')
-    + `الزراير: ${isFull ? `${SCIENCE_BUTTON} · ${TECH_BUTTON} · ${FOLLOWUP_BUTTON}` : TECH_BUTTON}\n\n`
-    + 'دوس على أي زرار وهيرد عليك زي ما بيرد على الطالب بالظبط.\n'
-    + 'وجرّب التانية من القايمة: /preview_full و /preview_tech.'
-    + RESTORE_HINT,
-    { reply_markup: keyboard }
+    + (forced ? ' (بالعافية للتجربة)\n\n' : ' — دي حالتك الحقيقية على المنصة\n\n')
+    + renderCommands(isFull ? SUBSCRIBED_STUDENT_COMMANDS : DEFAULT_STUDENT_COMMANDS)
+    + '\n\nالأوامر دي شغالة عندك إنت كمان — جرّب /tech.\n'
+    + 'وشوف التانية: /preview_full و /preview_tech.',
+    ADMIN_KEYBOARD
   );
 }
 
@@ -222,10 +220,8 @@ function registerAdminReportHandler(bot) {
     // باقي الأوامر (`/setforward` مثلًا) بتكمّل لهاندلراتها عادي
     if (text.startsWith('/')) return next();
 
-    // **زراير الطالب بتعدّي من حساب الأدمن.** من غير الاستثناء ده الرد الافتراضي تحت
-    // بيبلعها ويرجّع كيبورد الأدمن، فالأدمن مايقدرش يجرّب اللي الطالب عايشه أبدًا.
-    // مافيش خطر: محادثته مالهاش تذكرة، فالضغط بيرد بس ومابيحوّلش حاجة
-    if (STUDENT_BUTTONS.has(text)) return next();
+    // الزراير بقت أوامر (`/science` و`/tech`)، والأوامر بتعدّي فوق أصلًا — فمفيش
+    // استثناء محتاج هنا
 
     // أي رسالة تانية من الأدمن مش رسالة طالب: بتتوقف هنا عشان ماتفتحش تذكرة، والكيبورد
     // بيتبعت معاها عشان الزرار يبان من غير ما يحتاج `/start`
