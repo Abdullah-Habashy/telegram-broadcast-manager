@@ -922,7 +922,7 @@ async function replyToTicket(req, res) {
 // الرقم ده بيخص حذف الرسايل وتعديل كلام حد تاني، مش تعديل البوت لكلامه هو في محادثة خاصة.
 // والفرق مش تفصيلة: الموظف اللي اتقاله "عدّى ٤٨ ساعة" بيسيب الغلطة في وش الطالب وهو
 // كان يقدر يصلّحها.
-function telegramErrorMessage(error, fallback, action = 'edit') {
+function telegramErrorMessage(error, fallback, action = 'edit', kind = 'text') {
   const description = error?.response?.description || error?.description || error?.message || '';
   if (/message is not modified/i.test(description)) return 'مفيش تغيير في محتوى الرسالة';
   if (/message to (edit|delete) not found|message identifier is not specified/i.test(description)) {
@@ -930,9 +930,10 @@ function telegramErrorMessage(error, fallback, action = 'edit') {
   }
   if (/message can'?t be (edited|deleted)|too old|TIME_EXPIRED/i.test(description)) {
     // الحد الزمني حقيقي في الحذف بس
-    return action === 'delete'
-      ? 'تيليجرام مش بيسمح بحذف الرسالة بعد مرور 48 ساعة عليها'
-      : 'تيليجرام رفض تعديل الرسالة دي — غالبًا نوعها مش قابل للتعديل أو قديمة أوي';
+    if (action === 'delete') return 'تيليجرام مش بيسمح بحذف الرسالة بعد مرور 48 ساعة عليها';
+    // النوع بيفرق: الرسالة الصوتية مالهاش نص يتغيّر أصلًا، فالرفض هنا متوقّع مش عطل
+    if (kind === 'voice') return 'الرسالة الصوتية نفسها مش ممكن تتغيّر — امسحها وابعت واحدة جديدة';
+    return 'تيليجرام رفض تعديل الرسالة دي. لو قديمة أوي أو اتبعتت بطريقة تانية، امسحها وابعت بدلها';
   }
   return fallback;
 }
@@ -979,7 +980,10 @@ async function editSupportMessage(req, res) {
     const { message, error } = await loadManageableMessage(messageId, req.session.userId);
     if (error) return res.status(error.status).json({ error: error.message });
 
-    const maxLength = message.image_path ? 1024 : 4096;
+    // **أي مرفق = تعليق، والتعليق حده ١٠٢٤.** الشرط كان على الصورة بس، فالرسالة الصوتية
+    // أو ملف الـPDF كان بياخدوا حد النص (٤٠٩٦) وتليجرام يرفض الزيادة
+    const hasAttachment = Boolean(message.image_path || message.voice_path || message.file_path);
+    const maxLength = hasAttachment ? 1024 : 4096;
     if (content.length > maxLength) {
       return res.status(400).json({ error: `النص يجب ألا يتجاوز ${maxLength} حرفًا` });
     }
@@ -992,14 +996,21 @@ async function editSupportMessage(req, res) {
     if (!bot) return res.status(503).json({ error: 'البوت غير متصل حاليًا' });
 
     try {
-      if (message.image_path) {
+      // **الرسالة اللي فيها مرفق مالهاش نص — عندها تعليق.** الشرط كان على الصورة بس،
+      // فالرسايل الصوتية (٣٥٩ رسالة) وملفات الـPDF كانت بتروح لـ`editMessageText`
+      // وتيليجرام يرفضها بـ"message can't be edited" — يعني عمرها ما اتعدّلت ولا مرة،
+      // والموظف بياخد رسالة خطأ بتقوله إن الرسالة قديمة وهي مش قديمة
+      if (hasAttachment) {
         await bot.telegram.editMessageCaption(message.chat_id, Number(message.telegram_message_id), undefined, content);
       } else {
         await bot.telegram.editMessageText(message.chat_id, Number(message.telegram_message_id), undefined, content);
       }
     } catch (telegramError) {
-      console.error('❌ Failed to edit Telegram message:', telegramError.message);
-      return res.status(400).json({ error: telegramErrorMessage(telegramError, 'تعذر تعديل الرسالة في تيليجرام') });
+      // السياق ده هو اللي كان ناقص وقت التشخيص: الرسالة رقم كام، نوعها إيه، وعمرها قد إيه
+      const kind = message.voice_path ? 'voice' : message.file_path ? 'file' : message.image_path ? 'photo' : 'text';
+      const ageHours = Math.round((Date.now() - new Date(message.sent_at).getTime()) / 36e5);
+      console.error(`❌ Failed to edit Telegram message #${message.id} (${kind}, ${ageHours}h old): ${telegramError.message}`);
+      return res.status(400).json({ error: telegramErrorMessage(telegramError, 'تعذر تعديل الرسالة في تيليجرام', 'edit', kind) });
     }
 
     const result = await pool.query(
