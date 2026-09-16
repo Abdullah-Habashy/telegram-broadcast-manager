@@ -8,6 +8,7 @@ const pool = require('./config/db');
 const botManager = require('./bot/botManager');
 const newBotManager = require('./bot/newBotManager');
 const whatsapp = require('./integrations/whatsapp');
+const { startSilentFollowUp } = require('./jobs/silentFollowUp');
 const { startScheduler } = require('./jobs/scheduler');
 const { startTafraSyncScheduler } = require('./jobs/tafraSyncScheduler');
 const { startStaffActivityDigest } = require('./jobs/staffActivityDigest');
@@ -375,6 +376,7 @@ async function start() {
     startUnansweredAlert();
     startTeamAutoReturn();
     startWhatsappRouting();
+    startSilentFollowUp();
     startQuizFinalizer();
     startQuizGradingAlert();
   });

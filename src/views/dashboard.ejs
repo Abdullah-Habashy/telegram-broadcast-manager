@@ -1731,6 +1731,39 @@
           </div>
           <button class="btn btn-primary" id="save-follow-up-auto-btn" style="width:auto; padding-inline:24px">حفظ الرسالة</button>
         </div>
+
+        <%# ===== رسالة الطالب الساكت =====
+            دي مختلفة عن اللي فوق: اللي فوق بتستنى موعد الموظف، ودي قاعدة تلقائية
+            مالهاش تدخل بشري — فالزرار ده هو الوسيلة الوحيدة لإيقافها %>
+        <div class="card">
+          <h2>رسالة الطالب الساكت</h2>
+          <p class="card-desc">
+            بتتبعت تلقائيًا للطالب اللي <b>عدّى عليه أسبوع من غير ما يبعت أي رسالة</b> — نفس
+            التعريف اللي بيلوّنه بنفسجي في قايمة التذاكر. مفيش حاجة محتاجة من الموظف.
+          </p>
+          <p class="card-desc" style="margin-top:6px">
+            بتوصل <b>مرة واحدة</b> لكل فترة سكوت: لو الطالب مردّش، مابتتكررش. ولو رد وبعدين
+            سكت تاني أسبوع، بتتبعت من جديد. استخدم كلمة "الاسم" فتُستبدل باسمه.
+          </p>
+          <p class="card-desc" style="margin-top:6px">
+            ⏰ الإرسال من <b>١١ ص لـ ٩ م</b> بتوقيت القاهرة، وبحد أقصى <b>٤٠ طالب في الساعة</b> —
+            عشان التيم يقدر يلحق الردود، وعشان أول تشغيل مايبعتش للمتراكمين مرة واحدة.
+          </p>
+          <label class="row" style="gap:8px; margin:14px 0; cursor:pointer">
+            <input type="checkbox" id="silent-follow-up-enabled" style="width:auto">
+            <span><b>تفعيل الإرسال التلقائي للطالب الساكت</b></span>
+          </label>
+          <div class="field">
+            <label>نص الرسالة</label>
+            <textarea id="silent-follow-up-message" maxlength="4096" rows="6" placeholder="اكتب الرسالة التي ستصل للطالب..."></textarea>
+          </div>
+          <div class="row" style="gap:10px; flex-wrap:wrap; align-items:center">
+            <button class="btn btn-primary" id="save-silent-follow-up-btn" style="width:auto; padding-inline:24px">حفظ</button>
+            <button class="btn btn-ghost btn-sm" id="preview-silent-follow-up-btn" style="width:auto">مين هياخدها دلوقتي؟</button>
+            <span id="silent-follow-up-status" class="ticket-muted"></span>
+          </div>
+          <div id="silent-follow-up-preview" class="card-desc" style="margin-top:12px"></div>
+        </div>
         </div>
 
         <div class="subtab-section" data-subtab="agent-intro" style="display:none">
@@ -8023,6 +8056,8 @@ ${reply.content}` : reply.content;
         document.getElementById('forwarding-enabled').checked = s.forwarding_enabled === 'true';
         document.getElementById('follow-up-auto-enabled').checked = s.follow_up_auto_enabled === 'true';
         document.getElementById('follow-up-auto-message').value = s.follow_up_auto_message || '';
+        document.getElementById('silent-follow-up-enabled').checked = s.silent_follow_up_enabled === 'true';
+        document.getElementById('silent-follow-up-message').value = s.silent_follow_up_message || '';
         document.getElementById('agent-intro-enabled').checked = s.agent_intro_enabled === 'true';
         document.getElementById('agent-intro-message').value = s.agent_intro_message || '';
         const maxIdeaInput = document.getElementById('max-idea-number');
@@ -8541,6 +8576,46 @@ ${reply.content}` : reply.content;
         showToast('تم حفظ رسالة المتابعة التلقائية');
         loadSettings();
       } catch (error) { showToast(error.message); }
+    });
+
+    document.getElementById('save-silent-follow-up-btn').addEventListener('click', async () => {
+      const enabled = document.getElementById('silent-follow-up-enabled').checked;
+      const message = document.getElementById('silent-follow-up-message').value.trim();
+      if (enabled && !message) return showToast('اكتب نص الرسالة قبل التفعيل');
+      // التفعيل بيبدأ إرسال حقيقي لطلاب حقيقيين — التأكيد بيقول العدد مش "متأكد؟"
+      if (enabled) {
+        const box = document.getElementById('silent-follow-up-preview');
+        box.textContent = 'بنحسب العدد...';
+        let count = '؟';
+        try {
+          const preview = await api('/api/settings/silent-follow-up/preview?limit=500');
+          count = preview.would_send;
+        } catch (_) { /* التأكيد بيكمّل حتى لو المعاينة فشلت */ }
+        box.textContent = '';
+        if (!confirm(`هتتبعت لـ${count} طالب على دفعات (٤٠ في الساعة، من ١١ص لـ ٩م). تمام؟`)) return;
+      }
+      try {
+        await api('/api/settings/silent-follow-up', {
+          method: 'POST', body: JSON.stringify({ enabled, message })
+        });
+        showToast(enabled ? 'اتفعّلت' : 'اتقفلت');
+        loadSettings();
+      } catch (error) { showToast(error.message); }
+    });
+
+    document.getElementById('preview-silent-follow-up-btn').addEventListener('click', async () => {
+      const box = document.getElementById('silent-follow-up-preview');
+      box.textContent = 'بنحسب...';
+      try {
+        const data = await api('/api/settings/silent-follow-up/preview?limit=500');
+        const names = (data.sample || []).map((s) => escapeHtml(s.name)).join('، ');
+        box.innerHTML = `<b>${data.would_send}</b> طالب مستوفي الشرط دلوقتي`
+          + (data.would_send >= 500 ? ' (أو أكتر — العدّ بيقف عند ٥٠٠)' : '')
+          + (names ? `<br>منهم: ${names}` : '')
+          + `<br><span class="ticket-muted">بمعدل ٤٠ في الساعة، ده ياخد حوالي ${Math.ceil(data.would_send / 40 / 10)} يوم تقريبًا.</span>`;
+      } catch (error) {
+        box.textContent = error.message;
+      }
     });
 
     document.getElementById('save-welcome-message-btn').addEventListener('click', async () => {

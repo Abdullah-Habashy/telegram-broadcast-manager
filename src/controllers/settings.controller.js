@@ -371,7 +371,48 @@ async function updateApiFollowUpBootcamps(req, res) {
   }
 }
 
+// ---------- رسالة الطالب الساكت ----------
+//
+// نفس شكل `updateFollowUpAutomation` — زرار فتح/قفل ونص. الفرق إن دي بتشتغل بقاعدة
+// تلقائية مش بموعد الموظف، فالقفل هنا هو الوسيلة الوحيدة لإيقافها
+async function updateSilentFollowUp(req, res) {
+  const enabled = req.body?.enabled === true || req.body?.enabled === 'true';
+  const message = String(req.body?.message || '').trim();
+  if (enabled && !message) {
+    return res.status(400).json({ error: 'اكتب نص الرسالة قبل التفعيل' });
+  }
+  if (message.length > 4096) {
+    return res.status(400).json({ error: 'النص أطول من 4096 حرف' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO settings (key, value) VALUES ('silent_follow_up_enabled', $1), ('silent_follow_up_message', $2)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [enabled ? 'true' : 'false', message]
+    );
+    console.log(`💤 Silent follow-up ${enabled ? 'enabled' : 'disabled'} by user #${req.session.userId}.`);
+    res.json({ ok: true, enabled });
+  } catch (error) {
+    console.error('❌ Failed to save the silent follow-up settings:', error.message);
+    res.status(500).json({ error: 'تعذر حفظ الإعدادات' });
+  }
+}
+
+// معاينة: مين كان هياخد الرسالة دلوقتي، من غير ما يتبعت أي حاجة
+async function previewSilentFollowUp(req, res) {
+  try {
+    const { runSilentFollowUps } = require('../jobs/silentFollowUp');
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 200));
+    res.json(await runSilentFollowUps({ dryRun: true, limit }));
+  } catch (error) {
+    console.error('❌ Failed to preview silent follow-ups:', error.message);
+    res.status(500).json({ error: 'تعذر حساب المعاينة' });
+  }
+}
+
 module.exports = {
+  updateSilentFollowUp,
+  previewSilentFollowUp,
   updateApiFollowUpBootcamps,
   getSettings,
   saveBotToken,

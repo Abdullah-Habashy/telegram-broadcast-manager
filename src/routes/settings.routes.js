@@ -20,5 +20,7 @@ router.post('/agent-introduction', settingsController.updateAgentIntroduction);
 router.post('/idea-settings', settingsController.updateMaxIdeaNumber);
 router.post('/tafra-auto-sync', settingsController.updateTafraAutoSyncInterval);
 router.post('/api-follow-up', settingsController.updateApiFollowUpBootcamps);
+router.post('/silent-follow-up', settingsController.updateSilentFollowUp);
+router.get('/silent-follow-up/preview', settingsController.previewSilentFollowUp);
 
 module.exports = router;

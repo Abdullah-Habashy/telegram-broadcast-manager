@@ -145,6 +145,12 @@ CREATE TABLE IF NOT EXISTS bootcamp_activations (
 CREATE INDEX IF NOT EXISTS idx_bootcamp_activations_batch ON bootcamp_activations (batch_id);
 CREATE INDEX IF NOT EXISTS idx_bootcamp_activations_phone ON bootcamp_activations (phone);
 
+-- آخر مرة اتبعتت فيها رسالة "بقالك أسبوع ساكت" للتذكرة دي.
+-- **مرة واحدة لكل فترة سكوت:** الطالب اللي مارضيش يرد على التنبيه الأول، تكراره كل أسبوع
+-- بيضايقه مش بيقنعه. الرسالة مابتترجعش إلا لو الطالب كلّمنا تاني وبعدين سكت من جديد —
+-- والمقارنة بتبقى بين العمود ده وآخر رسالة واردة منه.
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS silent_follow_up_sent_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_whatsapp_events_unprocessed
     ON whatsapp_events (received_at) WHERE processed_at IS NULL;
 
@@ -708,6 +714,15 @@ CREATE INDEX IF NOT EXISTS idx_ai_training_items_run ON ai_training_items (run_i
 INSERT INTO settings (key, value) VALUES
     ('bot_token_encrypted', NULL),
     ('new_bot_token_encrypted', NULL),
+    -- رسالة الطالب الساكت: مقفولة عند الإضافة عن قصد. أول تشغيل بيلاقي أكتر من ألف تذكرة
+    -- متراكمة، والقرار بفتحها يبقى بعد ما صاحب المشروع يشوف المعاينة
+    ('silent_follow_up_enabled', 'false'),
+    ('silent_follow_up_message', 'ازيك يا الاسم 👋
+
+بقالك أكتر من أسبوع وموصلناش منك أي رسالة — طمّنا عليك.
+محتاجين نتابع معاك، ومهما كانت المشكلة خلينا نحلّها مع بعض.
+
+من أول السنة أفضل بكتير إن شاء الله 💪'),
     ('auto_reply_enabled', 'false'),
     ('auto_reply_message', 'شكرًا لتواصلك معنا، هنرد عليك في أقرب وقت.'),
     -- بتتبعت للطالب لما موظف المتابعة يحاول يحوّل سؤاله للتيم العلمي ومفيش حد منهم مسجّل حضور
