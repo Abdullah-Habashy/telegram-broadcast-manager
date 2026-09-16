@@ -917,14 +917,22 @@ async function replyToTicket(req, res) {
 }
 
 // يترجم أخطاء تيليجرام لرسائل مفهومة للموظف بدل النص الإنجليزي الخام
-function telegramErrorMessage(error, fallback) {
+// **مفيش حد ٤٨ ساعة على التعديل.** الرسالة القديمة هنا كانت بتقول للموظف إن تيليجرام
+// بيرفض بعد ٤٨ ساعة، وده غلط — على الإنتاج فيه تعديل نجح على رسالة عمرها **٥ أيام**.
+// الرقم ده بيخص حذف الرسايل وتعديل كلام حد تاني، مش تعديل البوت لكلامه هو في محادثة خاصة.
+// والفرق مش تفصيلة: الموظف اللي اتقاله "عدّى ٤٨ ساعة" بيسيب الغلطة في وش الطالب وهو
+// كان يقدر يصلّحها.
+function telegramErrorMessage(error, fallback, action = 'edit') {
   const description = error?.response?.description || error?.description || error?.message || '';
   if (/message is not modified/i.test(description)) return 'مفيش تغيير في محتوى الرسالة';
   if (/message to (edit|delete) not found|message identifier is not specified/i.test(description)) {
     return 'الرسالة مش موجودة في تيليجرام (يمكن تكون اتحذفت قبل كده)';
   }
   if (/message can'?t be (edited|deleted)|too old|TIME_EXPIRED/i.test(description)) {
-    return 'تيليجرام مش بيسمح بالتعديل أو الحذف بعد مرور 48 ساعة على الرسالة';
+    // الحد الزمني حقيقي في الحذف بس
+    return action === 'delete'
+      ? 'تيليجرام مش بيسمح بحذف الرسالة بعد مرور 48 ساعة عليها'
+      : 'تيليجرام رفض تعديل الرسالة دي — غالبًا نوعها مش قابل للتعديل أو قديمة أوي';
   }
   return fallback;
 }
@@ -1022,7 +1030,7 @@ async function deleteSupportMessage(req, res) {
         await bot.telegram.deleteMessage(message.chat_id, Number(message.telegram_message_id));
       } catch (telegramError) {
         console.error('❌ Failed to delete Telegram message:', telegramError.message);
-        warning = `اتشالت من اللوحة بس ${telegramErrorMessage(telegramError, 'تعذر حذفها من تيليجرام')}`;
+        warning = `اتشالت من اللوحة بس ${telegramErrorMessage(telegramError, 'تعذر حذفها من تيليجرام', 'delete')}`;
       }
     } else {
       warning = 'اتشالت من اللوحة بس — مش مرتبطة برسالة في تيليجرام';

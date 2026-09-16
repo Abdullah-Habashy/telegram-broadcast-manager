@@ -517,11 +517,19 @@ tr:last-child td { border-bottom: none; }
 .ticket-message-image { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
 .ticket-message-meta { margin-top: 5px; color: var(--text-faint); font-size: 10.5px; }
 /* أزرار تعديل/حذف الرسالة — بتطفو فوق الفقاعة من غير ما تاخد أي مساحة من الشاشة */
+/* **الزراير دي كانت مخفية تمامًا (opacity: 0) لحد ما تحوّم بالماوس.** النتيجة إن ٣ موظفين
+   بس من ٩ اكتشفوا إن التعديل والحذف موجودين أصلًا، وصاحب المشروع نفسه طلب "إضافة ميزة
+   تعديل الرسائل" وهي شغّالة من شهور. بقت باهتة بدل مخفية: بتبان إنها موجودة من غير ما
+   تزعج، وبتوضح بالكامل عند الحوم. */
 .msg-tools {
   position: absolute; top: -11px; inset-inline-end: 8px; z-index: 2;
-  display: flex; gap: 3px; opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
+  display: flex; gap: 3px; opacity: 0.4; pointer-events: auto; transition: opacity 0.15s ease;
 }
-.ticket-message:hover .msg-tools, .ticket-message:focus-within .msg-tools { opacity: 1; pointer-events: auto; }
+.ticket-message:hover .msg-tools, .ticket-message:focus-within .msg-tools { opacity: 1; }
+/* على الموبايل والتابلت مافيش hover خالص — الزراير لازم تبان كاملة وإلا مافيش طريقة توصلها */
+@media (hover: none) {
+  .msg-tools { opacity: 1; }
+}
 .msg-tool-btn {
   width: 22px; height: 22px; padding: 0; line-height: 1; font-size: 11px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
