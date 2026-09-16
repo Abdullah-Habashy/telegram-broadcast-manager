@@ -7305,7 +7305,10 @@ ${reply.content}` : reply.content;
         if (sync.status === 'running') {
           statusElement.textContent = `جارٍ الفحص: ${sync.checked_count || 0} من ${sync.total_count || '...'} — ${sync.found_reachable || 0} قابل للمراسلة لحد دلوقتي`;
         } else if (sync.status === 'completed') {
-          statusElement.textContent = `آخر فحص: ${fmtDate(sync.completed_at)} — ${sync.found_reachable || 0} طالب إضافي قابل للمراسلة من أصل ${sync.total_count || 0} اتفحصوا`;
+          // التحذير بيتكتب لما الفحص يخلص وفيه طلاب ما اتفحصوش بسبب أخطاء عابرة —
+          // من غير عرضه الفحص بيبان تمام وهو ناقص
+          statusElement.textContent = `آخر فحص: ${fmtDate(sync.completed_at)} — ${sync.found_reachable || 0} طالب إضافي قابل للمراسلة من أصل ${sync.total_count || 0} اتفحصوا`
+            + (sync.error_message ? ` · ${sync.error_message}` : '');
         } else if (sync.status === 'failed') {
           statusElement.textContent = `فشل آخر فحص: ${sync.error_message || 'سبب غير معروف'}`;
         } else {

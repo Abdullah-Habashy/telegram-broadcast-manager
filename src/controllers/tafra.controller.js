@@ -910,12 +910,69 @@ async function getFollowUpBotStartLog(req, res) {
 // غير كده. الفحص ده بيتأكد فعليًا (getChat، من غير إرسال أي رسالة) مين من الطلاب المرتبطين (عندهم
 // telegram_chat_id) قابل للمراسلة بالفعل، ويسجّله بـ source='platform_link' (بدون started_at حقيقي
 // لأننا مش عارفين متى فعلًا بدأ). عملية طويلة نسبيًا (آلاف الطلاب) فبتشتغل في الخلفية زي باقي المزامنات.
-async function performReachabilitySync() {
+// ---------- فحص طالب واحد ----------
+//
+// **الفرق بين "مش على البوت" و"مشكلة عندنا" مهم.** الكود القديم كان بيبلع أي خطأ ويعتبره
+// مش قابل للمراسلة — يعني تقطيعة شبكة أو حد من تليجرام كان بيشطب طالب موجود فعلًا،
+// وماكانش فيه أي أثر يقول ده حصل.
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// الرسايل دي معناها إن الطالب فعلًا مش قابل للمراسلة، ومافيش فايدة من إعادة المحاولة
+const NOT_ON_BOT = /chat not found|bot was blocked|user is deactivated|bot can't initiate|PEER_ID_INVALID/i;
+
+function classifyReachabilityError(error) {
+  const response = error?.response || error;
+  const description = String(response?.description || error?.message || '');
+  const code = response?.error_code ?? error?.code;
+  // ٤٢٩ = تعدّينا الحد. تليجرام بيقول يستنى قد إيه، والانتظار أرخص من إننا نشطب الطالب
+  if (Number(code) === 429) {
+    const retryAfter = Number(response?.parameters?.retry_after || error?.parameters?.retry_after || 3);
+    return { kind: 'rate_limit', retryAfter };
+  }
+  if (NOT_ON_BOT.test(description)) return { kind: 'unreachable', description };
+  return { kind: 'error', description };
+}
+
+// بترجّع 'reachable' أو 'unreachable' أو 'error'
+async function checkOneStudent(bot, row) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const chat = await bot.telegram.getChat(row.telegram_chat_id);
+      await pool.query(
+        `INSERT INTO new_bot_contacts (chat_id, telegram_username, first_name, started_at, source)
+         VALUES ($1, $2, $3, NULL, 'platform_link')
+         ON CONFLICT (chat_id) DO NOTHING`,
+        [row.telegram_chat_id, chat.username || row.telegram_username || null, chat.first_name || row.name || null]
+      );
+      return 'reachable';
+    } catch (error) {
+      const verdict = classifyReachabilityError(error);
+      if (verdict.kind === 'unreachable') return 'unreachable';
+      if (verdict.kind === 'rate_limit') {
+        // مش بنعدّها محاولة: الحد مالوش علاقة بالطالب ده
+        await sleep((verdict.retryAfter + 1) * 1000);
+        attempt -= 1;
+        continue;
+      }
+      if (attempt === 2) {
+        console.error(`⚠️ Reachability check failed for ${row.telegram_chat_id}: ${verdict.description}`);
+        return 'error';
+      }
+      await sleep(1000);
+    }
+  }
+  return 'error';
+}
+
+// `botOverride` بيتبعت من سكربت تشغيل يدوي بنسخة قراءة-فقط من بوت طفرة. التطبيق
+// نفسه مابيبعتهاش، فبياخد البوت الشغّال زي الأول بالظبط
+async function performReachabilitySync(botOverride = null) {
   reachabilitySyncRunning = true;
   const newBotManager = require('../bot/newBotManager');
-  const bot = newBotManager.getBot();
+  const bot = botOverride || newBotManager.getBot();
   let checked = 0;
   let found = 0;
+  const tally = {};
   try {
     const candidates = await pool.query(
       `SELECT s.telegram_chat_id, s.telegram_username, s.name
@@ -932,18 +989,10 @@ async function performReachabilitySync() {
     );
 
     for (const row of rows) {
-      try {
-        const chat = await bot.telegram.getChat(row.telegram_chat_id);
-        await pool.query(
-          `INSERT INTO new_bot_contacts (chat_id, telegram_username, first_name, started_at, source)
-           VALUES ($1, $2, $3, NULL, 'platform_link')
-           ON CONFLICT (chat_id) DO NOTHING`,
-          [row.telegram_chat_id, chat.username || row.telegram_username || null, chat.first_name || row.name || null]
-        );
-        found += 1;
-      } catch (error) {
-        // مش قابل للمراسلة فعليًا (لسه ما ضغطش Start، أو بلوك البوت) — متوقّع لجزء من الطلاب، نتجاهله ونكمل
-      }
+      const outcome = await checkOneStudent(bot, row);
+      if (outcome === 'reachable') found += 1;
+      else tally[outcome] = (tally[outcome] || 0) + 1;
+
       checked += 1;
       if (checked % 20 === 0) {
         await pool.query(
@@ -951,13 +1000,21 @@ async function performReachabilitySync() {
           [checked, found]
         );
       }
-      await new Promise((resolve) => setTimeout(resolve, 120));
+      await sleep(120);
     }
+
+    // **الأخطاء العابرة لازم تبان.** من غير ده الفحص بيقول "completed" وهو ضيّع طلاب
+    // على مشكلة شبكة، والرقم بيبقى غلط ومحدش يعرف
+    const warning = tally.error
+      ? `⚠️ ${tally.error} طالب ما اتفحصوش بسبب أخطاء عابرة — أعد الفحص عشان يتحسبوا`
+      : null;
+    console.log(`🔍 Reachability scan finished: ${found} reachable, `
+      + `${tally.unreachable || 0} not on the bot, ${tally.error || 0} transient errors.`);
 
     await pool.query(
       `UPDATE new_bot_reachability_sync_status SET status='completed', checked_count=$1,
-       found_reachable=$2, completed_at=NOW(), updated_at=NOW() WHERE id=1`,
-      [checked, found]
+       found_reachable=$2, error_message=$3, completed_at=NOW(), updated_at=NOW() WHERE id=1`,
+      [checked, found, warning]
     );
   } catch (error) {
     console.error('Failed to sync new-bot reachability:', error.message);
@@ -1795,6 +1852,7 @@ module.exports = {
   listSupportBootcamps, saveSupportBootcamps,
   getCredentials, saveEnrollmentPage, getNewBotInfo, listNewBotContacts, listNewBotContactIds, sendNewBotBroadcast,
   syncNewBotReachability, getNewBotReachabilitySyncStatus, getFollowUpBotStartLog,
+  performReachabilitySync,
   searchStudentsForLink, linkContactToStudent, unlinkContactFromStudent,
   getNewBotWebhookStatus, claimNewBotWebhook, releaseNewBotWebhook,
 };
