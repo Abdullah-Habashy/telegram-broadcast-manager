@@ -104,6 +104,24 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS student_menu_kind VARCHAR(10);
 -- صراحةً — تيليجرام مابيشيلوش لوحده.
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS keyboard_removed_at TIMESTAMPTZ;
 
+-- ---------- واتساب: كل اللي بيوصل من فيسبوك زي ما هو ----------
+--
+-- **التسجيل الخام قبل أي معالجة.** الربط بصندوق الدعم لسه مش متبني، والويبهوك شغّال —
+-- فاللي بيوصل دلوقتي بيتحفظ هنا بدل ما يضيع. ولما الربط يتعمل، الصفوف دي مصدر يتعالج منه.
+--
+-- وبيفضل مفيد بعد الربط كمان: أي شكل رسالة جديد من واتساب بيبان هنا كامل، والتشخيص بيبقى
+-- على البيانات الحقيقية مش على تخمين.
+CREATE TABLE IF NOT EXISTS whatsapp_events (
+    id BIGSERIAL PRIMARY KEY,
+    payload JSONB NOT NULL,
+    message_count SMALLINT NOT NULL DEFAULT 0,
+    status_count SMALLINT NOT NULL DEFAULT 0,
+    processed_at TIMESTAMPTZ,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_events_unprocessed
+    ON whatsapp_events (received_at) WHERE processed_at IS NULL;
+
 -- نص مخصّص لرسالة المتابعة التلقائية القادمة لهذه التذكرة وحدها. فاضي = استخدم القالب العام
 -- من الإعدادات. بيتمسح بعد الإرسال عشان يفضل "الرسالة القادمة" مش قالب دائم للطالب ده
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS next_follow_up_message TEXT;

@@ -7,6 +7,7 @@ const path = require('path');
 const pool = require('./config/db');
 const botManager = require('./bot/botManager');
 const newBotManager = require('./bot/newBotManager');
+const whatsapp = require('./integrations/whatsapp');
 const { startScheduler } = require('./jobs/scheduler');
 const { startTafraSyncScheduler } = require('./jobs/tafraSyncScheduler');
 const { startStaffActivityDigest } = require('./jobs/staffActivityDigest');
@@ -67,7 +68,14 @@ app.set('views', path.join(__dirname, 'views'));
 // من غير أي رسالة خطأ ظاهرة (بالظبط الأعراض اللي حصلت بعد النقل للسيرفر)
 app.set('trust proxy', 1);
 
-app.use(express.json());
+// **التوقيع بيتحسب على البايتات الخام.** `express.json()` بيفك الجسم ويرمي الأصل،
+// وإعادة بنائه بـ`JSON.stringify` بتغيّر المسافات وترتيب المفاتيح فالتوقيع يفشل على
+// طلبات سليمة. الحفظ متقصور على مسار واتساب عشان مانضاعفش ذاكرة كل طلب في النظام
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (req.originalUrl && req.originalUrl.startsWith('/whatsapp/')) req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -93,6 +101,61 @@ app.use(
     },
   })
 );
+
+// ===== WhatsApp Webhook (Meta Cloud API) =====
+//
+// **فيسبوك بيستخدم نفس المسار لحاجتين مختلفتين:** GET مرة واحدة وقت التسجيل للتأكد إن
+// السيرفر بتاعنا، وPOST لكل رسالة بعد كده.
+app.get(whatsapp.WEBHOOK_PATH, async (req, res) => {
+  try {
+    const { verifyToken } = await whatsapp.getConfig();
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    if (mode === 'subscribe' && verifyToken && token === verifyToken) {
+      console.log('✅ WhatsApp webhook verified by Meta.');
+      // الرد لازم يكون النص الخام بالظبط — أي تغليف بيفشّل التحقق
+      return res.status(200).send(String(req.query['hub.challenge'] || ''));
+    }
+    console.error('⚠️ WhatsApp webhook verification refused: the token did not match.');
+    return res.sendStatus(403);
+  } catch (error) {
+    console.error('❌ WhatsApp webhook verification failed:', error.message);
+    return res.sendStatus(500);
+  }
+});
+
+// **الرد بـ٢٠٠ الأول، والمعالجة بعدها.** فيسبوك بيعيد إرسال أي طلب مابيردّش بسرعة،
+// والإعادة معناها رسالة مكررة عند الطالب — فالتسجيل بيحصل بعد ما نقفل الرد
+app.post(whatsapp.WEBHOOK_PATH, async (req, res) => {
+  let config;
+  try {
+    config = await whatsapp.getConfig();
+  } catch (error) {
+    console.error('❌ Failed to read the WhatsApp config:', error.message);
+    return res.sendStatus(500);
+  }
+
+  const check = whatsapp.verifySignature(req.rawBody, req.headers['x-hub-signature-256'], config.appSecret);
+  if (!check.ok) {
+    // **الرفض مقصود مش تساهل.** من غير التحقق أي حد يعرف الرابط يقدر يزوّر رسالة طالب
+    console.error(`⚠️ A WhatsApp webhook call was refused: ${check.reason}`);
+    return res.sendStatus(403);
+  }
+
+  res.sendStatus(200);
+
+  try {
+    const payload = req.body || {};
+    const messages = whatsapp.extractMessages(payload);
+    const statuses = whatsapp.extractStatuses(payload);
+    await whatsapp.storeEvent({ payload, messages, statuses });
+    if (messages.length) {
+      console.log(`💬 WhatsApp: ${messages.length} incoming message(s) stored, ${statuses.length} status update(s).`);
+    }
+  } catch (error) {
+    console.error('❌ Failed to store a WhatsApp webhook payload:', error.message);
+  }
+});
 
 // ===== Telegram Webhook =====
 // بيوصله تحديثات البوت مباشرة من تليجرام — بنتحقق من الـ secret token قبل المعالجة
@@ -249,6 +312,11 @@ async function resetStaleSyncStatuses() {
 
 async function start() {
   await resetStaleSyncStatuses();
+
+  // نص التحقق بتاع واتساب لازم يكون موجود **قبل** ما حد يفتح لوحة فيسبوك ويسجّل الويبهوك،
+  // فبيتولّد هنا مرة واحدة ويفضل زي ما هو
+  await whatsapp.ensureVerifyToken().catch((error) =>
+    console.error('❌ Failed to prepare the WhatsApp verify token:', error.message));
 
   // مهم: البوت والـ cron jobs (الإرسال الجماعي، المتابعة التلقائية، مزامنة طفرة) ما بيبدأوش غير
   // بعد ما السيرفر ينجح فعليًا في حجز المنفذ. لو المنفذ مشغول من نسخة تانية شغّالة بالفعل (مثلاً
