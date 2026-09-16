@@ -230,6 +230,21 @@ async function resetStaleSyncStatuses() {
      WHERE id=1 AND status IN ('running', 'discovering')`,
     [staleMessage]
   );
+  // فحص الوصول لبوت طفرة كان ناقص من هنا، وده وقّعه فعليًا: الفحص مات وسط شغله في
+  // ١٧ أغسطس، والسطر فضل 'running' شهر كامل. الزرار في اللوحة بيتقفل على الحالة دي
+  // (`button.disabled = sync.status === 'running'`)، فصاحب المشروع ماكانش يقدر يعيده
+  // خالص — واتراكم ٣٧١٣ طالب مربوط ماتفحصوش ولا مرة
+  await pool.query(
+    `UPDATE new_bot_reachability_sync_status SET status='failed', error_message=$1, completed_at=NOW(), updated_at=NOW()
+     WHERE id=1 AND status='running'`,
+    [staleMessage]
+  );
+  // والمزامنة الانتقائية كمان — نفس النمط، ومحصلتش لحد دلوقتي بس مافيش سبب تستنى لما تحصل
+  await pool.query(
+    `UPDATE tafra_selective_sync_status SET status='failed', error_message=$1, completed_at=NOW(), updated_at=NOW()
+     WHERE id=1 AND status='running'`,
+    [staleMessage]
+  );
 }
 
 async function start() {
