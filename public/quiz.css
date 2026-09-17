@@ -241,6 +241,12 @@ body.qz-body {
    كل طالب شايف درجته أقل من اللي متوقعها */
 .qz-appeal-btn { margin-top: 10px; width: auto; padding: 6px 14px; font-size: 13px; }
 /* رد الموظف على التظلم زي ما الطالب بيشوفه — محاط عشان يبان إنه كلام موجّه له */
+/* شرح نطاق التظلم في شاشة النتيجة — باهت عشان مايزاحمش الدرجة، وواضح عشان يتقرا */
+.qz-appeal-scope {
+  margin: 0 0 8px; font-size: 13px; line-height: 1.7; color: var(--qz-muted, #9aa0b5);
+}
+.qz-appeal-scope b { color: inherit; }
+
 .qz-appeal-reply {
   margin-top: 6px; padding: 8px 10px;
   border-inline-start: 3px solid var(--qz-good);

@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260915f" />
+  <link rel="stylesheet" href="/quiz.css?v=20260917a" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -116,7 +116,14 @@
       <div id="qz-review-cta" style="display:none">
         <button class="qz-btn" id="qz-review-toggle" type="button">عرض الأخطاء ونموذج الإجابة</button>
       </div>
+      <%# **الشرح قبل الضغط مش بعده.** الطالب اللي بيدوّر على زرار تظلم جنب سؤال
+          اختياري أو سؤال سابه فاضي ومش لاقيه بيفتكر إن فيه عطل. السطر ده بيقوله
+          القاعدة من الأول، فالغياب يبقى مفهوم مش مفاجأة %>
       <div id="qz-appeal-cta" style="display:none">
+        <p class="qz-appeal-scope">
+          التظلم بيتقدّم على <b>سؤال مقالي حليته</b> وشايف إن تصحيحه غلط.<br>
+          أسئلة الاختيار من متعدد والأسئلة اللي سبتها فاضية مالهاش تظلم.
+        </p>
         <button class="qz-btn ghost" id="qz-appeal-open" type="button">أتظلم من درجتي</button>
       </div>
     </div>
@@ -1091,6 +1098,8 @@
       showError('qz-appeal-error', '');
       var open = openAppealCount();
       // من غير سقف، الجملة مابتقولش رقم — ذكر حد مش موجود بيخوّف الطالب من غير سبب
+      // نفس القاعدة مكتوبة تاني جوه المربع: الطالب اللي فتحه من زرار سؤال بعينه
+      // مامرش على الشرح اللي فوق
       var capNote = appeals.limit ? ' — الحد الأقصى ' + appeals.limit + ' أسئلة للورقة.' : '.';
       el('qz-appeal-intro').textContent = open
         ? 'دي الأسئلة اللي اتظلمت منها. شيل أو زوّد اللي إنت عايزه وبعدين احفظ' + capNote
