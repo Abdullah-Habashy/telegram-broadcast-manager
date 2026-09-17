@@ -9,6 +9,7 @@ const teamsController = require('../controllers/teams.controller');
 const voiceController = require('../controllers/voice.controller');
 const { MAX_BYTES: VOICE_MAX_BYTES } = require('../utils/voiceNote');
 const pdfAttachment = require('../utils/pdfAttachment');
+const videoAttachment = require('../utils/videoAttachment');
 const { requireAuthApi, requireTicketsAccessApi, requireAdminApi } = require('../middleware/requireAuth');
 
 const uploadDir = path.join(__dirname, '..', '..', 'public', 'uploads', 'support');
@@ -21,7 +22,9 @@ const upload = multer({
     filename: (req, file, callback) => {
       const extension = file.fieldname === 'file'
         ? '.pdf'
-        : (file.mimetype === 'image/png' ? '.png' : '.jpg');
+        : file.fieldname === 'video'
+          ? videoAttachment.extensionFor(file.mimetype, file.originalname)
+          : (file.mimetype === 'image/png' ? '.png' : '.jpg');
       // **الاسم على القرص UUID مش اسم اللي رفعه.** الاسم الأصلي بيتخزّن في القاعدة للعرض بس
       callback(null, `${crypto.randomUUID()}${extension}`);
     },
@@ -34,6 +37,12 @@ const upload = multer({
     if (file.fieldname === 'file') {
       const isPdf = file.mimetype === pdfAttachment.MIME || /\.pdf$/i.test(file.originalname || '');
       if (!isPdf) return callback(new Error('مسموح بملفات PDF فقط'));
+      return callback(null, true);
+    }
+    if (file.fieldname === 'video') {
+      if (!videoAttachment.looksLikeVideo(file.mimetype, file.originalname)) {
+        return callback(new Error('مسموح بملفات الفيديو فقط (mp4 أو mov أو webm)'));
+      }
       return callback(null, true);
     }
     if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
@@ -111,7 +120,11 @@ router.patch('/:id/next-follow-up-message', ticketsController.updateNextFollowUp
 router.patch('/:id', ticketsController.updateTicket);
 router.post(
   '/:id/reply',
-  upload.fields([{ name: 'image', maxCount: 1 }, { name: 'file', maxCount: 1 }]),
+  upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+    { name: 'video', maxCount: 1 },
+  ]),
   reportUploadError,
   ticketsController.replyToTicket
 );

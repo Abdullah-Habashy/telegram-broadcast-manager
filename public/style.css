@@ -515,6 +515,8 @@ tr:last-child td { border-bottom: none; }
 .ticket-message.outgoing { align-self: flex-end; background: var(--primary-tint); color: var(--text); }
 .ticket-message-content { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ticket-message-image { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
+/* مشغّل الفيديو في المحادثة — نفس حدود الصورة عشان الفقاعة ماتتمططش */
+.ticket-message-video { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; margin-bottom: 6px; background: #000; }
 .ticket-message-meta { margin-top: 5px; color: var(--text-faint); font-size: 10.5px; }
 /* أزرار تعديل/حذف الرسالة — بتطفو فوق الفقاعة من غير ما تاخد أي مساحة من الشاشة */
 /* **الزراير دي كانت مخفية تمامًا (opacity: 0) لحد ما تحوّم بالماوس.** النتيجة إن ٣ موظفين

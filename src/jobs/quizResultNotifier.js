@@ -77,8 +77,11 @@ async function sendPendingResults() {
 
     for (const row of rows) {
       try {
-        await bot.telegram.sendMessage(row.telegram_chat_id, buildMessage(row));
-        await pool.query('UPDATE quiz_attempts SET result_notified_at = NOW() WHERE id = $1', [row.id]);
+        const telegramMessage = await bot.telegram.sendMessage(row.telegram_chat_id, buildMessage(row));
+        // الرقم ده هو الفرق بين "ينفع نمسحها" و"راحت خلاص" — شوف التعليق على العمود في schema.sql
+        await pool.query(
+          'UPDATE quiz_attempts SET result_notified_at = NOW(), result_message_id = $2 WHERE id = $1',
+          [row.id, telegramMessage.message_id]);
         console.log(`📨 Sent the quiz result for attempt #${row.id}.`);
       } catch (error) {
         if (isPermanentSendError(error)) {

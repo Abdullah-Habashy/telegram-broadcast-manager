@@ -2034,9 +2034,29 @@
 
     // رابط تنزيل باسم الملف وحجمه. **مش <embed> ولا معاينة جوه الفقاعة** — الموظف بيفتح
     // عشرات المحادثات، وتحميل PDF في كل واحدة بيقفل الصفحة على موبايل
+    // الفيديو والـPDF بيتخزنوا في نفس أعمدة الملف، والتفرقة بالامتداد — نفس القايمة
+    // اللي في `utils/videoAttachment.js`
+    const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mkv', '.3gp'];
+    const isVideoFile = (filePath) =>
+      VIDEO_EXTENSIONS.some((ext) => String(filePath || '').toLowerCase().endsWith(ext));
+
     function attachmentLinkHtml(message) {
       if (!message.file_path) return '';
       const size = formatFileSize(message.file_size);
+
+      // **الفيديو بيتعرض مشغّل مش رابط تنزيل.** الموظف بيرد على عشرات التذاكر، وتنزيل
+      // ملف لكل واحدة عشان يشوف ثانيتين مش عملي. `preload="none"` عشان مايحمّلش
+      // الفيديوهات كلها مع فتح المحادثة
+      if (isVideoFile(message.file_path)) {
+        return `<video class="ticket-message-video" controls preload="none"
+          src="${attachmentUrl(message.file_path)}"></video>
+          <a class="ticket-message-file" href="${attachmentUrl(message.file_path)}" target="_blank" rel="noopener">
+            <span class="file-icon">🎥</span>
+            <span class="file-name">${escapeHtml(message.file_name || 'فيديو.mp4')}</span>
+            ${size ? `<span class="file-size">${size}</span>` : ''}
+          </a>`;
+      }
+
       return `<a class="ticket-message-file" href="${attachmentUrl(message.file_path)}" target="_blank" rel="noopener">
         <span class="file-icon">📄</span>
         <span class="file-name">${escapeHtml(message.file_name || 'ملف.pdf')}</span>
@@ -6505,6 +6525,14 @@ ${reply.content}` : reply.content;
               </label>
               <span id="ticket-reply-file-name" class="reply-image-indicator" style="display:none" title=""></span>
               <button type="button" class="btn btn-danger-ghost icon-action-btn" id="clear-ticket-reply-file" style="display:none" title="إزالة الملف" aria-label="إزالة الملف">✕</button>
+              <!-- إرفاق فيديو: مقطع شرح قصير. زرار تالت لنفس سبب الـPDF — الصيغ والحدود
+                   مختلفة، والسيرفر بياخد مرفق واحد بس فاختيار واحد بيلغي التانيين -->
+              <label class="btn btn-ghost icon-action-btn" title="إرفاق فيديو" aria-label="إرفاق فيديو">
+                🎥
+                <input type="file" id="ticket-reply-video" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" style="display:none">
+              </label>
+              <span id="ticket-reply-video-name" class="reply-image-indicator" style="display:none" title=""></span>
+              <button type="button" class="btn btn-danger-ghost icon-action-btn" id="clear-ticket-reply-video" style="display:none" title="إزالة الفيديو" aria-label="إزالة الفيديو">✕</button>
               <div class="idea-picker-wrap" id="idea-picker-wrap">
                 <button type="button" class="btn btn-ghost icon-action-btn idea-picker-toggle" id="idea-picker-toggle"
                   title="تسجيل رقم الفكرة" aria-label="تسجيل رقم الفكرة"
@@ -6793,6 +6821,9 @@ ${reply.content}` : reply.content;
         const replyFile = document.getElementById('ticket-reply-file');
         const replyFileName = document.getElementById('ticket-reply-file-name');
         const clearReplyFile = document.getElementById('clear-ticket-reply-file');
+        const replyVideo = document.getElementById('ticket-reply-video');
+        const replyVideoName = document.getElementById('ticket-reply-video-name');
+        const clearReplyVideo = document.getElementById('clear-ticket-reply-video');
 
         // **مرفق واحد بس في الرسالة** — السيرفر بيرفض الاتنين، فاختيار واحد بيفضّي التاني
         // هنا بدل ما الموظف يكتب رسالته ويدوس إرسال وياخد رفض
@@ -6811,16 +6842,31 @@ ${reply.content}` : reply.content;
         }
         replyImage.addEventListener('change', () => {
           const file = replyImage.files[0];
-          if (file) clearAttachment(replyFile, replyFileName, clearReplyFile);
+          if (file) {
+            clearAttachment(replyFile, replyFileName, clearReplyFile);
+            clearAttachment(replyVideo, replyVideoName, clearReplyVideo);
+          }
           showAttachment(replyImageName, clearReplyImage, file, '📷');
         });
         clearReplyImage.addEventListener('click', () => clearAttachment(replyImage, replyImageName, clearReplyImage));
         replyFile.addEventListener('change', () => {
           const file = replyFile.files[0];
-          if (file) clearAttachment(replyImage, replyImageName, clearReplyImage);
+          if (file) {
+            clearAttachment(replyImage, replyImageName, clearReplyImage);
+            clearAttachment(replyVideo, replyVideoName, clearReplyVideo);
+          }
           showAttachment(replyFileName, clearReplyFile, file, '📄');
         });
         clearReplyFile.addEventListener('click', () => clearAttachment(replyFile, replyFileName, clearReplyFile));
+        replyVideo.addEventListener('change', () => {
+          const file = replyVideo.files[0];
+          if (file) {
+            clearAttachment(replyImage, replyImageName, clearReplyImage);
+            clearAttachment(replyFile, replyFileName, clearReplyFile);
+          }
+          showAttachment(replyVideoName, clearReplyVideo, file, '🎥');
+        });
+        clearReplyVideo.addEventListener('click', () => clearAttachment(replyVideo, replyVideoName, clearReplyVideo));
 
         // —— بيكر رقم الفكرة ——
         const ideaPickerToggle = document.getElementById('idea-picker-toggle');
@@ -6998,11 +7044,17 @@ ${reply.content}` : reply.content;
       const content = textarea.value.trim();
       const image = document.getElementById('ticket-reply-image').files[0];
       const file = document.getElementById('ticket-reply-file').files[0];
-      if (!content && !image && !file) return showToast('اكتب نصًا أو أرفق صورة أو ملف PDF');
+      const video = document.getElementById('ticket-reply-video').files[0];
+      if (!content && !image && !file && !video) return showToast('اكتب نصًا أو أرفق صورة أو ملف أو فيديو');
       // الحدود دي مكررة في السيرفر — دي عشان الموظف مايستنى رفع ٢٠ ميجا قبل الرفض
-      if ((image || file) && content.length > 1024) return showToast('النص مع المرفق يجب ألا يتجاوز 1024 حرفًا');
+      if ((image || file || video) && content.length > 1024) return showToast('النص مع المرفق يجب ألا يتجاوز 1024 حرفًا');
       if (image && image.size > 10 * 1024 * 1024) return showToast('الصورة أكبر من ١٠ ميجا. صغّرها أو ابعتها ملف PDF.');
       if (file && file.size > 20 * 1024 * 1024) return showToast('الملف أكبر من ٢٠ ميجا. قسّمه أو صغّره.');
+      // **الرفض هنا بيحصل كتير مع الفيديو.** دقيقة من موبايل حديث بتعدّي ٢٠ ميجا بسهولة،
+      // وحد تيليجرام ٢٠ — فالرسالة بتقول الرقم والحل بدل "المرفق كبير"
+      if (video && video.size > 20 * 1024 * 1024) {
+        return showToast(`الفيديو ${(video.size / 1048576).toFixed(1)} ميجا — الحد ٢٠. صوّر مقطع أقصر أو اضغطه.`);
+      }
       const button = document.getElementById('send-ticket-reply');
       button.disabled = true;
       try {
@@ -7010,6 +7062,7 @@ ${reply.content}` : reply.content;
         formData.append('content', content);
         if (image) formData.append('image', image);
         if (file) formData.append('file', file);
+        if (video) formData.append('video', video);
         if (currentReplyToMessageId) formData.append('reply_to_message_id', currentReplyToMessageId);
         const response = await fetch(`/api/tickets/${currentTicketId}/reply`, { method: 'POST', body: formData });
         const data = await response.json().catch(() => ({}));

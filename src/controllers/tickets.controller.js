@@ -9,6 +9,7 @@ const botManager = require('../bot/botManager');
 const push = require('../utils/push');
 const { withStudentMenu, studentMenuOptions } = require('../bot/studentMenu');
 const pdfAttachment = require('../utils/pdfAttachment');
+const videoAttachment = require('../utils/videoAttachment');
 
 // **حد تيليجرام لـ sendPhoto، مش حدنا.** حد multer على مسار الرد أكبر من كده (حد الـPDF
 // ٢٠ ميجا) لأنه حد واحد للنسخة كلها، فالصورة بتتفحص بعد الرفع في `replyToTicket`
@@ -742,18 +743,19 @@ async function replyToTicket(req, res) {
   // للكنترولر يبعت بأنهي طريقة (sendPhoto / sendDocument) من غير ما يخمّن من الامتداد
   const imageFile = req.files?.image?.[0] || null;
   const documentFile = req.files?.file?.[0] || null;
-  const attachment = imageFile || documentFile;
+  const videoFile = req.files?.video?.[0] || null;
+  const attachment = imageFile || documentFile || videoFile;
 
   if (!content && !attachment) {
     removeUploadedAttachments(req);
-    return res.status(400).json({ error: 'اكتب نصًا أو أرفق صورة أو ملف PDF' });
+    return res.status(400).json({ error: 'اكتب نصًا أو أرفق صورة أو ملف أو فيديو' });
   }
   // **مرفق واحد بس.** تيليجرام بيبعت صورة أو ملف في الرسالة الواحدة، والنص بيبقى caption
   // لواحد منهم — والاتنين مع بعض معناه رسالتين أو نص ضايع. multer بيرفض التانية بـ
   // LIMIT_FILE_COUNT، والفحص هنا عشان الحد ده يفضل مكتوب في الكنترولر كمان
-  if (imageFile && documentFile) {
+  if ([imageFile, documentFile, videoFile].filter(Boolean).length > 1) {
     removeUploadedAttachments(req);
-    return res.status(400).json({ error: 'ابعت مرفق واحد بس — صورة أو ملف' });
+    return res.status(400).json({ error: 'ابعت مرفق واحد بس — صورة أو ملف أو فيديو' });
   }
   // حد الـ caption في تيليجرام ١٠٢٤ حرف، والرسالة النصية لوحدها ٤٠٩٦
   if ((!attachment && content.length > 4096) || (attachment && content.length > 1024)) {
@@ -774,6 +776,11 @@ async function replyToTicket(req, res) {
   if (documentFile && !pdfAttachment.isPdfOnDisk(documentFile.path)) {
     removeUploadedAttachments(req);
     return res.status(400).json({ error: 'الملف ده مكتوب عليه PDF بس محتواه حاجة تانية.' });
+  }
+  // نفس المنطق للفيديو: الامتداد والنوع المعلَن جايين من متصفح الموظف، والبايتات هي الحقيقة
+  if (videoFile && !videoAttachment.isVideoOnDisk(videoFile.path)) {
+    removeUploadedAttachments(req);
+    return res.status(400).json({ error: 'الملف ده مش فيديو فعلًا. جرّب تحوّله mp4 وابعته تاني.' });
   }
 
   const bot = botManager.getBot();
@@ -868,6 +875,7 @@ async function replyToTicket(req, res) {
     // الاسم الأصلي للعرض والتنزيل بس — الملف على القرص اسمه UUID، والاسم ده بيكتبه
     // الموظف فبيتنضّف قبل أي استخدام
     const documentName = documentFile ? pdfAttachment.safeName(documentFile.originalname) : null;
+    const videoName = videoFile ? videoAttachment.safeName(videoFile.originalname, videoFile.mimetype) : null;
 
     let attachmentPath = localAttachmentPath;
     let telegramMessage;
@@ -884,6 +892,14 @@ async function replyToTicket(req, res) {
         { source: absoluteAttachmentPath, filename: documentName },
         content ? { caption: content, ...replyOptions } : replyOptions
       );
+    } else if (videoFile) {
+      // **`sendVideo` مش `sendDocument`:** الفيديو بيتشغّل جوه تيليجرام بدل ما الطالب
+      // ينزّله ويدوّر على مشغّل — وده الفرق بين إنه يتفرّج ولا يتجاهله
+      telegramMessage = await bot.telegram.sendVideo(
+        ticketResult.rows[0].chat_id,
+        { source: absoluteAttachmentPath, filename: videoName },
+        content ? { caption: content, ...replyOptions } : replyOptions
+      );
     } else {
       telegramMessage = await bot.telegram.sendMessage(ticketResult.rows[0].chat_id, content, replyOptions);
     }
@@ -896,9 +912,12 @@ async function replyToTicket(req, res) {
       `INSERT INTO support_messages (ticket_id, sent_by, content, image_path, telegram_message_id,
          reply_to_incoming_message_id, file_path, file_name, file_size)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      // الفيديو بيتخزّن في نفس أعمدة الملف — اللوحة بتفرّق بينهم بالامتداد وتعرض
+      // مشغّل بدل رابط تنزيل. عمود جديد كان هيحتاج هجرة من غير أي فايدة زيادة
       [ticketId, req.session.userId, content, imageFile ? attachmentPath : null, telegramMessage.message_id,
-        replyToIncomingMessageId, documentFile ? attachmentPath : null, documentName,
-        documentFile ? documentFile.size : null]
+        replyToIncomingMessageId, (documentFile || videoFile) ? attachmentPath : null,
+        documentName || videoName,
+        (documentFile || videoFile) ? (documentFile || videoFile).size : null]
     );
     await pool.query(
       `UPDATE tickets SET

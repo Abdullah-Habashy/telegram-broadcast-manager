@@ -151,6 +151,14 @@ CREATE INDEX IF NOT EXISTS idx_bootcamp_activations_phone ON bootcamp_activation
 -- والمقارنة بتبقى بين العمود ده وآخر رسالة واردة منه.
 ALTER TABLE tickets ADD COLUMN IF NOT EXISTS silent_follow_up_sent_at TIMESTAMPTZ;
 
+-- رقم رسالة النتيجة على تيليجرام.
+-- **اتضاف بعد ما احتجناه ومالقيناهوش.** الإشعار كان بيبعت ويرمي رد تيليجرام، فلما اتطلب
+-- مسح درجات اختبار الباب الأول (٦١١ رسالة) كان الحذف مستحيل: `deleteMessage` محتاج
+-- `message_id` بالظبط، وتيليجرام مابيدّيش البوت أي طريقة يقرا بيها رسايله القديمة ولا
+-- يدوّر فيها بنص. من غير الرقم ده، الرسالة اللي اتبعتت مافيش رجوع فيها أبدًا.
+-- (وحتى بالرقم، الحذف متاح ٤٨ ساعة بس — فالحاجة دي بتنفع للتصحيح السريع مش للأرشيف.)
+ALTER TABLE quiz_attempts ADD COLUMN IF NOT EXISTS result_message_id BIGINT;
+
 CREATE INDEX IF NOT EXISTS idx_whatsapp_events_unprocessed
     ON whatsapp_events (received_at) WHERE processed_at IS NULL;
 

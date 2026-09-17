@@ -7,6 +7,7 @@ const push = require('../../utils/push');
 const { getNextTicketAssignee } = require('../../utils/ticketAssignment');
 const { isWithinWorkingHours, currentCairoTime, formatArabicTime } = require('../../utils/workingHours');
 const pdfAttachment = require('../../utils/pdfAttachment');
+const videoAttachment = require('../../utils/videoAttachment');
 // **كل رسالة رايحة للطالب بتاخد الكيبورد.** مابيتبعتش لوحده، ولو اتحط عند `/start` بس
 // كان اللي دخلوا البوت قبل الميزة عمرهم ما يشوفوا الزراير — وتيليجرام بيستبدل القديم
 // بالجديد فمفيش تكرار عند الطالب
@@ -64,6 +65,21 @@ async function downloadTelegramDocument(ctx, fileId) {
   const buffer = Buffer.from(await response.arrayBuffer());
   if (!pdfAttachment.isPdfBuffer(buffer)) return null;
   const filename = `${crypto.randomUUID()}.pdf`;
+  const absolutePath = path.join(incomingUploadDir, filename);
+  fs.writeFileSync(absolutePath, buffer);
+  return { filePath: `uploads/incoming/${filename}`, absolutePath, size: buffer.length };
+}
+
+// نفس نمط `downloadTelegramDocument`: البايتات بتتفحص قبل ما تلمس القرص، والملف
+// اللي مش فيديو فعلًا مابيتكتبش أصلًا
+async function downloadTelegramVideo(ctx, fileId, mimeType, originalName) {
+  const fileUrl = await ctx.telegram.getFileLink(fileId);
+  const response = await fetch(fileUrl);
+  if (!response.ok) throw new Error(`Telegram file download returned ${response.status}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!videoAttachment.isVideoBuffer(buffer)) return null;
+  const extension = videoAttachment.extensionFor(mimeType, originalName);
+  const filename = `${crypto.randomUUID()}${extension}`;
   const absolutePath = path.join(incomingUploadDir, filename);
   fs.writeFileSync(absolutePath, buffer);
   return { filePath: `uploads/incoming/${filename}`, absolutePath, size: buffer.length };
@@ -309,8 +325,6 @@ function registerMessageHandler(bot) {
   // **`document` مابقاش في القايمة دي** — ملف PDF بقى بيتقبل تحت، وأي ملف تاني بيعدّي
   // على نفس الدالة برسالة تقوله يحوّله PDF
   const UNSUPPORTED_MEDIA = [
-    ['video', '🎥 فيديو'],
-    ['video_note', '🎥 فيديو دائري'],
     ['voice', '🎤 رسالة صوتية'],
     ['audio', '🎵 ملف صوتي'],
     ['sticker', '🏷️ ملصق'],
@@ -389,6 +403,50 @@ function registerMessageHandler(bot) {
       await ctx.reply('تعذر حفظ الملف. حاول إرساله مرة أخرى.', await studentMenuOptions(ctx.chat.id));
     }
   });
+
+  // ---------- فيديو من الطالب ----------
+  //
+  // بيتعامل مع `video` (المقطع العادي) و`video_note` (الفيديو الدائري) بنفس الطريقة —
+  // الاتنين بيوصلوا الموظف كملف يتفرّج عليه، والفرق بينهم شكلي عند الطالب بس.
+  //
+  // **الرفض بسبب الحجم هيحصل كتير هنا** عكس الـPDF: دقيقة من موبايل حديث ممكن توصل
+  // ١٠٠ ميجا، وحد تليجرام ٢٠. فالرسالة بتقول الرقم وتقوله يعمل إيه بدل "مش مدعوم"
+  const handleIncomingVideo = async (ctx, source, label) => {
+    const declaredSize = Number(source.file_size) || 0;
+    if (declaredSize > videoAttachment.MAX_BYTES) {
+      return recordUnsupportedMedia(
+        ctx,
+        `${label} كبير (${videoAttachment.formatBytes(declaredSize)})`,
+        `الفيديو كبير شوية (${videoAttachment.formatBytes(declaredSize)}). أكبر حجم بنقدر نستقبله ٢٠ ميجا — `
+        + 'صوّر مقطع أقصر أو ابعت صورة للشاشة وهنفهم منك 🙏'
+      );
+    }
+
+    let downloaded = null;
+    try {
+      downloaded = await downloadTelegramVideo(ctx, source.file_id, source.mime_type, source.file_name);
+      if (!downloaded) {
+        return recordUnsupportedMedia(ctx, label, 'مقدرناش نفتح الفيديو ده. جرّب تبعته تاني 🙏');
+      }
+      await processIncomingMessage(bot, ctx, {
+        content: String(ctx.message.caption || '').trim(),
+        filePath: downloaded.filePath,
+        fileName: videoAttachment.safeName(source.file_name, source.mime_type),
+        fileSize: downloaded.size,
+        absolutePath: downloaded.absolutePath,
+        fileId: source.file_id,
+        telegramMessageId: ctx.message.message_id,
+        replyToTelegramMessageId: ctx.message.reply_to_message?.message_id ?? null,
+      });
+    } catch (error) {
+      if (downloaded?.absolutePath) fs.unlink(downloaded.absolutePath, () => {});
+      console.error('❌ Failed to receive an incoming video:', error.message);
+      await ctx.reply('تعذر حفظ الفيديو. حاول إرساله مرة أخرى.', await studentMenuOptions(ctx.chat.id));
+    }
+  };
+
+  bot.on('video', (ctx) => handleIncomingVideo(ctx, ctx.message.video || {}, videoAttachment.LABEL));
+  bot.on('video_note', (ctx) => handleIncomingVideo(ctx, ctx.message.video_note || {}, '🎥 فيديو دائري'));
 
   bot.on('photo', async (ctx) => {
     const photos = ctx.message.photo;
