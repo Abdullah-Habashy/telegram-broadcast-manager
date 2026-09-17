@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const pool = require('../config/db');
 const { gradeEssayAnswer } = require('./quizGrading');
+const { questionTextForGrading } = require('./quizGradingRules');
 
 // ---------- صورة الإجابة ----------
 //
@@ -34,14 +35,6 @@ function readAnswerImage(storedPath) {
 //
 // مشترك بين تلات مسارات: الطالب بيسلّم بنفسه، والوقت خلص وهو قافل الصفحة (jobs/quizFinalizer)،
 // والموظف بيضغط "صحّح دلوقتي". التلاتة بيعملوا نفس الحاجة بالظبط فلازم يبقوا كود واحد.
-
-// الفرع بيتبعت مع رأسه: "رأس السؤال\nأ) نص الفرع". من غير الرأس، فرع زي "اذكر اتنين
-// منهم" بيوصل النموذج بلا سياق والحكم بيبقى عشوائي
-function questionTextForGrading(question) {
-  if (!question.parent_text) return question.text;
-  const label = question.label ? `${question.label}) ` : '';
-  return `${question.parent_text}\n\n${label}${question.text}`;
-}
 
 // **التصحيح الآلي مش شرط لإنهاء المحاولة.** لو النموذج فشل (مفتاح ناقص، شبكة، مخرج غريب)،
 // الاختياري بيتحسب والمقالي بيتساب من غير درجة والحالة بتبقى partial — الموظف بيشوفها
