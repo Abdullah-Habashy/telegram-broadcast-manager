@@ -164,7 +164,8 @@ async function loadReviewForAttempt(attemptId, quizId) {
             an.selected_option, an.essay_text, an.awarded_points, an.is_correct,
             an.ai_verdict, an.ai_reason, an.graded_by, an.answer_image_path,
             ap.status AS appeal_status, ap.created_at AS appeal_at,
-            ap.decision AS appeal_decision, ap.staff_note AS appeal_staff_note
+            ap.decision AS appeal_decision, ap.staff_note AS appeal_staff_note,
+            ap.student_note AS appeal_note
      FROM quiz_questions q
      LEFT JOIN quiz_questions p ON p.id = q.parent_id
      LEFT JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
@@ -213,6 +214,9 @@ async function loadReviewForAttempt(attemptId, quizId) {
     // حالة التظلم بتترجع مع السؤال عشان الصفحة تعرف تعرض «اتظلمت» بدل الزرار — من
     // غيرها الطالب بيدوس تاني وياخد رفض مش مفهوم
     appeal: row.appeal_status || null,
+    // كلام الطالب نفسه بيرجعله عشان مربع التعديل يتملّى بيه — من غيره «عدّل تظلمك»
+    // بتمسح اللي كتبه وهو مش واخد باله
+    appeal_note: row.appeal_note || null,
     // **قرار الموظف وتعليقه بيوصلوا الطالب.** الحسم الصامت بيسيبه يقارن رقمين ويخمّن،
     // والرفض من غير سبب بيرجع تاني في صورة سؤال للدعم
     appeal_decision: row.appeal_decision || null,
@@ -818,7 +822,30 @@ async function submitAppeal(req, res) {
     });
   }
 
-  const note = String(req.body?.note || '').trim().slice(0, 1000) || null;
+  // **توضيح لكل سؤال، وإجباري.** كان اختياريًا وواحد للتظلم كله — يعني الطالب
+  // اللي اتظلم من تلات أسئلة كان بيكتب جملة واحدة تتحط على التلاتة، والموظف يقرا
+  // نفس الكلام تحت كل سؤال من غير ما يعرف مشكلة كل واحد فيهم إيه.
+  //
+  // `notes` خريطة { question_id: نص }. و`note` القديم بيفضل مقبول كاحتياطي لصفحة
+  // متحمّلة قبل التحديث — بيتطبّق على كل الأسئلة زي ما كان بيعمل بالظبط
+  const notes = (req.body?.notes && typeof req.body.notes === 'object') ? req.body.notes : {};
+  const fallbackNote = String(req.body?.note || '').trim();
+  // `??` مش `||`: الطالب اللي مسح اللي كتبه بيبعت نص فاضي، والفاضي ده لازم يفضل فاضي
+  // عشان الفحص تحت يمسكه — `||` كان هيرجّعه للنص المشترك ويعدّيه
+  const noteFor = (id) => String(notes[id] ?? notes[String(id)] ?? fallbackNote).trim().slice(0, 1000);
+
+  // الأسئلة اللي من غير توضيح بترجع بأسمائها مش بعددها — «اكتب سبب لكل سؤال» على ورقة
+  // فيها ١٥ سؤال مابتقولش لمين
+  const missing = valid.filter((id) => !noteFor(id));
+  if (missing.length) {
+    const labels = await pool.query(
+      `SELECT q.id, q.position + 1 AS number FROM quiz_questions q WHERE q.id = ANY($1::int[]) ORDER BY q.position`,
+      [missing]);
+    const names = labels.rows.map((row) => `سؤال ${row.number}`).join(' و');
+    return res.status(400).json({
+      error: `اكتب سبب التظلم على ${names} — من غير توضيح الفريق مش هيعرف يراجع المشكلة.`,
+    });
+  }
 
   // **التقديم استبدال مش إضافة.** الطالب بيبعت القايمة اللي عايزها كاملة، فاللي شالها
   // بيتمسح واللي زوّدها بيتضاف — وده اللي بيخلّي «تعديل التظلم» يشتغل من غير مسار تاني.
@@ -835,13 +862,12 @@ async function submitAppeal(req, res) {
     if (valid.length) {
       const { rows } = await client.query(
         `INSERT INTO quiz_appeals (attempt_id, question_id, student_note, points_at_appeal)
-         SELECT $1, q.id, $3, an.awarded_points
-         FROM quiz_questions q
-         JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
-         WHERE q.id = ANY($2::int[])
+         SELECT $1, v.question_id, v.student_note, an.awarded_points
+         FROM unnest($2::int[], $3::text[]) AS v(question_id, student_note)
+         JOIN quiz_answers an ON an.question_id = v.question_id AND an.attempt_id = $1
          ON CONFLICT (attempt_id, question_id) DO UPDATE SET student_note = EXCLUDED.student_note
          RETURNING question_id`,
-        [attempt.id, valid, note]);
+        [attempt.id, valid, valid.map(noteFor)]);
       submitted = rows.map((row) => row.question_id);
     }
     await client.query('COMMIT');

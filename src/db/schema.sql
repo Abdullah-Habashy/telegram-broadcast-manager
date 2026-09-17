@@ -1454,7 +1454,11 @@ CREATE TABLE IF NOT EXISTS quiz_appeals (
     id SERIAL PRIMARY KEY,
     attempt_id INTEGER NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
     question_id INTEGER NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
-    -- سبب التظلم بكلام الطالب. اختياري: إجباره يكتب بيخلي اللي مش عارف يعبّر يسكت
+    -- سبب التظلم بكلام الطالب، **لكل سؤال لوحده وإجباري** (بيتفرض في submitAppeal).
+    -- كان اختياريًا بحجة إن الإجبار بيخلي اللي مش عارف يعبّر يسكت، واتغيّر ١٧ سبتمبر
+    -- ٢٠٢٦: التظلم من غير سبب بيوصل الموظف كـ«راجع السؤال ده» من غير ما يعرف المشكلة
+    -- إيه، فبيراجع نفس التصحيح ويرجع بنفس النتيجة والطالب يحس إن محدش بص.
+    -- العمود سايب NULL عشان الصفوف القديمة، والفرض في الكود مش في القاعدة
     student_note TEXT,
     -- open = مستني الأدمن · resolved = الأدمن شاف السؤال وحسم (عدّل الدرجة أو اعتمدها)
     status VARCHAR(20) NOT NULL DEFAULT 'open',

@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260917b" />
+  <link rel="stylesheet" href="/quiz.css?v=20260917c" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -150,10 +150,13 @@
   <div class="qz-card qz-appeal" id="qz-appeal" style="display:none">
     <h2>تقديم تظلّم</h2>
     <p id="qz-appeal-intro"></p>
+    <%# نص صاحب المشروع حرفيًا. ثابت مش متغيّر عشان يفضل ظاهر في كل الحالات —
+        سواء الطالب بيقدّم لأول مرة أو بيعدّل تظلم قديم %>
+    <p class="qz-appeal-why-ask">اكتب لنا بالتفصيل سبب تظلمك من كل سؤال عشان نقدر نراجع
+      ونفهم وجهة نظرك ونرفع الدرجات المطلوبة بإذن الله</p>
+    <%# **خانة لكل سؤال مش خانة واحدة للتظلم كله.** كانت جملة واحدة بتتحط على كل
+        الأسئلة، فالموظف بيقرا نفس الكلام تحت كل سؤال ومايعرفش مشكلة كل واحد فيهم إيه %>
     <div class="qz-appeal-list" id="qz-appeal-list"></div>
-    <label class="qz-appeal-note-label" for="qz-appeal-note">تحب تقول حاجة للمصحّح؟ (اختياري)</label>
-    <textarea class="qz-textarea" id="qz-appeal-note" rows="3"
-      placeholder="مثلًا: إجابتي نفس المعنى بس بصيغة تانية"></textarea>
     <div class="qz-appeal-actions">
       <button class="qz-btn" id="qz-appeal-submit" type="button">قدّم التظلم</button>
       <button class="qz-btn ghost" id="qz-appeal-cancel" type="button">إلغاء</button>
@@ -1146,22 +1149,43 @@
       // مامرش على الشرح اللي فوق
       var capNote = appeals.limit ? ' — الحد الأقصى ' + appeals.limit + ' أسئلة للورقة.' : '.';
       el('qz-appeal-intro').textContent = open
-        ? 'دي الأسئلة اللي اتظلمت منها. شيل أو زوّد اللي إنت عايزه وبعدين احفظ' + capNote
-        : 'علّم على كل الأسئلة اللي شايف تصحيحها غلط' + capNote;
+        ? 'دي الأسئلة اللي اتظلمت منها. شيل أو زوّد اللي إنت عايزه، واكتب سبب كل واحد' + capNote
+        : 'علّم على كل سؤال شايف تصحيحه غلط، واكتب تحته إيه اللي غلط بالظبط' + capNote;
 
       // **المتظلَّم منه بييجي متعلّم عليه**، فالمربع بيعرض حالة التظلم الحالية زي ما هي
       // والطالب بيعدّلها — وده معنى «تعديل» بدل «تقديم من أول وجديد»
       list.innerHTML = candidates.map(function (answer) {
         var isOpen = answer.appeal === 'open';
-        var checked = (isOpen || answer.question_id === preselectId) ? ' checked' : '';
-        return '<label class="qz-appeal-item">'
-          + '<input type="checkbox" value="' + answer.question_id + '"' + checked + ' />'
-          + '<span class="qz-appeal-item-label">' + esc(appeals.labels[answer.question_id] || 'سؤال')
+        var on = isOpen || answer.question_id === preselectId;
+        var qid = answer.question_id;
+        // اللي كتبه قبل كده بييجي معاه — «عدّل تظلمك» مالوش معنى لو بيمسح كلامه
+        var previous = answer.appeal_note ? esc(answer.appeal_note) : '';
+        return '<div class="qz-appeal-item-wrap">'
+          + '<label class="qz-appeal-item">'
+          + '<input type="checkbox" value="' + qid + '"' + (on ? ' checked' : '') + ' />'
+          + '<span class="qz-appeal-item-label">' + esc(appeals.labels[qid] || 'سؤال')
           + (isOpen ? ' <span class="qz-appeal-item-tag">متظلَّم منه</span>' : '')
           + '</span>'
           + '<span class="qz-appeal-item-score">' + answer.awarded_points + ' / ' + answer.points + '</span>'
-          + '</label>';
+          + '</label>'
+          + '<textarea class="qz-textarea qz-appeal-why" data-why="' + qid + '" rows="2"'
+          + (on ? '' : ' style="display:none"')
+          + ' placeholder="اشرح بالتفصيل: إجابتك كانت إيه، وليه شايف إنها تستاهل الدرجة">' + previous + '</textarea>'
+          + '</div>';
       }).join('') || '<p class="qz-appeal-empty">مفيش أسئلة متاح التظلم منها.</p>';
+
+      // الخانة بتظهر وتختفي مع العلامة — عرضها لكل الأسئلة بيخلي المربع حيط نصوص.
+      // **`change` مش `click`**: الطالب بيدوس على اسم السؤال نفسه غالبًا مش على المربع
+      // الصغير، ووقتها `click` بييجي من الـspan فالشرط بيفشل والخانة ماتظهرش.
+      // `change` بيتبعت من المربع نفسه مهما اتضغط منين
+      list.onchange = function (event) {
+        var input = event.target;
+        if (!input || input.type !== 'checkbox') return;
+        var why = list.querySelector('[data-why="' + input.value + '"]');
+        if (!why) return;
+        why.style.display = input.checked ? '' : 'none';
+        if (input.checked) why.focus();
+      };
 
       el('qz-appeal-submit').textContent = open ? 'احفظ التعديل' : 'قدّم التظلم';
       el('qz-appeal-submit').disabled = !candidates.length;
@@ -1197,13 +1221,28 @@
           'الحد الأقصى ' + appeals.limit + ' أسئلة للورقة'
           + (resolvedCount ? ' — و' + resolvedCount + ' منهم اتحسم خلاص.' : '.'));
       }
+      // **الفحص هنا وفي السيرفر الاتنين.** ده بيمنع رحلة ضايعة ويوري الطالب مكان
+      // المشكلة، والسيرفر هو اللي بيمنع فعلًا
+      var notes = {};
+      var blank = [];
+      for (var i = 0; i < ids.length; i += 1) {
+        var field = document.querySelector('[data-why="' + ids[i] + '"]');
+        var text = field ? field.value.trim() : '';
+        notes[ids[i]] = text;
+        if (!text) blank.push(appeals.labels[ids[i]] || 'سؤال');
+      }
+      if (blank.length) {
+        return showError('qz-appeal-error',
+          'اكتب سبب التظلم على ' + blank.join(' و') + ' — من غير توضيح الفريق مش هيعرف يراجع المشكلة.');
+      }
+
       var button = el('qz-appeal-submit');
       button.disabled = true;
       showError('qz-appeal-error', '');
       return post('/appeal', {
         attempt_key: state.key,
         question_ids: ids,
-        note: el('qz-appeal-note').value,
+        notes: notes,
       }).then(function () {
         // **بنعيد تحميل الورقة من السيرفر مش بنعدّل الشاشة بإيدنا.** حالة التظلم بتيجي
         // مع كل سؤال، فإعادة التحميل بتخلي الشاشة تطابق القاعدة بالظبط — والتعديل
@@ -1219,7 +1258,6 @@
           renderAppealSummary();
         }
         el('qz-appeal').style.display = 'none';
-        el('qz-appeal-note').value = '';
       }).catch(function (error) {
         showError('qz-appeal-error', error.message);
         button.disabled = false;

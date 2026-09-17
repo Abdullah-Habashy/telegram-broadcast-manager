@@ -278,6 +278,17 @@ body.qz-body {
 .qz-appeal-item-label { flex: 1; font-weight: 600; }
 .qz-appeal-item-score { color: var(--qz-muted); font-size: 13px; flex: none; }
 .qz-appeal-empty { color: var(--qz-muted); }
+/* الطلب مكتوب بوضوح فوق الخانات: الطالب بيقرا سطر واحد قبل ما يكتب، والسطر ده هو
+   الفرق بين «تصحيح غلط» وبين توضيح الموظف يقدر يراجع بيه فعلًا */
+.qz-appeal-why-ask {
+  margin: 10px 0 0; padding: 10px 12px; font-size: 14px; font-weight: 600;
+  line-height: 1.7; border-radius: 10px;
+  color: var(--qz-text); background: var(--qz-accent-soft);
+  border: 1px solid var(--qz-accent);
+}
+.qz-appeal-item-wrap { display: flex; flex-direction: column; gap: 6px; }
+/* الخانة متلزقة في سؤالها: مسافة تحتها بتخليها تبان كأنها بتاعة السؤال اللي بعده */
+.qz-appeal-why { margin: 0 0 4px; font-size: 14px; }
 .qz-appeal-note-label { display: block; margin-bottom: 6px; font-size: 14px; color: var(--qz-muted); }
 .qz-appeal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .qz-appeal-actions .qz-btn { width: auto; }
