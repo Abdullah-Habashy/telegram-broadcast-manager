@@ -1803,6 +1803,9 @@
   <script>
     const currentUserRole = '<%= userRole %>';
     const currentUserTeam = <%- userTeam ? JSON.stringify(userTeam) : 'null' %>;
+    // **الإخفاء تجميل مش حماية** — الحارس في السيرفر (requireAppealAccessApi) هو اللي
+    // بيمنع فعلًا. ده بيمنع الموظف يشوف زرار بيترفض لما يدوسه
+    const canDecideAppeals = currentUserRole === 'admin' || currentUserTeam === 'science';
     // نفس تعريف utils/teams.js — أي تيم جديد بيتضاف في الاتنين
     const TEAM_INFO = {
       science: { label: 'التيم العلمي', icon: '🧪', tone: 'science', transferTitle: 'تحويل السؤال للتيم العلمي' },
@@ -10621,14 +10624,15 @@ ${reply.content}` : reply.content;
                   onclick="goToQuizAnswer(${a.question_id})">شوف السؤال ↓</button>
               </div>
               ${studentNote}
-              <textarea class="compact-input appeal-note-input" data-question="${a.question_id}"
-                rows="2" maxlength="1000" placeholder="اكتب ردك للطالب — إجباري مع الرفض"></textarea>
+              ${canDecideAppeals ? `<textarea class="compact-input appeal-note-input" data-question="${a.question_id}"
+                rows="2" maxlength="1000" placeholder="اكتب ردك للطالب — إجباري مع الرفض"></textarea>` : ''}
+              ${canDecideAppeals ? `
               <div class="row" style="gap:6px; margin-top:6px; flex-wrap:wrap">
                 <button type="button" class="btn btn-primary btn-sm" style="width:auto"
                   onclick="decideAppeal(${attemptId}, ${a.question_id}, 'accepted')">✅ وافقت</button>
                 <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto"
                   onclick="decideAppeal(${attemptId}, ${a.question_id}, 'rejected')">✖️ رفضت</button>
-              </div>
+              </div>` : '<div class="card-desc">حسم التظلم للتيم العلمي بس.</div>'}
             </div>`;
         };
 
