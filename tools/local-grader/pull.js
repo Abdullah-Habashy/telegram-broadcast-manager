@@ -1,6 +1,7 @@
 // ---------- سحب دفعة تصحيح من الإنتاج للجهاز ----------
 //
 //   node tools/local-grader/pull.js --quiz 14 [--limit 200] [--images-only] [--all]
+//                                   [--attempts 10] [--attempt-ids 1,2,3]
 //
 // بيكتب `manifest.json` + مجلد `images/` في مساحة الشغل. الصور بتتنزّل مرة واحدة —
 // إعادة التشغيل بتتخطّى اللي موجود، فلو الشبكة قطعت في النص كمّل من مكانك.
@@ -22,6 +23,15 @@ if (!Number.isInteger(quizId) || quizId <= 0) {
   process.exit(1);
 }
 const limit = Number(arg('limit', 0)) || null;
+// **بالورقة مش بالسؤال.** `--limit` بياخد إجابات متفرقة من أوراق مختلفة، وده مابينفعش
+// لو عايز تقارن درجة ورقة كاملة قديمة بجديدة — لازم كل أسئلة الورقة تتصحّح مع بعض
+const attemptCount = Number(arg('attempts', 0)) || null;
+// `.filter(Boolean)` **قبل** التحويل لرقم: `Number('')` بيساوي صفر مش NaN، فالقيمة
+// الفاضية كانت بتعدّي كرقم صحيح وتولّد `AND a.id IN (0)` — استعلام بيرجع صفر صف
+// من غير أي رسالة خطأ
+const attemptIds = String(arg('attempt-ids', '') || '')
+  .split(',').map((part) => part.trim()).filter(Boolean)
+  .map(Number).filter((id) => Number.isInteger(id) && id > 0);
 const imagesOnly = flag('images-only');
 // --all بتسحب المقالي كله حتى المتصحّح — لإعادة تصحيح اختبار قديم بمعيار جديد
 const all = flag('all');
@@ -41,6 +51,15 @@ SELECT COALESCE(json_agg(t ORDER BY t.attempt_id, t.question_id), '[]'::json)::t
   JOIN quiz_questions q ON q.id = an.question_id
   LEFT JOIN quiz_questions p ON p.id = q.parent_id
   WHERE a.quiz_id = ${quizId}
+    ${attemptIds.length ? `AND a.id IN (${attemptIds.join(',')})` : ''}
+    ${attemptCount ? `AND a.id IN (
+      -- **عيّنة موزّعة مش أول عشرة.** الترتيب بالـid بياخد أقدم الأوراق كلها، وأول
+      -- اللي سلّموا مش عيّنة ممثّلة. md5 بيوزّع عشوائيًا بس بشكل ثابت — نفس الأمر
+      -- بيرجّع نفس الأوراق، فالتقرير يتعاد ويتراجع
+      SELECT id FROM quiz_attempts
+      WHERE quiz_id = ${quizId} AND submitted_at IS NOT NULL AND grading_status = 'graded'
+      ORDER BY md5(id::text) LIMIT ${attemptCount}
+    )` : ''}
     AND q.kind = 'essay'
     AND a.submitted_at IS NOT NULL
     AND an.graded_by <> 'staff'

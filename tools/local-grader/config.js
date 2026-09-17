@@ -47,14 +47,30 @@ function psql(sql) {
   return ssh(`echo ${encoded} | base64 -d | sudo -u postgres psql -d ${REMOTE_DB} -Atq -v ON_ERROR_STOP=1 -f -`);
 }
 
-// بيدوّر على سطر JSON مش بياخد آخر سطر — حتى مع `-q` فيه أوامر بتطبع حاجة (NOTICE مثلًا)،
-// والاعتماد على الموضع بيكسر السكربت في يوم من غير سبب ظاهر
+function tryParse(text) {
+  try { return JSON.parse(text); } catch { return undefined; }
+}
+
+// **الـJSON بيجي على أكتر من سطر.** `json_agg` بيحط سطر جديد بين كل عنصر، فأي منطق
+// بيدوّر على "السطر اللي فيه الـJSON" بيرجّع null على استعلام فيه أكتر من صف — وده
+// بيبان كأن الاستعلام مالقاش حاجة، مش كأنه فشل.
+//
+// وفي نفس الوقت مخرج المعاملات (`push.js`) بينتهي بوسم زي `ROLLBACK` بعد الـJSON.
+// فالترتيب: جرّب المخرج كله، وبعدين لمّ من أول سطر بيبدأ بقوس لآخر سطر بيقفل قوس.
 function psqlJson(sql) {
-  const lines = psql(sql).split('\n').map((line) => line.trim()).filter(Boolean);
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const line = lines[i];
-    if (!line.startsWith('{') && !line.startsWith('[')) continue;
-    try { return JSON.parse(line); } catch { /* مش ده السطر */ }
+  const raw = psql(sql).trim();
+  if (!raw || raw === '\\N') return null;
+
+  const whole = tryParse(raw);
+  if (whole !== undefined) return whole;
+
+  const lines = raw.split('\n');
+  const start = lines.findIndex((line) => /^\s*[[{]/.test(line));
+  if (start === -1) return null;
+  for (let end = lines.length - 1; end >= start; end -= 1) {
+    if (!/[\]}]\s*$/.test(lines[end])) continue;
+    const parsed = tryParse(lines.slice(start, end + 1).join('\n'));
+    if (parsed !== undefined) return parsed;
   }
   return null;
 }

@@ -15,6 +15,14 @@ function arg(name, fallback = null) {
   return i === -1 ? fallback : (process.argv[i + 1] || true);
 }
 const apply = process.argv.includes('--apply');
+// **الدرجة الموجودة مابتتلمسش.** اتقاس على ٨٥ إجابة: التصحيح المحلي بيتفق مع الـAPI
+// في ٦٥٪ من الأسئلة بالظبط، والباقي بيختلف في تقدير الجزئي. يعني إعادة تصحيح ورق
+// متصحّح خلاص مش تحسين — ده تذبذب، ونتيجته إن طالب ياخد درجة غير زميله اللي كتب نفس
+// الإجابة، بفرق إن ورقته اتصححت في دفعة تانية.
+//
+// فالكتابة على الأسئلة اللي من غير درجة بس. `--overwrite` بيكسر القاعدة، وموجود
+// للحالة الوحيدة اللي تستاهل: مرجع إجابة اتصلّح والورق كله محتاج يتعاد بمعيار واحد.
+const overwrite = process.argv.includes('--overwrite');
 
 const quizId = Number(arg('quiz'));
 if (!Number.isInteger(quizId) || quizId <= 0) {
@@ -77,20 +85,27 @@ CREATE TEMP TABLE local_grades (
 INSERT INTO local_grades VALUES
     ${values};
 
-UPDATE quiz_answers an SET
-  awarded_points = g.awarded,
-  is_correct = g.is_correct,
-  ai_verdict = g.verdict,
-  ai_reason = g.reason,
-  ai_provider = 'claude-code',
-  ai_model = g.model,
-  graded_by = 'auto',
-  graded_at = NOW(),
-  input_tokens = NULL, output_tokens = NULL,
-  cache_read_tokens = NULL, cache_write_tokens = NULL
-FROM local_grades g
-WHERE an.attempt_id = g.attempt_id AND an.question_id = g.question_id
-  AND an.graded_by <> 'staff';
+-- العدد بيتخزّن من RETURNING مش بيتحسب بعدين: بعد التحديث مفيش طريقة تفرّق بين صف
+-- الأداة كتبته دلوقتي وصف كتبته في تشغيل قبل كده
+CREATE TEMP TABLE applied ON COMMIT DROP AS
+WITH written AS (
+  UPDATE quiz_answers an SET
+    awarded_points = g.awarded,
+    is_correct = g.is_correct,
+    ai_verdict = g.verdict,
+    ai_reason = g.reason,
+    ai_provider = 'claude-code',
+    ai_model = g.model,
+    graded_by = 'auto',
+    graded_at = NOW(),
+    input_tokens = NULL, output_tokens = NULL,
+    cache_read_tokens = NULL, cache_write_tokens = NULL
+  FROM local_grades g
+  WHERE an.attempt_id = g.attempt_id AND an.question_id = g.question_id
+    AND an.graded_by <> 'staff'
+    ${overwrite ? '' : '-- الدرجة الموجودة مابتتلمسش\n    AND an.awarded_points IS NULL'}
+  RETURNING an.id
+) SELECT COUNT(*)::int AS n FROM written;
 
 -- نفس منطق recalculateAttempt في src/utils/quizScoring.js بالحرف: المجموع من الإجابات،
 -- والحالة partial طالما فيه سؤال من غير درجة، والطابور مابيتلمسش عشان الوظيفة ماتفوّتش ورقة
@@ -108,9 +123,8 @@ FROM (
 WHERE a.id = s.attempt_id;
 
 SELECT json_build_object(
-  'egabat', (SELECT COUNT(*) FROM quiz_answers an JOIN local_grades g
-             ON an.attempt_id = g.attempt_id AND an.question_id = g.question_id
-             WHERE an.ai_provider = 'claude-code'),
+  'egabat', (SELECT n FROM applied),
+  'etkhata', (SELECT COUNT(*) FROM local_grades) - (SELECT n FROM applied),
   'awrak', (SELECT COUNT(*) FROM quiz_attempts WHERE id IN (${attemptIds.join(',')})),
   'nakes', (SELECT COUNT(*) FROM quiz_attempts WHERE id IN (${attemptIds.join(',')}) AND grading_status = 'partial')
 )::text;
@@ -134,6 +148,18 @@ if (!summary) {
 
 console.log(`   ${summary.egabat} إجابة اتكتبت · ${summary.awrak} ورقة اتعاد حساب درجتها`
   + (summary.nakes ? ` · ${summary.nakes} لسه ناقصة أسئلة` : ''));
+
+if (summary.etkhata) {
+  console.log(`   ⏭️ ${summary.etkhata} اتخطّوا — عندهم درجة خلاص`
+    + (overwrite ? ' أو درجتهم من موظف' : ''));
+  if (!overwrite) {
+    console.log('      (الدرجة الموجودة مابتتلمسش. --overwrite بيكسر القاعدة دي —'
+      + ' استخدمه بس لما مرجع إجابة يتصلّح والورق كله محتاج يتعاد بمعيار واحد.)');
+  }
+}
+if (!summary.egabat) {
+  console.log('\n   مفيش حاجة تتكتب — كل الإجابات دي متصححة خلاص.');
+}
 
 if (!apply) {
   console.log('\n↩️ اترجع كل حاجة (ROLLBACK). لو الأرقام دي مظبوطة، شغّل:');
