@@ -811,8 +811,12 @@
     // **المتظلَّم منه لسه في القايمة.** الطالب بيعدّل تظلمه — يشيل سؤال ويحط غيره —
     // طول ما الموظف ماحسمهوش. المحسوم (`resolved`) بيخرج: الموظف بص وحكم، والحكم
     // مابيتسحبش بإعادة تظلم
+    // **نفس شرط السيرفر بالحرف** (`APPEALABLE_SQL` في quizPublic.controller.js).
+    // المقالي بس: الاختيار من متعدد بيتصحّح بمقارنة رقم، مفيش فيه اجتهاد يتظلم منه.
+    // لو الاتنين افترقوا، الطالب بيشوف زرار بيترفض أو مايشوفش زرار هو مستحقه
     function canAppeal(answer) {
-      return answer.answered
+      return answer.kind === 'essay'
+        && answer.answered
         && answer.awarded_points !== null && answer.awarded_points !== undefined
         && answer.awarded_points < answer.points
         && answer.appeal !== 'resolved';
