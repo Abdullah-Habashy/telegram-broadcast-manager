@@ -8,7 +8,10 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node src/db/migrate.js",
-    "sync:tafra-enrollments": "node src/scripts/syncTafraEnrollments.js"
+    "sync:tafra-enrollments": "node src/scripts/syncTafraEnrollments.js",
+    "grade:pull": "node tools/local-grader/pull.js",
+    "grade:run": "node tools/local-grader/grade.js",
+    "grade:push": "node tools/local-grader/push.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
