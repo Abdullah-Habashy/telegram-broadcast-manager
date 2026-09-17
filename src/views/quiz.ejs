@@ -166,6 +166,7 @@
     // **بيانات التظلم بتتخزّن وقت رسم الورقة.** `labels` بتربط رقم السؤال في القاعدة
     // بالرقم اللي الطالب شايفه («سؤال ٣» / «سؤال ٣ فرع ب») — المربع بيعرض اللي على
     // الشاشة، ورقم القاعدة مالوش أي معنى عند الطالب
+    // `limit: null` معناه مفتوح — السيرفر بيبعت الرقم أو null، والصفحة بتتصرف على الأساس ده
     var appeals = { review: [], labels: {}, limit: 3, open: true };
 
     // حالة عرض ورقة التصحيح. `false` أول ما الصفحة تفتح — الطالب بيشوف درجته الأول
@@ -631,7 +632,7 @@
     }
 
     function renderResult(data) {
-      if (data.appeal_limit) appeals.limit = data.appeal_limit;
+      appeals.limit = data.appeal_limit || null;
       if (data.appeals_open !== undefined) appeals.open = data.appeals_open !== false;
       el('qz-gate').style.display = 'none';
       el('qz-exam').style.display = 'none';
@@ -1067,10 +1068,11 @@
 
       showError('qz-appeal-error', '');
       var open = openAppealCount();
+      // من غير سقف، الجملة مابتقولش رقم — ذكر حد مش موجود بيخوّف الطالب من غير سبب
+      var capNote = appeals.limit ? ' — الحد الأقصى ' + appeals.limit + ' أسئلة للورقة.' : '.';
       el('qz-appeal-intro').textContent = open
-        ? 'دي الأسئلة اللي اتظلمت منها. شيل أو زوّد اللي إنت عايزه وبعدين احفظ — '
-          + 'الحد الأقصى ' + appeals.limit + ' أسئلة للورقة.'
-        : 'علّم على الأسئلة اللي شايف تصحيحها غلط — الحد الأقصى ' + appeals.limit + ' للورقة.';
+        ? 'دي الأسئلة اللي اتظلمت منها. شيل أو زوّد اللي إنت عايزه وبعدين احفظ' + capNote
+        : 'علّم على كل الأسئلة اللي شايف تصحيحها غلط' + capNote;
 
       // **المتظلَّم منه بييجي متعلّم عليه**، فالمربع بيعرض حالة التظلم الحالية زي ما هي
       // والطالب بيعدّلها — وده معنى «تعديل» بدل «تقديم من أول وجديد»
@@ -1108,7 +1110,7 @@
       var resolvedCount = appeals.review.filter(function (a) { return a.appeal === 'resolved'; }).length;
       // نفس حساب السيرفر بالظبط: المحسوم + المختار. الاتنين لازم يتفقوا وإلا الواجهة
       // بتسمح بحاجة السيرفر بيرفضها
-      if (ids.length + resolvedCount > appeals.limit) {
+      if (appeals.limit && ids.length + resolvedCount > appeals.limit) {
         return showError('qz-appeal-error',
           'الحد الأقصى ' + appeals.limit + ' أسئلة للورقة'
           + (resolvedCount ? ' — و' + resolvedCount + ' منهم اتحسم خلاص.' : '.'));
@@ -1128,7 +1130,7 @@
           .then(function (response) { return response.json(); });
       }).then(function (data) {
         if (data && data.review) {
-          if (data.appeal_limit) appeals.limit = data.appeal_limit;
+          appeals.limit = data.appeal_limit || null;
           if (data.appeals_open !== undefined) appeals.open = data.appeals_open !== false;
           renderReview(data.review);
           renderAppealCta();

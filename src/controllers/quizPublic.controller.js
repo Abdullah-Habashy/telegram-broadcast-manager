@@ -245,11 +245,17 @@ async function appealableQuestions(attemptId, quizId) {
 const APPEAL_LIMIT_KEY = 'quiz_appeal_limit';
 const DEFAULT_APPEAL_LIMIT = 3;
 
+// **صفر معناه مفيش سقف.** الطالب اللي شايف تصحيح خمس أسئلة غلط مالوش ذنب إن السقف
+// تلاتة — وإجباره يختار أهم تلاتة بيخلّي الباقي غلط متسجّل ومحدش هيراجعه.
+// بترجّع `null` لما يبقى مفتوح، وكل اللي بيستخدمها بيفحص `null` صراحةً
 async function appealLimit() {
   try {
     const { rows } = await pool.query('SELECT value FROM settings WHERE key = $1', [APPEAL_LIMIT_KEY]);
-    const value = Number(rows[0]?.value);
-    if (Number.isFinite(value) && value >= 1) return Math.floor(value);
+    const raw = rows[0]?.value;
+    if (raw !== undefined && raw !== null) {
+      const value = Number(raw);
+      if (Number.isFinite(value)) return value >= 1 ? Math.floor(value) : null;
+    }
   } catch (error) {
     // إعداد مش مقروء مايمنعش الطالب من التظلم — بنكمّل على الافتراضي
     console.error('❌ Failed to read the appeal limit setting:', error.message);
@@ -777,8 +783,9 @@ async function submitAppeal(req, res) {
 
   const limit = await appealLimit();
   // **السقف على الورقة كلها.** المحسوم بيتحسب فيه: الطالب اللي اتظلم من تلاتة واتحسموا
-  // خلّص نصيبه، وإلا السقف بيبقى «تلاتة في المرة» بدل «تلاتة للورقة»
-  if (resolved.length + valid.length > limit) {
+  // خلّص نصيبه، وإلا السقف بيبقى «تلاتة في المرة» بدل «تلاتة للورقة».
+  // و`null` معناه مفتوح — الفحص كله بيتخطى
+  if (limit !== null && resolved.length + valid.length > limit) {
     return res.status(409).json({
       error: `الحد الأقصى ${limit} أسئلة للورقة`
         + (resolved.length ? ` — و${resolved.length} منهم اتحسم خلاص.` : '.'),
