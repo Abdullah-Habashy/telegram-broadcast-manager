@@ -58,6 +58,14 @@ async function sendPendingResults() {
   if (running) return;
   running = true;
   try {
+    // **الإشعار مقفول افتراضيًا.** الدرجة كانت بتوصل الطالب أول ما ورقته تتصحّح، قبل ما
+    // الفريق يراجع — ولما اتطلب مسحها اتضح إن مفيش رجوع: تيليجرام مابيسمحش للبوت يقرا
+    // رسايله القديمة ولا يدوّر فيها، والحذف محتاج `message_id` بالظبط.
+    // المفتاح ده هو الفرق بين "نراجع وبعدين نعلن" و"اتبعتت ومفيش حل".
+    const { rows: setting } = await pool.query(
+      "SELECT value FROM settings WHERE key = 'quiz_result_notify_enabled'");
+    if (setting[0]?.value !== 'true') return;
+
     const bot = botManager.getBot();
     if (!bot) return;
 
