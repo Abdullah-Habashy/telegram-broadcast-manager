@@ -42,9 +42,19 @@ function ssh(command, { maxBuffer = 256 * 1024 * 1024 } = {}) {
 // psql بمخرج خام من غير ترويسة ولا محاذاة — الاستعلامات هنا كلها بترجّع JSON في خانة واحدة.
 // `-q` مهم: من غيره psql بيطبع وسم كل أمر (`BEGIN`, `UPDATE 8`, `ROLLBACK`) على stdout
 // جنب نتيجة الاستعلام، والسطر الأخير بيبقى `ROLLBACK` مش الـJSON اللي إحنا عايزينه
-function psql(sql) {
-  const encoded = Buffer.from(sql, 'utf8').toString('base64');
-  return ssh(`echo ${encoded} | base64 -d | sudo -u postgres psql -d ${REMOTE_DB} -Atq -v ON_ERROR_STOP=1 -f -`);
+// **الاستعلام بيتبعت على stdin مش كوسيطة.** كان بيتحوّل base64 وينحط جوه أمر ssh،
+// وده بيقع بـENAMETOOLONG أول ما الاستعلام يكبر — استيراد ٢٢ ورقة × ٤٥ إجابة بنصوصها
+// طلّع أمر أطول من الحد المسموح للسطر. stdin مالهوش حد زي ده.
+function psql(sql, { maxBuffer = 256 * 1024 * 1024 } = {}) {
+  const remote = `sudo -u postgres psql -d ${REMOTE_DB} -Atq -v ON_ERROR_STOP=1 -f -`;
+  const result = spawnSync('ssh', sshArgs([SSH_HOST, remote]), {
+    input: sql, encoding: 'utf8', maxBuffer,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`psql رجع ${result.status}: ${(result.stderr || '').trim().slice(0, 800)}`);
+  }
+  return result.stdout;
 }
 
 function tryParse(text) {
