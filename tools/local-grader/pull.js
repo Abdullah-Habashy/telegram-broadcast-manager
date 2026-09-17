@@ -2,6 +2,7 @@
 //
 //   node tools/local-grader/pull.js --quiz 14 [--limit 200] [--images-only] [--all]
 //                                   [--attempts 10] [--attempt-ids 1,2,3]
+//                                   [--q-no 37] [--question-ids 187,188]
 //
 // بيكتب `manifest.json` + مجلد `images/` في مساحة الشغل. الصور بتتنزّل مرة واحدة —
 // إعادة التشغيل بتتخطّى اللي موجود، فلو الشبكة قطعت في النص كمّل من مكانك.
@@ -29,6 +30,14 @@ const attemptCount = Number(arg('attempts', 0)) || null;
 // `.filter(Boolean)` **قبل** التحويل لرقم: `Number('')` بيساوي صفر مش NaN، فالقيمة
 // الفاضية كانت بتعدّي كرقم صحيح وتولّد `AND a.id IN (0)` — استعلام بيرجع صفر صف
 // من غير أي رسالة خطأ
+// **سؤال بعينه في كل الأوراق** — الحالة دي بتحصل لما إجابة مرجعية تتصلّح: السؤال ده
+// بس هو اللي محتاج يتعاد، والورق كله محتاج يتعاد بيه عشان الطلبة يتحاسبوا بمعيار واحد.
+// `--q-no` بيتكلم بترقيم الامتحان اللي الموظف شايفه (١ لأول سؤال)، و`--question-ids`
+// بمعرّفات القاعدة. الترقيم بيتحوّل هنا مرة واحدة بدل ما حد يعدّه بإيده ويغلط
+const questionNo = Number(arg('q-no', 0)) || null;
+const questionIds = String(arg('question-ids', '') || '')
+  .split(',').map((part) => part.trim()).filter(Boolean)
+  .map(Number).filter((id) => Number.isInteger(id) && id > 0);
 const attemptIds = String(arg('attempt-ids', '') || '')
   .split(',').map((part) => part.trim()).filter(Boolean)
   .map(Number).filter((id) => Number.isInteger(id) && id > 0);
@@ -51,6 +60,8 @@ SELECT COALESCE(json_agg(t ORDER BY t.attempt_id, t.question_id), '[]'::json)::t
   JOIN quiz_questions q ON q.id = an.question_id
   LEFT JOIN quiz_questions p ON p.id = q.parent_id
   WHERE a.quiz_id = ${quizId}
+    ${questionIds.length ? `AND q.id IN (${questionIds.join(',')})` : ''}
+    ${questionNo ? `AND q.position = ${questionNo - 1}` : ''}
     ${attemptIds.length ? `AND a.id IN (${attemptIds.join(',')})` : ''}
     ${attemptCount ? `AND a.id IN (
       -- **عيّنة موزّعة مش أول عشرة.** الترتيب بالـid بياخد أقدم الأوراق كلها، وأول
@@ -72,6 +83,10 @@ const dir = quizWorkDir(quizId);
 const imagesDir = path.join(dir, 'images');
 fs.mkdirSync(imagesDir, { recursive: true });
 
+if ((questionNo || questionIds.length) && all) {
+  console.log('⚠️ سحب سؤال بعينه مع --all: ده لإعادة تصحيح سؤال اتصلّح مرجعه.');
+  console.log('   الرفع بعد كده محتاج --overwrite عشان الدرجة الموجودة تتغيّر.');
+}
 console.log(`⏳ بيجيب قايمة الإجابات من الإنتاج (اختبار ${quizId})...`);
 const rows = psqlJson(SQL) || [];
 if (!rows.length) {
