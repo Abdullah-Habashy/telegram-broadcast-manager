@@ -632,6 +632,12 @@
     }
 
     function renderResult(data) {
+      // **المفتاح بيتحط هنا مش في كل مسار لوحده.** كان متحطوط في `startExam` وفي فرع
+      // `grading` بس، والفرع التالت — الطالب بيرجع بالرابط على ورقة مسلّمة — كان بينساه.
+      // النتيجة إن أكتر حالة بتحصل (الطالب بيفتح لينكه بعد التصحيح) كانت بتطلّع
+      // "المحاولة مش موجودة" عند أي تظلم، لأن الطلب بيروح من غير مفتاح.
+      // كل المسارات بتعدّي من هنا، فمكانه الصح هو ده
+      if (data.attempt_key) state.key = data.attempt_key;
       appeals.limit = data.appeal_limit || null;
       if (data.appeals_open !== undefined) appeals.open = data.appeals_open !== false;
       el('qz-gate').style.display = 'none';
