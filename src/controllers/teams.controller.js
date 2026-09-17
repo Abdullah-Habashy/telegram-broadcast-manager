@@ -87,6 +87,88 @@ async function checkOut(req, res) {
   }
 }
 
+// ---------- سجل الحضور ----------
+//
+// الورديات كانت متسجّلة من ٢٥ أغسطس ومفيش مكان يشوفها فيه حد — الجدول بيتقري من التوزيع
+// التلقائي بس. الشاشة دي بتعرضه.
+//
+// **الأدمن بيشوف الكل، والموظف بيشوف نفسه بس.** مش إعداد ولا خانة — الموظف مالوش دعوة
+// بساعات زمايله، ونفس قاعدة تبويب «متابعة الأداء» بالظبط.
+//
+// **والساعات بتتعرض مع تحذيرها.** الموظف بينسى يدوس انصراف، فالوردية بتفضل مفتوحة
+// لليوم اللي بعده ومجموع الساعات بيتضخّم. مابنصلّحش الرقم من عندنا — بنعلّم الورديات
+// المشكوك فيها (مفتوحة أو أطول من ١٢ ساعة) عشان اللي بيقرا يعرف الرقم مبني على إيه.
+const LONG_SHIFT_HOURS = 12;
+
+async function listAttendanceHistory(req, res) {
+  try {
+    const isAdmin = req.session.userRole === 'admin';
+    // الموظف بيتقفل على نفسه في السيرفر مش في الواجهة — إخفاء الفلتر تجميل،
+    // والحارس الحقيقي هو إن الـuser_id بيتفرض هنا
+    const requested = Number(req.body?.user || req.query.user);
+    const userId = isAdmin ? (Number.isInteger(requested) && requested > 0 ? requested : null)
+      : req.session.userId;
+
+    // التواريخ بتوقيت القاهرة مش UTC: الموظف اللي سجّل حضور ٢ بالليل بيعتبرها ليلته هو،
+    // وفلترة بالـUTC كانت هتحطّه في اليوم اللي بعده
+    const to = String(req.query.to || '').slice(0, 10) || null;
+    const from = String(req.query.from || '').slice(0, 10) || null;
+
+    const conditions = [];
+    const params = [];
+    if (userId) { params.push(userId); conditions.push(`ta.user_id = $${params.length}`); }
+    if (from) { params.push(from); conditions.push(`(ta.started_at AT TIME ZONE 'Africa/Cairo')::date >= $${params.length}::date`); }
+    if (to) { params.push(to); conditions.push(`(ta.started_at AT TIME ZONE 'Africa/Cairo')::date <= $${params.length}::date`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // المدة بتتحسب في القاعدة: الوردية المفتوحة مدتها لحد دلوقتي، والمقفولة لحد ما اتقفلت
+    const { rows } = await pool.query(
+      `SELECT ta.id, ta.user_id, u.name, ta.team, ta.started_at, ta.ended_at,
+              ROUND(EXTRACT(EPOCH FROM (COALESCE(ta.ended_at, NOW()) - ta.started_at)) / 60)::int AS minutes
+       FROM team_attendance ta
+       JOIN users u ON u.id = ta.user_id
+       ${where}
+       ORDER BY ta.started_at DESC
+       LIMIT 1000`, params);
+
+    const shifts = rows.map((row) => ({
+      ...row,
+      open: row.ended_at === null,
+      // **الطول هو العلامة، مش كون الوردية مفتوحة.** وردية مفتوحة من نص ساعة معناها
+      // إن الموظف شغّال دلوقتي — تعليمها "مشكوك فيها" كان بيوصّم كل اللي على رأس
+      // شغله. اللي مريب هو الوردية اللي عدّت ١٢ ساعة، مقفولة كانت أو مفتوحة
+      suspect: row.minutes > LONG_SHIFT_HOURS * 60,
+    }));
+
+    const byUser = new Map();
+    for (const shift of shifts) {
+      if (!byUser.has(shift.user_id)) {
+        byUser.set(shift.user_id, {
+          user_id: shift.user_id, name: shift.name, team: shift.team,
+          shifts: 0, minutes: 0, suspect: 0, open: 0, longest: 0,
+        });
+      }
+      const row = byUser.get(shift.user_id);
+      row.shifts += 1;
+      row.minutes += shift.minutes;
+      if (shift.suspect) row.suspect += 1;
+      if (shift.open) row.open += 1;
+      if (shift.minutes > row.longest) row.longest = shift.minutes;
+    }
+
+    res.json({
+      is_admin: isAdmin,
+      from, to,
+      long_shift_hours: LONG_SHIFT_HOURS,
+      per_user: [...byUser.values()].sort((a, b) => b.minutes - a.minutes),
+      shifts,
+    });
+  } catch (error) {
+    console.error('❌ Failed to load the attendance history:', error.message);
+    res.status(500).json({ error: 'تعذر تحميل سجل الحضور' });
+  }
+}
+
 // مين حاضر دلوقتي من كل تيم — بيتعرض لموظف المتابعة عشان يعرف قبل ما يدوس التحويل
 async function listOnDuty(req, res) {
   try {
@@ -288,6 +370,6 @@ async function returnFromTeam(req, res) {
 }
 
 module.exports = {
-  getAttendanceStatus, checkIn, checkOut, listOnDuty,
+  getAttendanceStatus, checkIn, checkOut, listOnDuty, listAttendanceHistory,
   transferToTeam, returnFromTeam, performTransfer, performReturn,
 };

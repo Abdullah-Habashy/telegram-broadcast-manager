@@ -109,6 +109,9 @@ router.get('/teams/attendance', teamsController.getAttendanceStatus);
 router.post('/teams/attendance/check-in', teamsController.checkIn);
 router.post('/teams/attendance/check-out', teamsController.checkOut);
 router.get('/teams/on-duty', teamsController.listOnDuty);
+// سجل الورديات. **مالهوش حارس أدمن عن قصد** — الموظف بيشوف سجله هو، والكنترولر بيفرض
+// عليه الـuser_id بتاعه فمايقدرش يطلب حد تاني
+router.get('/teams/attendance/history', teamsController.listAttendanceHistory);
 
 router.get('/:id', ticketsController.getTicket);
 router.post('/:id/teams/:team/transfer', teamsController.transferToTeam);

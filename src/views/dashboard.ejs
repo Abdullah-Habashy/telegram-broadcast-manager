@@ -168,6 +168,7 @@
           <% if (userRole === 'admin') { %>
             <button type="button" class="subtab-btn" data-subtab="staff">الفريق</button>
           <% } %>
+          <button type="button" class="subtab-btn" data-subtab="attendance">سجل الحضور</button>
           <button type="button" class="subtab-btn" data-subtab="activity">متابعة الأداء</button>
           <button type="button" class="subtab-btn" data-subtab="response">سرعة الرد</button>
           <% if (userRole === 'admin') { %>
@@ -309,6 +310,31 @@
           </div>
         </div>
         <% } %>
+
+        <div class="subtab-section" data-subtab="attendance" style="display:none">
+          <div class="card" style="padding-block:12px">
+            <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
+              <% if (userRole === 'admin') { %>
+                <select id="attendance-user-filter" class="compact-select"><option value="">كل الموظفين</option></select>
+              <% } %>
+              <input type="date" id="attendance-from" class="compact-input" title="من تاريخ">
+              <input type="date" id="attendance-to" class="compact-input" title="إلى تاريخ">
+              <button type="button" class="btn btn-ghost btn-sm" id="attendance-reset">آخر ٣٠ يوم</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="attendance-refresh">تحديث</button>
+            </div>
+          </div>
+          <div class="card">
+            <b>الإجمالي لكل موظف</b>
+            <div id="attendance-summary" style="margin-top:10px"><div class="empty-state">بيتحمّل...</div></div>
+          </div>
+          <div class="card">
+            <div class="row-between" style="margin-bottom:10px">
+              <b>الورديات</b>
+              <span id="attendance-count" class="ticket-muted"></span>
+            </div>
+            <div id="attendance-shifts"><div class="empty-state">بيتحمّل...</div></div>
+          </div>
+        </div>
 
         <div class="subtab-section" data-subtab="activity" style="display:none">
           <div class="card" style="padding-block:12px">
@@ -2384,6 +2410,120 @@
     initSubTabs('tickets-subtabs');
     initSubTabs('new-bot-subtabs');
     initTicketsBulkAssign();
+
+    // ---------- سجل الحضور ----------
+    //
+    // الورديات متسجّلة من ٢٥ أغسطس ومكانش فيه مكان يشوفها فيه حد — جدول team_attendance
+    // كان بيتقري من التوزيع التلقائي بس.
+    //
+    // **الساعات بتتعرض ومعاها اللي بيشكّك فيها.** الموظف بينسى يدوس انصراف فالوردية
+    // بتفضل مفتوحة لليوم اللي بعده، والمجموع بيتضخّم. مابنصلّحش الرقم من عندنا —
+    // بنقول جنبه كام وردية عدّت ١٢ ساعة، عشان اللي بيقراه يعرف هو مبني على إيه.
+    //
+    // **بيستخدم fmtDuration وfmtDate الموجودين** — fmtDuration بتاخد ثواني، فالدقايق
+    // بتتضرب في ٦٠. تعريف نسخة تانية باسمها كان هيكسر سبع استخدامات في سرعة الرد
+    async function loadAttendanceHistory() {
+      const summaryBox = document.getElementById('attendance-summary');
+      const shiftsBox = document.getElementById('attendance-shifts');
+      if (!summaryBox || !shiftsBox) return;
+      summaryBox.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      shiftsBox.innerHTML = '';
+
+      const params = new URLSearchParams();
+      const from = document.getElementById('attendance-from')?.value;
+      const to = document.getElementById('attendance-to')?.value;
+      const user = document.getElementById('attendance-user-filter')?.value;
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      if (user) params.set('user', user);
+
+      const teamName = (key) => ({ science: 'علمي', tech: 'فني', whatsapp: 'واتساب' }[key] || key || '—');
+      const hours = (minutes) => fmtDuration(Math.round(Number(minutes) || 0) * 60);
+
+      try {
+        const data = await api('/api/tickets/teams/attendance/history?' + params);
+
+        if (!data.per_user.length) {
+          summaryBox.innerHTML = '<div class="empty-state">مفيش ورديات في المدة دي</div>';
+          document.getElementById('attendance-count').textContent = '';
+          return;
+        }
+
+        summaryBox.innerHTML = `<table><thead><tr>
+            <th>الموظف</th><th>التيم</th><th>ورديات</th><th>إجمالي الوقت</th>
+            <th>متوسط الوردية</th>
+            <th title="ورديات عدّت ${data.long_shift_hours} ساعة — الأغلب انصراف منسي">⚠️</th>
+          </tr></thead><tbody>${data.per_user.map((row) => `<tr>
+            <td>${escapeHtml(row.name || '—')}${row.open ? ' <span class="badge badge-success">حاضر دلوقتي</span>' : ''}</td>
+            <td>${teamName(row.team)}</td>
+            <td>${row.shifts}</td>
+            <td><b>${hours(row.minutes)}</b></td>
+            <td>${hours(Math.round(row.minutes / row.shifts))}</td>
+            <td>${row.suspect ? `<span class="badge badge-warning">${row.suspect}</span>` : '—'}</td>
+          </tr>`).join('')}</tbody></table>`;
+
+        const suspectTotal = data.per_user.reduce((sum, row) => sum + row.suspect, 0);
+        if (suspectTotal) {
+          summaryBox.insertAdjacentHTML('beforeend', `<div class="card-desc" style="margin-top:8px">
+            ⚠️ ${suspectTotal} وردية عدّت ${data.long_shift_hours} ساعة — الأغلب إن الموظف نسي يدوس
+            انصراف، يعني «إجمالي الوقت» أعلى من الشغل الفعلي.</div>`);
+        }
+
+        document.getElementById('attendance-count').textContent = `${data.shifts.length} وردية`;
+        shiftsBox.innerHTML = `<table><thead><tr>
+            <th>الموظف</th><th>التيم</th><th>الحضور</th><th>الانصراف</th><th>المدة</th>
+          </tr></thead><tbody>${data.shifts.map((shift) => `<tr>
+            <td>${escapeHtml(shift.name || '—')}</td>
+            <td>${teamName(shift.team)}</td>
+            <td>${fmtDate(shift.started_at)}</td>
+            <td>${shift.open ? '<span class="badge badge-success">لسه حاضر</span>' : fmtDate(shift.ended_at)}</td>
+            <td>${hours(shift.minutes)}${shift.suspect ? ' <span class="badge badge-warning" title="الأغلب انصراف منسي">⚠️</span>' : ''}</td>
+          </tr>`).join('')}</tbody></table>`;
+      } catch (error) {
+        summaryBox.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function initAttendanceHistory() {
+      if (!document.getElementById('attendance-shifts')) return;
+
+      // آخر ٣٠ يوم افتراضيًا: السجل كله شهور، وفتح الشاشة على الكل بيخلي أول حاجة تشوفها
+      // جدول طويل بدل الأسبوع اللي بتسأل عنه فعلًا
+      const setDefaultRange = () => {
+        const today = new Date();
+        const past = new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000);
+        const iso = (date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+          .toISOString().slice(0, 10);
+        const fromEl = document.getElementById('attendance-from');
+        const toEl = document.getElementById('attendance-to');
+        if (fromEl) fromEl.value = iso(past);
+        if (toEl) toEl.value = iso(today);
+      };
+      setDefaultRange();
+
+      const userFilter = document.getElementById('attendance-user-filter');
+      if (userFilter) {
+        api('/api/admin/users').then((users) => {
+          userFilter.innerHTML = '<option value="">كل الموظفين</option>'
+            + users.filter((user) => user.is_active)
+              .map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`).join('');
+        }).catch(() => { /* بيفضل «كل الموظفين» — الفلتر مايوقفش الشاشة */ });
+        userFilter.addEventListener('change', loadAttendanceHistory);
+      }
+      document.getElementById('attendance-from')?.addEventListener('change', loadAttendanceHistory);
+      document.getElementById('attendance-to')?.addEventListener('change', loadAttendanceHistory);
+      document.getElementById('attendance-refresh')?.addEventListener('click', loadAttendanceHistory);
+      document.getElementById('attendance-reset')?.addEventListener('click', () => {
+        if (userFilter) userFilter.value = '';
+        setDefaultRange();
+        loadAttendanceHistory();
+      });
+
+      // التحميل عند فتح التبويب مش عند تحميل الصفحة — نفس نمط «متابعة الأداء»
+      document.querySelector('#tickets-subtabs .subtab-btn[data-subtab="attendance"]')
+        ?.addEventListener('click', loadAttendanceHistory);
+    }
+    initAttendanceHistory();
 
     // ---------- متابعة أداء الموظفين (الأدمن يشوف الكل، والموظف يشوف نشاطه هو بس) ----------
     async function initStaffActivity() {
