@@ -579,8 +579,9 @@ async function listAttempts(req, res) {
      FROM quiz_attempts a
      LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
      LEFT JOIN LATERAL (
-       -- الفرق بين مقفول بقرار ومقفول من غير قرار مقصود: اعتماد الورقة بيقفل
-       -- التظلمات اللي عليها تلقائيًا، وده مش نفس حاجة إن التيم العلمي راجعه وحسمه
+       -- الفرق بين مقفول بقرار ومقفول باعتماد الورقة مقصود: الاتنين مراجعة حقيقية،
+       -- بس الأول بيوصل الطالب رد مكتوب والتاني لأ — والعمود بيفرّقهم عشان الموظف
+       -- يعرف مين لسه محتاج كلمة
        SELECT COUNT(*) AS total_count,
               COUNT(*) FILTER (WHERE status = 'open') AS open_count,
               COUNT(*) FILTER (WHERE decision = 'accepted') AS accepted_count,

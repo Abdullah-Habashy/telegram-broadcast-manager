@@ -10441,7 +10441,8 @@ ${reply.content}` : reply.content;
       const open = attempt.open_appeals || 0;
       const accepted = attempt.accepted_appeals || 0;
       const rejected = attempt.rejected_appeals || 0;
-      // اللي فضل: اتقفل لما الورقة اتعتمدت من غير ما حد يراجعه. **بيتحسب طرح مش
+      // اللي فضل: اتحسم باعتماد الورقة — الموظف فتحها وراجعها ودوس اعتماد، وده مسار
+      // مقصود مش إهمال. الفرق الوحيد إن مفيش رد مكتوب للطالب. **بيتحسب طرح مش
       // استعلام** — أي حالة تانية تتضاف بعدين هتقع هنا وتبان بدل ما تختفي في صمت
       const closed = total - open - accepted - rejected;
 
@@ -10449,7 +10450,7 @@ ${reply.content}` : reply.content;
       if (open) parts.push(`<span class="badge badge-warning" title="لسه محدش حسمه">⏳ ${open} لسه</span>`);
       if (accepted) parts.push(`<span class="badge badge-success" title="اتقبل والدرجة اتعدّلت">✅ ${accepted} اتقبل</span>`);
       if (rejected) parts.push(`<span class="badge badge-muted" title="اتراجع والتصحيح طلع سليم">✖️ ${rejected} اترفض</span>`);
-      if (closed > 0) parts.push(`<span class="badge badge-muted" title="اتقفل لما الورقة اتعتمدت — من غير قرار متسجّل عليه">📄 ${closed} مع اعتماد الورقة</span>`);
+      if (closed > 0) parts.push(`<span class="badge badge-muted" title="اتحسم مع «وافق على الورقة كلها» — الموظف شاف الورقة، بس مفيش رد مكتوب للطالب">📄 ${closed} مع اعتماد الورقة</span>`);
 
       return `<span class="row" style="gap:4px; flex-wrap:wrap" title="إجمالي التظلمات على الورقة دي: ${total}">${parts.join('')}</span>`;
     }
@@ -10670,14 +10671,27 @@ ${reply.content}` : reply.content;
 
         // المحسومة بتفضل ظاهرة عشان الموظف يشوف مين حسم وبإيه، ومايعيدش مراجعة حاجة اتراجعت
         const decided = (data.answers || []).filter((a) => a.appeal_status === 'resolved' && a.appeal_decision);
-        const decidedBox = decided.length ? `
+        // **التظلم اللي اتقفل بزرار «وافق على الورقة كلها».** مقفول من غير `decision`،
+        // فكان بيقع بره الاتنين — لا في بانر المفتوح ولا في المحسوم — ويختفي من الورقة
+        // خالص. الموظف اللي فتح الورقة وراجعها ودوس اعتماد عمل الصح، بس الطالب مافيش
+        // عنده كلمة مكتوبة، والموظف نفسه مش شايف إن كان فيه تظلم أصلًا لما يرجع
+        const closedByApproval = (data.answers || []).filter((a) => a.appeal_status === 'resolved' && !a.appeal_decision);
+        const decidedCount = decided.length + closedByApproval.length;
+        const decidedBox = decidedCount ? `
           <div class="card" style="margin-bottom:12px">
-            <b>⚖️ ${decided.length} تظلم اتحسم</b>
+            <b>⚖️ ${decidedCount} تظلم اتحسم</b>
             ${decided.map((a) => `<div class="card-desc" style="margin-top:6px">
               ${a.appeal_decision === 'accepted' ? '✅' : '✖️'}
               <b>${escapeHtml(appealLabels.get(a.question_id) || 'سؤال')}</b>
               ${a.appeal_staff_note ? ` — ${escapeHtml(a.appeal_staff_note)}` : ''}
             </div>`).join('')}
+            ${closedByApproval.length ? `
+            <div class="card-desc" style="margin-top:10px">
+              <b>📄 ${closedByApproval.length} منهم اتقفل مع اعتماد الورقة.</b>
+              الطالب شايف إن تظلمه اتراجع، بس من غير رد مكتوب منك.
+              ${canDecideAppeals ? 'تقدر تكتبله رد دلوقتي — بيتسجّل عادي على تظلم مقفول.' : ''}
+            </div>
+            ${closedByApproval.map(appealRow).join('')}` : ''}
           </div>` : '';
 
         const needsReview = data.attempt.grading_status === 'partial';
