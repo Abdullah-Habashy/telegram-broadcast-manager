@@ -10607,14 +10607,51 @@ ${reply.content}` : reply.content;
           appealNumber += 1;
           appealLabels.set(a.question_id, `سؤال ${appealNumber}`);
         });
+        // **كل تظلم صف لوحده بقراره وتعليقه.** الزرار اللي بينط للسؤال مكانه، بس الحسم
+        // بقى هنا: الموظف بيقرا سبب الطالب، يشوف الإجابة، ويكتب رده — والرد بيوصل الطالب
+        const appealRow = (a) => {
+          const label = escapeHtml(appealLabels.get(a.question_id) || 'سؤال');
+          const studentNote = a.appeal_note
+            ? `<div class="card-desc" style="margin:4px 0">قال: «${escapeHtml(a.appeal_note)}»</div>` : '';
+          return `
+            <div class="quiz-appeal-row" data-appeal-question="${a.question_id}">
+              <div class="row-between" style="gap:8px; flex-wrap:wrap; align-items:center">
+                <b>${label}</b>
+                <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                  onclick="goToQuizAnswer(${a.question_id})">شوف السؤال ↓</button>
+              </div>
+              ${studentNote}
+              <textarea class="compact-input appeal-note-input" data-question="${a.question_id}"
+                rows="2" maxlength="1000" placeholder="اكتب ردك للطالب — إجباري مع الرفض"></textarea>
+              <div class="row" style="gap:6px; margin-top:6px; flex-wrap:wrap">
+                <button type="button" class="btn btn-primary btn-sm" style="width:auto"
+                  onclick="decideAppeal(${attemptId}, ${a.question_id}, 'accepted')">✅ وافقت</button>
+                <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto"
+                  onclick="decideAppeal(${attemptId}, ${a.question_id}, 'rejected')">✖️ رفضت</button>
+              </div>
+            </div>`;
+        };
+
         const appealsBanner = openAppeals.length ? `
           <div class="card quiz-appeals-banner" style="margin-bottom:12px">
             <b>⚖️ ${openAppeals.length} تظلم مفتوح على الورقة دي</b>
-            <div class="card-desc" style="margin:4px 0 8px">اضغط على السؤال عشان تروحله وتعدّل درجته — التظلم بيتقفل لوحده أول ما تعتمد الدرجة.</div>
-            <div class="row" style="gap:6px; flex-wrap:wrap">
-              ${openAppeals.map((a) => `<button type="button" class="btn btn-ghost btn-sm" style="width:auto"
-                onclick="goToQuizAnswer(${a.question_id})">${escapeHtml(appealLabels.get(a.question_id) || 'سؤال')}</button>`).join('')}
+            <div class="card-desc" style="margin:4px 0 10px">
+              اقرا سبب الطالب، عدّل الدرجة من السؤال نفسه لو هو على حق، وبعدين احسم هنا.
+              <b>ردّك بيظهر للطالب</b> في صفحة ورقته.
             </div>
+            ${openAppeals.map(appealRow).join('')}
+          </div>` : '';
+
+        // المحسومة بتفضل ظاهرة عشان الموظف يشوف مين حسم وبإيه، ومايعيدش مراجعة حاجة اتراجعت
+        const decided = (data.answers || []).filter((a) => a.appeal_status === 'resolved' && a.appeal_decision);
+        const decidedBox = decided.length ? `
+          <div class="card" style="margin-bottom:12px">
+            <b>⚖️ ${decided.length} تظلم اتحسم</b>
+            ${decided.map((a) => `<div class="card-desc" style="margin-top:6px">
+              ${a.appeal_decision === 'accepted' ? '✅' : '✖️'}
+              <b>${escapeHtml(appealLabels.get(a.question_id) || 'سؤال')}</b>
+              ${a.appeal_staff_note ? ` — ${escapeHtml(a.appeal_staff_note)}` : ''}
+            </div>`).join('')}
           </div>` : '';
 
         const needsReview = data.attempt.grading_status === 'partial';
