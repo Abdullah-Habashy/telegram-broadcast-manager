@@ -821,8 +821,10 @@
     // المقالي بس: الاختيار من متعدد بيتصحّح بمقارنة رقم، مفيش فيه اجتهاد يتظلم منه.
     // لو الاتنين افترقوا، الطالب بيشوف زرار بيترفض أو مايشوفش زرار هو مستحقه
     function canAppeal(answer) {
+      // **`answered` مش كفاية:** معناها إن فيه صف في القاعدة، والصف بيتعمل لكل سؤال
+      // وقت التسليم حتى لو الطالب سابه فاضي. `has_answer` هي اللي بتقول إنه كتب فعلًا
       return answer.kind === 'essay'
-        && answer.answered
+        && answer.has_answer
         && answer.awarded_points !== null && answer.awarded_points !== undefined
         && answer.awarded_points < answer.points
         && answer.appeal !== 'resolved';

@@ -192,6 +192,14 @@ async function loadReviewForAttempt(attemptId, quizId) {
     // **فرق بين "ماجاوبش" و"مالوش صف أصلًا".** الصفحة بتبعت صف لكل سؤال حتى لو فاضي،
     // فغياب الصف معناه سؤال اتضاف للاختبار بعد ما الطالب سلّم — ده مالوش تصحيح، مش غلط
     answered: row.answered,
+    // **فرق بين "فيه صف" و"كتب حاجة".** `answered` معناها إن السؤال اتعرض عليه وقت
+    // التسليم؛ ودي معناها إنه فعلًا حطّ إجابة — نص أو صورة. الصفحة بتحتاج التانية
+    // عشان تقرر تعرض زرار تظلم ولا لأ
+    has_answer: Boolean(
+      (row.essay_text && String(row.essay_text).trim())
+      || row.answer_image_path
+      || row.selected_option !== null
+    ),
     selected_option: row.selected_option,
     essay_text: row.essay_text,
     awarded_points: row.awarded_points === null ? null : Number(row.awarded_points),
@@ -238,6 +246,14 @@ const APPEALABLE_SQL = `
     AND q.kind = 'essay'
     AND an.awarded_points IS NOT NULL
     AND an.awarded_points < q.points
+    -- **السؤال الفاضي مالوش تظلم.** الصف في جدول الإجابات بيتعمل لكل سؤال وقت التسليم
+    -- حتى لو الطالب سابه فاضي، فوجود الصف مش دليل إنه جاوب. من غير الشرط ده، الطالب
+    -- اللي ساب ١٥ سؤال فاضي كان يقدر يتظلم من الخمستاشر — ومفيش حاجة تتراجع أصلًا.
+    -- الصورة بتتحسب إجابة زي النص: الطالب اللي رفع ورقته مصوّرة جاوب فعلًا
+    AND (
+      COALESCE(TRIM(an.essay_text), '') <> ''
+      OR an.answer_image_path IS NOT NULL
+    )
 `;
 
 async function appealableQuestions(attemptId, quizId) {
