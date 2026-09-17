@@ -517,6 +517,12 @@ tr:last-child td { border-bottom: none; }
 .ticket-message-image { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
 /* مشغّل الفيديو في المحادثة — نفس حدود الصورة عشان الفقاعة ماتتمططش */
 .ticket-message-video { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; margin-bottom: 6px; background: #000; }
+/* صف التظلم في شاشة الورقة — كل تظلم محاط عشان القرار والتعليق يبانوا ملزّقين بيه */
+.quiz-appeal-row {
+  padding: 10px; margin-top: 8px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--surface);
+}
+.quiz-appeal-row .appeal-note-input { width: 100%; margin-top: 6px; font-family: inherit; }
 .ticket-message-meta { margin-top: 5px; color: var(--text-faint); font-size: 10.5px; }
 /* أزرار تعديل/حذف الرسالة — بتطفو فوق الفقاعة من غير ما تاخد أي مساحة من الشاشة */
 /* **الزراير دي كانت مخفية تمامًا (opacity: 0) لحد ما تحوّم بالماوس.** النتيجة إن ٣ موظفين

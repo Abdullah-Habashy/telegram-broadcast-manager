@@ -163,7 +163,8 @@ async function loadReviewForAttempt(attemptId, quizId) {
             (an.id IS NOT NULL) AS answered,
             an.selected_option, an.essay_text, an.awarded_points, an.is_correct,
             an.ai_verdict, an.ai_reason, an.graded_by, an.answer_image_path,
-            ap.status AS appeal_status, ap.created_at AS appeal_at
+            ap.status AS appeal_status, ap.created_at AS appeal_at,
+            ap.decision AS appeal_decision, ap.staff_note AS appeal_staff_note
      FROM quiz_questions q
      LEFT JOIN quiz_questions p ON p.id = q.parent_id
      LEFT JOIN quiz_answers an ON an.question_id = q.id AND an.attempt_id = $1
@@ -204,6 +205,10 @@ async function loadReviewForAttempt(attemptId, quizId) {
     // حالة التظلم بتترجع مع السؤال عشان الصفحة تعرف تعرض «اتظلمت» بدل الزرار — من
     // غيرها الطالب بيدوس تاني وياخد رفض مش مفهوم
     appeal: row.appeal_status || null,
+    // **قرار الموظف وتعليقه بيوصلوا الطالب.** الحسم الصامت بيسيبه يقارن رقمين ويخمّن،
+    // والرفض من غير سبب بيرجع تاني في صورة سؤال للدعم
+    appeal_decision: row.appeal_decision || null,
+    appeal_staff_note: row.appeal_staff_note || null,
   }));
 }
 

@@ -841,7 +841,17 @@
           + answer.question_id + '">عدّل تظلمك</button>';
       }
       if (answer.appeal === 'resolved') {
-        return '<div class="qz-appeal-mark done">✔️ تظلمك على السؤال ده اتراجع</div>';
+        // **رد الموظف بيتعرض للطالب.** «اتراجع» لوحدها كانت بتسيبه يقارن رقمين
+        // ويخمّن؛ والرفض من غير سبب كان بيرجع تاني في صورة سؤال للدعم
+        var head = answer.appeal_decision === 'accepted'
+          ? '✅ تظلمك اتقبل — الدرجة اتعدّلت'
+          : answer.appeal_decision === 'rejected'
+            ? '✖️ تظلمك اتراجع والتصحيح سليم'
+            : '✔️ تظلمك على السؤال ده اتراجع';
+        var note = answer.appeal_staff_note
+          ? '<div class="qz-appeal-reply">' + esc(answer.appeal_staff_note) + '</div>'
+          : '';
+        return '<div class="qz-appeal-mark done">' + head + '</div>' + note;
       }
       if (!canAppeal(answer)) return '';
       return '<button class="qz-btn ghost qz-appeal-btn" type="button" data-appeal="'

@@ -240,6 +240,13 @@ body.qz-body {
    الزرار على السؤال هادي عن قصد: التظلم مخرج لما التصحيح يغلط، مش دعوة يدوس عليها
    كل طالب شايف درجته أقل من اللي متوقعها */
 .qz-appeal-btn { margin-top: 10px; width: auto; padding: 6px 14px; font-size: 13px; }
+/* رد الموظف على التظلم زي ما الطالب بيشوفه — محاط عشان يبان إنه كلام موجّه له */
+.qz-appeal-reply {
+  margin-top: 6px; padding: 8px 10px;
+  border-inline-start: 3px solid var(--qz-good);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px; font-size: 14px; line-height: 1.6; font-weight: 400;
+}
 .qz-appeal-mark { margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--qz-warn); }
 .qz-appeal-mark.done { color: var(--qz-good); }
 

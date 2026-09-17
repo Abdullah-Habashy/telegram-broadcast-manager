@@ -1468,3 +1468,13 @@ CREATE INDEX IF NOT EXISTS idx_quiz_appeals_attempt ON quiz_appeals (attempt_id)
 -- الفهرس الجزئي ده هو اللي بيخدم شاشة "التظلمات المفتوحة" وعدّاد جدول النتايج. المفتوح
 -- قليل والمحلول بيتراكم، فالفهرس الكامل كان هيكبر من غير فايدة
 CREATE INDEX IF NOT EXISTS idx_quiz_appeals_open ON quiz_appeals (question_id) WHERE status = 'open';
+
+-- **رد الموظف على التظلم، والطالب بيقراه.** قبل كده كان الحسم صامت: الموظف يعدّل
+-- الدرجة أو يسيبها، والتظلم يتقفل، والطالب يشوف الحالة اتغيّرت من غير ما يعرف ليه.
+-- التظلم المرفوض من غير سبب بيرجع تاني في صورة سؤال للدعم.
+--
+-- `decision`: accepted = الموظف وافق وعدّل · rejected = شاف إن التصحيح سليم.
+-- `status` بيفضل open/resolved زي ما هو عشان الكود القديم (وفهرس المفتوح) مايتكسرش —
+-- القرار حقل منفصل، والحسم من غير قرار (اعتماد الورقة كلها) بيسيبه NULL
+ALTER TABLE quiz_appeals ADD COLUMN IF NOT EXISTS decision VARCHAR(20);
+ALTER TABLE quiz_appeals ADD COLUMN IF NOT EXISTS staff_note TEXT;

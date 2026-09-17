@@ -116,6 +116,8 @@ router.get('/attempts/:attemptId', controller.getAttempt);
 router.put('/attempts/:attemptId/answers/:questionId', controller.gradeAnswer);
 router.post('/attempts/:attemptId/regrade', controller.regradeAttempt);
 router.post('/attempts/:attemptId/reopen', controller.reopenAttempt);
+// حسم تظلم سؤال بعينه: قبول أو رفض مع تعليق بيوصل الطالب
+router.post('/attempts/:attemptId/appeals/:questionId', controller.decideAppeal);
 router.post('/attempts/:attemptId/approve', controller.approveAttemptGrades);
 
 module.exports = router;

@@ -915,6 +915,7 @@
                 <button type="button" class="btn btn-primary btn-sm" id="quiz-stats-btn" style="width:auto">📊 إحصائيات الأسئلة</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-missing-btn" style="width:auto">🔎 مين ماحلّش</button>
                 <a class="btn btn-ghost btn-sm" id="quiz-export-btn" style="width:auto; text-decoration:none" href="#">⬇️ تصدير Excel</a>
+                <button type="button" class="btn btn-ghost btn-sm" id="quiz-appeals-filter-btn" style="width:auto">⚖️ التظلمات بس</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-import-sheet-btn" style="width:auto">⬆️ استورد إجابات من شيت</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-regrade-all-btn" style="width:auto">أعد تصحيح كل المحاولات</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="quiz-results-back" style="width:auto">رجوع للقايمة</button>
@@ -10424,13 +10425,31 @@ ${reply.content}` : reply.content;
       }
     }
 
+    // **الفلتر مش ترتيب.** الورقة اللي عليها تظلم ممكن تكون في أي مكان في ٧٦٣ صف،
+    // والموظف بيدوّر على شارة صفرا بعينه. الفلتر بيخلي الطابور ظاهر في ضغطة
+    let quizAppealsOnly = false;
+
     async function loadQuizAttempts() {
       const box = document.getElementById('quiz-attempts-table');
       box.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
       try {
-        const attempts = await api(`/api/quizzes/${quizResultsId}/attempts`);
-        if (!attempts.length) {
+        const all = await api(`/api/quizzes/${quizResultsId}/attempts`);
+        if (!all.length) {
           box.innerHTML = '<div class="empty-state">لسه محدش دخل الاختبار</div>';
+          return;
+        }
+        const attempts = quizAppealsOnly ? all.filter((a) => a.open_appeals > 0) : all;
+        const openCount = all.filter((a) => a.open_appeals > 0).length;
+        const filterButton = document.getElementById('quiz-appeals-filter-btn');
+        if (filterButton) {
+          // العدد على الزرار نفسه: من غيره الموظف بيضغط عشان يكتشف إن مفيش حاجة
+          filterButton.textContent = quizAppealsOnly
+            ? `⚖️ رجّع الكل (${all.length})`
+            : `⚖️ التظلمات بس (${openCount})`;
+          filterButton.disabled = !openCount && !quizAppealsOnly;
+        }
+        if (!attempts.length) {
+          box.innerHTML = '<div class="empty-state">مفيش ورقة عليها تظلم مفتوح</div>';
           return;
         }
         const rows = attempts.map((attempt) => {
@@ -10613,6 +10632,7 @@ ${reply.content}` : reply.content;
           </div>
           ${data.attempt.grading_error ? `<div class="card-desc" style="margin-bottom:10px">⚠️ التصحيح الآلي فشل: ${escapeHtml(data.attempt.grading_error)}</div>` : ''}
           ${appealsBanner}
+          ${decidedBox}
           ${QUIZ_COLOR_LEGEND}
           ${answers}`;
       } catch (error) {
@@ -10630,6 +10650,25 @@ ${reply.content}` : reply.content;
       setTimeout(() => card.classList.remove('flash'), 1600);
       const input = document.getElementById(`quiz-grade-${questionId}`);
       if (input) input.focus({ preventScroll: true });
+    }
+
+    // **الرفض لازم معاه سبب** — نفس فحص السيرفر. الطالب اللي اتقاله "مرفوض" وبس
+    // بيرجع يسأل الدعم، فالمنع هنا بيوفّر الدورة دي
+    async function decideAppeal(attemptId, questionId, decision) {
+      const field = document.querySelector(`.appeal-note-input[data-question="${questionId}"]`);
+      const note = field ? field.value.trim() : '';
+      if (decision === 'rejected' && !note) {
+        return showToast('اكتب للطالب سبب الرفض');
+      }
+      try {
+        await api(`/api/quizzes/attempts/${attemptId}/appeals/${questionId}`, {
+          method: 'POST',
+          body: JSON.stringify({ decision, note }),
+        });
+        showToast(decision === 'accepted' ? 'اتحسم — وافقت' : 'اتحسم — رفضت');
+        await openQuizAttempt(attemptId);
+        await loadQuizAttempts();
+      } catch (error) { showToast(error.message); }
     }
 
     function hideQuizAttempt() {
@@ -10960,6 +10999,10 @@ ${reply.content}` : reply.content;
       clearTimeout(quizRegradeTimer);
       loadQuizzes();
       showQuizView('list');
+    });
+    document.getElementById('quiz-appeals-filter-btn').addEventListener('click', () => {
+      quizAppealsOnly = !quizAppealsOnly;
+      loadQuizAttempts();
     });
     document.getElementById('quiz-import-sheet-btn').addEventListener('click', openImportSheet);
     document.getElementById('quiz-regrade-all-btn').addEventListener('click', regradeWholeQuiz);

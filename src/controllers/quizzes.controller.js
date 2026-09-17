@@ -613,6 +613,7 @@ async function getAttempt(req, res) {
             an.answer_image_path,
             ap.status AS appeal_status, ap.student_note AS appeal_note,
             ap.created_at AS appeal_at, ap.points_at_appeal,
+            ap.decision AS appeal_decision, ap.staff_note AS appeal_staff_note,
             u.name AS graded_by_name
      FROM quiz_questions q
      LEFT JOIN quiz_questions p ON p.id = q.parent_id
@@ -1287,6 +1288,43 @@ async function gradeAnswer(req, res) {
 
 // إعادة محاولة التصحيح الآلي — للمحاولات اللي فشل فيها النموذج (grading_status = 'partial')
 // أو اللي وقتها خلص وهي لسه مفتوحة
+// ---------- حسم تظلم بقرار وتعليق ----------
+//
+// **القرار والتعليق بيوصلوا الطالب.** الحسم الصامت (تعديل الدرجة وبس) بيسيب الطالب
+// يقارن رقمين ويخمّن؛ والرفض من غير سبب بيرجع تاني في صورة سؤال للدعم.
+//
+// **مابيغيّرش الدرجة.** تعديل الدرجة له مساره (`gradeAnswer`) وبيقفل التظلم لوحده.
+// ده للحالة التانية: الموظف بص ولقى التصحيح سليم، أو وافق وعدّل الدرجة الأول وعايز
+// يكتب سبب. فصلهم بيخلي "وافقت" و"عدّلت الدرجة" حاجتين مستقلتين زي ما هما فعلًا
+async function decideAppeal(req, res) {
+  const attemptId = Number(req.params.attemptId);
+  const questionId = Number(req.params.questionId);
+  if (!Number.isInteger(attemptId) || !Number.isInteger(questionId)) {
+    return res.status(400).json({ error: 'رقم غير صالح' });
+  }
+
+  const decision = String(req.body?.decision || '').trim();
+  if (!['accepted', 'rejected'].includes(decision)) {
+    return res.status(400).json({ error: 'القرار لازم يكون قبول أو رفض' });
+  }
+  const note = String(req.body?.note || '').trim().slice(0, 1000) || null;
+  // **الرفض لازم معاه سبب.** القبول بيتفسّر لوحده (الدرجة اتعدّلت)، لكن الرفض من غير
+  // كلمة بيبان للطالب إن محدش بص أصلًا
+  if (decision === 'rejected' && !note) {
+    return res.status(400).json({ error: 'اكتب للطالب سبب الرفض' });
+  }
+
+  const { rowCount } = await pool.query(
+    `UPDATE quiz_appeals
+     SET status = 'resolved', decision = $4, staff_note = $5,
+         resolved_at = NOW(), resolved_by = $3
+     WHERE attempt_id = $1 AND question_id = $2`,
+    [attemptId, questionId, req.session.userId, decision, note]);
+
+  if (!rowCount) return res.status(404).json({ error: 'التظلم مش موجود' });
+  res.json({ ok: true, decision, note });
+}
+
 async function regradeAttempt(req, res) {
   const attemptId = Number(req.params.attemptId);
   const result = await finalizeAttempt(attemptId);
@@ -1423,7 +1461,7 @@ module.exports = {
   listQuizzes, getQuiz, createQuiz, updateQuiz, deleteQuiz, saveQuestions,
   listAttempts, getAttempt, gradeAnswer, regradeAttempt, regradeQuiz, gradePreview,
   getQuestionStats, exportAttempts, getQuizCoverage, listBootcamps, reopenAttempt,
-  listIdeas, saveIdeas,
+  listIdeas, saveIdeas, decideAppeal,
   // كان مكرر مرتين في القايمة دي — JS بياخد الأخير فمكانش بيضر، بس التكرار بيخفي
   // المتنسي لما حد يدوّر على اسم
   parseDocument,
