@@ -566,16 +566,26 @@ async function listAttempts(req, res) {
             a.submitted_at, a.is_late, a.score, a.max_score, a.grading_status, a.grading_error,
             a.attempt_no, s.name AS platform_name,
             -- التظلمات المفتوحة بتحوّل الورقة لطابور شغل: الموظف بيرتّب بيها شغله،
-            -- فالعدد لازم يبان في القايمة مش جوه الورقة بس
+            -- فالعدد لازم يبان في القايمة مش جوه الورقة بس.
+            -- **والإجمالي كمان، مش المفتوح بس** — من غيره الورقة بترجع تبان كأن محدش
+            -- اتظلم فيها أول ما التظلم يتحسم، ومفيش طريقة تراجع اتعمل فيه إيه
             COALESCE(ap.open_count, 0)::int AS open_appeals,
+            COALESCE(ap.total_count, 0)::int AS total_appeals,
+            COALESCE(ap.accepted_count, 0)::int AS accepted_appeals,
+            COALESCE(ap.rejected_count, 0)::int AS rejected_appeals,
             -- تكلفة تصحيح الورقة دي. **بتتحسب في القاعدة مش في الكود** — جمعها في
             -- الكنترولر معناه جلب كل صفوف الإجابات للذاكرة عشان رقم واحد
             COALESCE(cost.total, 0)::float8 AS grading_cost
      FROM quiz_attempts a
      LEFT JOIN tafra_students s ON s.tafra_student_id = a.tafra_student_id
      LEFT JOIN LATERAL (
-       SELECT COUNT(*) AS open_count FROM quiz_appeals
-       WHERE attempt_id = a.id AND status = 'open'
+       -- الفرق بين مقفول بقرار ومقفول من غير قرار مقصود: اعتماد الورقة بيقفل
+       -- التظلمات اللي عليها تلقائيًا، وده مش نفس حاجة إن التيم العلمي راجعه وحسمه
+       SELECT COUNT(*) AS total_count,
+              COUNT(*) FILTER (WHERE status = 'open') AS open_count,
+              COUNT(*) FILTER (WHERE decision = 'accepted') AS accepted_count,
+              COUNT(*) FILTER (WHERE decision = 'rejected') AS rejected_count
+       FROM quiz_appeals WHERE attempt_id = a.id
      ) ap ON true
      LEFT JOIN LATERAL (
        SELECT SUM(${aiPricing.costSql('an', 'ai_model')}) AS total

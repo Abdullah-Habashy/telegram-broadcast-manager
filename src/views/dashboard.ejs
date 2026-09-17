@@ -10432,6 +10432,28 @@ ${reply.content}` : reply.content;
     // والموظف بيدوّر على شارة صفرا بعينه. الفلتر بيخلي الطابور ظاهر في ضغطة
     let quizAppealsOnly = false;
 
+    // **السجل مابيتمسحش بعد الحسم.** قبل كده كانت الشارة بتتحسب من المفتوح بس، فأول
+    // ما التيم العلمي يحسم التظلم الورقة ترجع تبان كأن محدش اتظلم فيها — ومفيش طريقة
+    // تعرف اتعمل فيه إيه غير ما تفتح الورقة. العمود ده بيفضل ظاهر مهما اتحسم
+    function appealCellHtml(attempt) {
+      const total = attempt.total_appeals || 0;
+      if (!total) return '—';
+      const open = attempt.open_appeals || 0;
+      const accepted = attempt.accepted_appeals || 0;
+      const rejected = attempt.rejected_appeals || 0;
+      // اللي فضل: اتقفل لما الورقة اتعتمدت من غير ما حد يراجعه. **بيتحسب طرح مش
+      // استعلام** — أي حالة تانية تتضاف بعدين هتقع هنا وتبان بدل ما تختفي في صمت
+      const closed = total - open - accepted - rejected;
+
+      const parts = [];
+      if (open) parts.push(`<span class="badge badge-warning" title="لسه محدش حسمه">⏳ ${open} لسه</span>`);
+      if (accepted) parts.push(`<span class="badge badge-success" title="اتقبل والدرجة اتعدّلت">✅ ${accepted} اتقبل</span>`);
+      if (rejected) parts.push(`<span class="badge badge-muted" title="اتراجع والتصحيح طلع سليم">✖️ ${rejected} اترفض</span>`);
+      if (closed > 0) parts.push(`<span class="badge badge-muted" title="اتقفل لما الورقة اتعتمدت — من غير قرار متسجّل عليه">📄 ${closed} مع اعتماد الورقة</span>`);
+
+      return `<span class="row" style="gap:4px; flex-wrap:wrap" title="إجمالي التظلمات على الورقة دي: ${total}">${parts.join('')}</span>`;
+    }
+
     async function loadQuizAttempts() {
       const box = document.getElementById('quiz-attempts-table');
       box.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
@@ -10441,18 +10463,21 @@ ${reply.content}` : reply.content;
           box.innerHTML = '<div class="empty-state">لسه محدش دخل الاختبار</div>';
           return;
         }
-        const attempts = quizAppealsOnly ? all.filter((a) => a.open_appeals > 0) : all;
+        // **الفلتر بياخد أي ورقة اتظلم فيها، مش المفتوحة بس.** الحسم مش بيمسح السجل،
+        // فالورقة تفضل موجودة في الفلتر وعمود التظلم هو اللي بيقول اتعمل فيه إيه
+        const attempts = quizAppealsOnly ? all.filter((a) => a.total_appeals > 0) : all;
+        const appealedCount = all.filter((a) => a.total_appeals > 0).length;
         const openCount = all.filter((a) => a.open_appeals > 0).length;
         const filterButton = document.getElementById('quiz-appeals-filter-btn');
         if (filterButton) {
           // العدد على الزرار نفسه: من غيره الموظف بيضغط عشان يكتشف إن مفيش حاجة
           filterButton.textContent = quizAppealsOnly
             ? `⚖️ رجّع الكل (${all.length})`
-            : `⚖️ التظلمات بس (${openCount})`;
-          filterButton.disabled = !openCount && !quizAppealsOnly;
+            : `⚖️ التظلمات (${appealedCount}${openCount ? ` · ${openCount} لسه` : ''})`;
+          filterButton.disabled = !appealedCount && !quizAppealsOnly;
         }
         if (!attempts.length) {
-          box.innerHTML = '<div class="empty-state">مفيش ورقة عليها تظلم مفتوح</div>';
+          box.innerHTML = '<div class="empty-state">مفيش ورقة اتظلم فيها حد</div>';
           return;
         }
         const rows = attempts.map((attempt) => {
@@ -10467,16 +10492,13 @@ ${reply.content}` : reply.content;
                 ? '<span class="badge badge-danger">محتاجة مراجعتك</span>'
                 : '<span class="badge badge-success">اتصحّح</span>';
           const score = attempt.score === null ? '—' : `${Math.round(attempt.score * 100) / 100} / ${attempt.max_score}`;
-          // التظلم بيحوّل الورقة لطابور شغل — العلامة في القايمة هي اللي بتخلي الموظف
-          // يلاقيها من غير ما يفتح ٥٠٠ ورقة واحدة واحدة
-          const appealMark = attempt.open_appeals
-            ? ` <span class="badge badge-warning">⚖️ ${attempt.open_appeals} تظلم</span>`
-            : '';
+          const appealCell = appealCellHtml(attempt);
           return `<tr>
             <td>${escapeHtml(name)}${attempt.matched ? '' : ' <span class="badge badge-muted">مش مطابق للمنصة</span>'}${attempt.attempt_no > 1 ? ` <span class="badge badge-muted">محاولة ${attempt.attempt_no}</span>` : ''}</td>
             <td>${escapeHtml(attempt.phone)}</td>
-            <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}${appealMark}</td>
+            <td>${status}${attempt.is_late ? ' <span class="badge badge-muted">متأخر</span>' : ''}</td>
             <td>${score}</td>
+            <td>${appealCell}</td>
             <td>${attempt.submitted_at ? fmtDate(attempt.submitted_at) : fmtDate(attempt.started_at)}</td>
             <td class="quiz-cost-cell" title="${attempt.grading_cost > 0 ? 'تكلفة تصحيح الورقة دي' : 'لسه ماتصححتش آليًا'}">${formatCost(attempt.grading_cost)}</td>
             <td>
@@ -10489,7 +10511,7 @@ ${reply.content}` : reply.content;
             </td>
           </tr>`;
         }).join('');
-        box.innerHTML = `<table><thead><tr><th>الطالب</th><th>التليفون</th><th>الحالة</th><th>الدرجة</th><th>الوقت</th><th title="تكلفة التصحيح الآلي للورقة دي">💰</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+        box.innerHTML = `<table><thead><tr><th>الطالب</th><th>التليفون</th><th>الحالة</th><th>الدرجة</th><th title="اتظلم فيها حد ولا لأ، واتعمل في التظلم إيه">⚖️ التظلم</th><th>الوقت</th><th title="تكلفة التصحيح الآلي للورقة دي">💰</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
         // طول ما فيه محاولة في الطابور بنعيد التحميل لوحدنا — التصحيح ماشي في الخلفية
         // والموظف مالوش دعوة يفضل يضغط تحديث عشان يعرف خلص ولا لأ
         clearTimeout(quizRegradeTimer);
