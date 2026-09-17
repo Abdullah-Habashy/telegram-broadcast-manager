@@ -88,7 +88,7 @@ const escape = (value) => String(value).replace(/'/g, "''");
     rows.push({ r, name, rawPhone, phone: normalizePhone(rawPhone), answers });
   }
 
-  const skipped = { phone: [], hasScore: [], duplicate: [] };
+  const skipped = { phone: [], hasScore: [], duplicate: [], imported: [] };
 
   // ---------- الأرقام الغلط ----------
   const noPhone = rows.filter((row) => !row.phone);
@@ -108,13 +108,27 @@ const escape = (value) => String(value).replace(/'/g, "''");
 
   // ---------- مقابل القاعدة ----------
   const list = usable.map((row) => `'${row.phone}'`).join(',');
+  // **الفيصل هو «حلّ المقالي؟» مش «عنده درجة؟».** القاعدة الأولى كانت بتحمي أي درجة
+  // فوق الصفر، وده اتضح إنه خشن: تلات طلبة فتحوا الاختبار على المنصة، جاوبوا شوية
+  // اختيار، وسابوا المقالي كله فاضي — درجتهم ٢ و٦ و٢١ وسقفها ٣٠ أصلًا مش ٤٥، وحلّوا
+  // الامتحان كامل على الفورم بعد كده. الورقة الناقصة دي مش امتحان يتحمي.
+  // اللي بيتحمي هو اللي حلّ المقالي فعلًا — عنده امتحان حقيقي ممكن الفورم ينزّله.
   const existing = psqlJson(`
     SELECT COALESCE(json_agg(t), '[]'::json)::text FROM (
       SELECT phone, MAX(attempt_no)::int AS last_no,
              MAX(COALESCE(score, 0))::float8 AS best_score,
-             MAX(tafra_student_id) AS student_id
-      FROM quiz_attempts WHERE quiz_id = ${quizId} AND phone IN (${list})
-      GROUP BY phone
+             MAX(tafra_student_id) AS student_id,
+             BOOL_OR(did_essays AND src <> 'google-form') AS keep_theirs,
+             BOOL_OR(src = 'google-form') AS already_imported
+      FROM (
+        SELECT a.phone, a.attempt_no, a.score, a.tafra_student_id, a.source AS src,
+               EXISTS (
+                 SELECT 1 FROM quiz_answers an JOIN quiz_questions q ON q.id = an.question_id
+                 WHERE an.attempt_id = a.id AND q.kind = 'essay'
+                   AND (COALESCE(TRIM(an.essay_text), '') <> '' OR an.answer_image_path IS NOT NULL)
+               ) AS did_essays
+        FROM quiz_attempts a WHERE a.quiz_id = ${quizId} AND a.phone IN (${list})
+      ) x GROUP BY phone
     ) t;`) || [];
   const existingByPhone = new Map(existing.map((row) => [row.phone, row]));
 
@@ -128,13 +142,18 @@ const escape = (value) => String(value).replace(/'/g, "''");
     ) t;`) || [];
   const platformByPhone = new Map(platform.map((row) => [row.p, row]));
 
-  // **الورقة اللي فيها درجة حقيقية مابتتلمسش** — الطالب ده حلّ على المنصة فعلًا،
-  // واستبدال درجته بنتيجة الفورم ممكن ينزّلها من غير سبب. الصفر معناه فتح وماحلّش،
-  // وده اللي الفورم بيكمّله
-  const withScore = usable.filter((row) => (existingByPhone.get(row.phone)?.best_score || 0) > 0);
-  skipped.hasScore = withScore;
-  const scorePhones = new Set(withScore.map((row) => row.phone));
-  usable = usable.filter((row) => !scorePhones.has(row.phone));
+  // اتعمل له استيراد قبل كده؟ **إعادة تشغيل الأمر مابتعملش نسخ مكررة** — من غير الشرط
+  // ده، تشغيلة تانية بتضيف لكل طالب ورقة جديدة وهو مش عارف
+  const already = usable.filter((row) => existingByPhone.get(row.phone)?.already_imported);
+  skipped.imported = already;
+  const importedPhones = new Set(already.map((row) => row.phone));
+  usable = usable.filter((row) => !importedPhones.has(row.phone));
+
+  // الورقة اللي الطالب حلّ فيها المقالي مابتتلمسش — امتحان حقيقي، والفورم ممكن ينزّله
+  const complete = usable.filter((row) => existingByPhone.get(row.phone)?.keep_theirs);
+  skipped.hasScore = complete;
+  const completePhones = new Set(complete.map((row) => row.phone));
+  usable = usable.filter((row) => !completePhones.has(row.phone));
 
   // ---------- بناء المحاولات ----------
   const attempts = usable.map((row) => {
@@ -183,7 +202,8 @@ const escape = (value) => String(value).replace(/'/g, "''");
   console.log(`  صفوف في الشيت            ${rows.length}`);
   console.log(`  ⏭️ رقمها مش صالح          ${skipped.phone.length}`);
   console.log(`  ⏭️ صف أقدم لنفس الرقم     ${skipped.duplicate.length}`);
-  console.log(`  ⏭️ عندهم درجة على المنصة  ${skipped.hasScore.length}`);
+  console.log(`  ⏭️ اتعمل لهم استيراد قبل   ${skipped.imported.length}`);
+  console.log(`  ⏭️ حلّوا المقالي على المنصة ${skipped.hasScore.length}`);
   console.log(`  ✅ هيتعمللهم محاولات      ${attempts.length}`);
 
   if (skipped.phone.length) {
@@ -194,8 +214,12 @@ const escape = (value) => String(value).replace(/'/g, "''");
     console.log('\n── اترفضوا: صف أقدم لنفس الرقم (الأحدث اتاخد) ──');
     for (const row of skipped.duplicate) console.log(`   صف ${row.r}: ${row.name} · 0${row.phone}`);
   }
+  if (skipped.imported.length) {
+    console.log('\n── اترفضوا: اتعمل لهم استيراد من الفورم قبل كده ──');
+    for (const row of skipped.imported) console.log(`   صف ${row.r}: ${row.name} · 0${row.phone}`);
+  }
   if (skipped.hasScore.length) {
-    console.log('\n── اترفضوا: عندهم درجة حقيقية على المنصة ──');
+    console.log('\n── اترفضوا: حلّوا المقالي على المنصة، فده امتحان حقيقي ──');
     for (const row of skipped.hasScore) {
       console.log(`   صف ${row.r}: ${row.name} · 0${row.phone} · درجته ${existingByPhone.get(row.phone).best_score}`);
     }
