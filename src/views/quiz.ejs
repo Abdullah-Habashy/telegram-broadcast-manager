@@ -5,7 +5,7 @@
   <%# **الرقم ده يتغيّر مع أي تعديل على quiz.css.** Cloudflare بيقول للمتصفح يكاش الملف
       ٤ ساعات (max-age=14400)، فالطالب اللي فتح الاختبار قبل التعديل بيفضل على الـ CSS
       القديم طول المدة دي — والرابط الجديد بيتجاوز الكاش فورًا %>
-  <link rel="stylesheet" href="/quiz.css?v=20260917a" />
+  <link rel="stylesheet" href="/quiz.css?v=20260917b" />
   <title><%= quiz.title %></title>
 </head>
 <body class="qz-body">
@@ -107,6 +107,10 @@
     <h2 id="qz-result-title">تم استلام إجاباتك ✅</h2>
     <div class="qz-score" id="qz-result-score" style="display:none"></div>
     <p id="qz-result-note"></p>
+    <%# **نتيجة التظلم فوق، مش مع كل سؤال بس.** الطالب اللي اتظلم وفتح الرابط تاني
+        جاي يشوف الرد — ولو مستنيه جنب السؤال كان محتاج يلف الورقة كلها يدوّر عليه.
+        البانر بيقوله الخلاصة، والتفاصيل تحت مع كل سؤال زي ما هي %>
+    <div id="qz-appeal-summary" style="display:none"></div>
     <%# زرار التظلم تحت الدرجة على طول: ده المكان اللي الطالب بيبص فيه أول ما يشوف
         نتيجته، ولو كان تحت الورقة كلها كان محتاج يلف ٤٥ سؤال عشان يلاقيه %>
     <div class="qz-result-actions">
@@ -673,6 +677,7 @@
       renderReview(data.review);
       renderRetry(data);
       renderAppealCta();
+      renderAppealSummary();
     }
 
     // **المتبقي بيتقال في الحالتين.** الطالب اللي فاضله محاولة محتاج يعرف قبل ما يدوس،
@@ -1071,6 +1076,45 @@
 
     // **زرار واحد بيقول حالته.** الطالب اللي اتظلم ورجع للصفحة تاني محتاج يعرف إن
     // تظلمه موجود، ويقدر يعدّله — زرار «أتظلم» تاني كان هيخليه يفتكر إن الأول ضاع
+    // بيتبني من حالة الأسئلة نفسها — مفيش حقل جديد من السيرفر. القاعدة:
+    //   لسه فيه مفتوح   → مستني المراجعة
+    //   كله اتحسم        → الخلاصة بالأرقام، والردود تحت مع كل سؤال
+    function renderAppealSummary() {
+      var box = el('qz-appeal-summary');
+      if (!box) return;
+
+      var mine = appeals.review.filter(function (a) { return a.appeal; });
+      if (!mine.length) { box.style.display = 'none'; return; }
+
+      var open = mine.filter(function (a) { return a.appeal === 'open'; }).length;
+      var accepted = mine.filter(function (a) { return a.appeal_decision === 'accepted'; }).length;
+      var rejected = mine.filter(function (a) { return a.appeal_decision === 'rejected'; }).length;
+      var closed = mine.filter(function (a) {
+        return a.appeal === 'resolved' && !a.appeal_decision;
+      }).length;
+
+      var html = '';
+      if (open) {
+        html = '<div class="qz-appeal-summary waiting">'
+          + '<b>⏳ تظلمك وصلنا</b>'
+          + '<div>' + open + ' سؤال تحت المراجعة دلوقتي. ارجع للصفحة دي تاني وهتلاقي الرد هنا.</div>'
+          + '</div>';
+      } else {
+        var lines = [];
+        if (accepted) lines.push('<b>' + accepted + '</b> اتقبل والدرجة اتعدّلت');
+        if (rejected) lines.push('<b>' + rejected + '</b> اتراجع والتصحيح طلع سليم');
+        if (closed) lines.push('<b>' + closed + '</b> اتراجع مع اعتماد الورقة');
+        html = '<div class="qz-appeal-summary done">'
+          + '<b>⚖️ تظلمك اتراجع خلاص</b>'
+          + '<div>' + lines.join(' · ') + '.</div>'
+          + '<div class="qz-appeal-summary-hint">افتح «عرض الأخطاء ونموذج الإجابة» تحت — هتلاقي رد الفريق تحت كل سؤال اتظلمت منه.</div>'
+          + '</div>';
+      }
+
+      box.innerHTML = html;
+      box.style.display = '';
+    }
+
     function renderAppealCta() {
       var cta = el('qz-appeal-cta');
       var button = el('qz-appeal-open');
@@ -1172,6 +1216,7 @@
           if (data.appeals_open !== undefined) appeals.open = data.appeals_open !== false;
           renderReview(data.review);
           renderAppealCta();
+          renderAppealSummary();
         }
         el('qz-appeal').style.display = 'none';
         el('qz-appeal-note').value = '';
