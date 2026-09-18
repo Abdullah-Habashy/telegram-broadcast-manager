@@ -40,6 +40,7 @@ const tafraRoutes = require('./routes/tafra.routes');
 const pushRoutes = require('./routes/push.routes');
 const callsRoutes = require('./routes/calls.routes');
 const quizzesRoutes = require('./routes/quizzes.routes');
+const videoReviewsRoutes = require('./routes/videoReviews.routes');
 const publicRoutes = require('./routes/public.routes');
 
 const PgSession = pgSessionFactory(session);
@@ -263,6 +264,7 @@ app.use('/api/tafra', tafraRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/calls', callsRoutes);
 app.use('/api/quizzes', quizzesRoutes);
+app.use('/api/video-reviews', videoReviewsRoutes);
 // بدون تسجيل دخول أو مفتاح API — بناءً على طلب صريح من المستخدم، مفتوحة لأي نظام خارجي
 app.use('/api/public', publicRoutes);
 

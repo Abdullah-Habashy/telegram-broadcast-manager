@@ -64,6 +64,8 @@ src/utils/             crypto · workingHours · telegramErrors · genderInferen
                        · quizDocImages · pdfAttachment ...
 src/views/dashboard.ejs  ⚠️ 640KB+ — اللوحة كلها في ملف واحد
 src/views/quiz.ejs       صفحة الاختبار العامة للطالب (/q/:ref)
+src/controllers/videoReviews.controller.js + routes/videoReviews.routes.js
+                         مراجعة الفيديوهات (/api/video-reviews) — أغلاط الفيديو المصوَّر
 ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل من /etc/cron.d على السيرفر
 ```
 
@@ -90,6 +92,7 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 | التيمات | `team_attendance` (حضور وانصراف التيمات المتخصصة) |
 | الاختبارات | `quizzes`, `quiz_questions`, `curriculum_ideas`, `quiz_attempts`, `quiz_answers` |
 | الذكاء الصناعي | `ai_knowledge` (المصدر)، `ai_instructions` (قايمة التعليمات)، `ai_reply_log` (سجل كل نداء)، `ai_training_runs` + `ai_training_items` (مساحة التدريب)، `quick_replies` |
+| مراجعة الفيديوهات | `video_books` (مندليف/مذكرة/شرح)، `review_videos`، `video_review_notes` |
 | متنوع | `settings` (مفتاح/قيمة)، `push_subscriptions`، `session` |
 
 ### مفاهيم لازم تفهمها قبل ما تعدّل
@@ -202,6 +205,13 @@ ops-backup-db.sh       نسخة القاعدة اليومية — بتشتغل �
 العمل**، لأنه نتيجة فعل الطالب مش رد على سؤاله، ولو اتحسب رد كان هيفضّي لون التذكرة من معناه.
 استيراد الأسئلة من Word بـ `mammoth` (`quizDocImport` + `quizDocImages`) والتصدير Excel
 بـ `exceljs` (`quizExport`).
+
+**مراجعة الفيديوهات: غلطة = فيديو + توقيت + صورة + تعليق.** التيم العلمي بيسجّل والمونتير
+بيصلّح على بريمير ويعلّم (`open`/`fixed`/`rejected`). **صلاحيتها هي صلاحية الاختبارات
+بالظبط** (`requireQuizAccessApi`) — مفيش عمود صلاحية جديد. الفيديوهات والكتب **قوايم
+مُدارة مش نص حر** عشان الملاحظات تتجمّع على نفس الفيديو. التوقيت بيتخزّن **ثواني** والعرض
+`HH:MM:SS`، والتعليق بيتعرض `dir="rtl"` مش `auto` (المصطلح الإنجليزي في أول الجملة كان
+بيقلبها كلها). التصدير PDF بـpuppeteer وبيضمّن الصور base64 للمسارات المحلية.
 
 **قايمة الطالب: كيبورد مش القايمة الزرقا.** `bot/studentMenu.js` فيه تلات زراير لكل طالب
 (الدعم العلمي · الدعم الفني · تيم المتابعة)، **ومالهاش أي علاقة بقايمة الأوامر الفاضية** — دي

@@ -38,6 +38,7 @@
           الشرط جاي محسوب من السيرفر (utils/teams.js) عشان يفضل هو نفسه اللي بيحمي /api/quizzes %>
       <% if (canManageQuizzes) { %>
         <div class="nav-item" data-tab="quizzes"><span class="ind"></span> الاختبارات</div>
+        <div class="nav-item" data-tab="video-reviews"><span class="ind"></span> مراجعة الفيديوهات</div>
       <% } %>
       <% if (userRole === 'admin') { %>
         <div class="nav-item" data-tab="templates"><span class="ind"></span> القوالب</div>
@@ -964,6 +965,160 @@
       </section>
 
       <!-- ===== طلاب منصة طفرة ===== -->
+      <!-- ===== مراجعة الفيديوهات ===== -->
+      <%# نفس صلاحية الاختبارات بالظبط (الأدمن + التيم العلمي + الدعم الفني) — والشرط
+          جاي محسوب من السيرفر من utils/teams.js عشان يفضل هو نفسه اللي بيحمي
+          /api/video-reviews. الإخفاء هنا عرض، والمنع الحقيقي في requireQuizAccessApi %>
+      <section class="tab-panel" id="tab-video-reviews" style="display:none">
+        <div class="page-header">
+          <h1>مراجعة الفيديوهات</h1>
+          <p>التيم العلمي بيسجّل الغلطة بتوقيتها وصورتها، والمونتاج بيفتحها على بريمير ويعلّم إنها اتصلّحت</p>
+        </div>
+
+        <!-- شاشتين جوه تبويب واحد: قايمة الفيديوهات، وشاشة الفيديو الواحد بملاحظاته.
+             الانتقال بإظهار وإخفاء زي تبويب الاختبارات — مش تحميل صفحة جديدة -->
+        <div id="vr-list-view">
+          <div class="card">
+            <div class="row-between" style="gap:12px; flex-wrap:wrap; margin-bottom:12px">
+              <b>الفيديوهات</b>
+              <div class="row" style="gap:8px">
+                <button type="button" class="btn btn-ghost btn-sm" id="vr-export-btn" style="width:auto">📄 تصدير PDF</button>
+                <button type="button" class="btn btn-primary btn-sm" id="vr-new-video-btn" style="width:auto">+ فيديو جديد</button>
+              </div>
+            </div>
+
+            <div class="row" style="gap:8px; margin-bottom:14px; flex-wrap:wrap">
+              <select id="vr-book-filter" class="compact-select" style="min-width:170px"></select>
+              <select id="vr-list-status-filter" class="compact-select" style="min-width:170px">
+                <option value="">كل الملاحظات (للتصدير)</option>
+                <option value="open">المفتوحة بس</option>
+                <option value="fixed">اللي اتصلّحت</option>
+                <option value="rejected">اللي اترفضت</option>
+              </select>
+              <input type="search" id="vr-search" class="compact-input" style="min-width:220px"
+                     placeholder="اسم الفيديو أو ملف المونتاج" />
+              <label class="row" style="gap:6px; margin:0">
+                <input type="checkbox" id="vr-show-archived" />
+                <span class="card-desc" style="margin:0">اعرض المؤرشف</span>
+              </label>
+            </div>
+
+            <!-- فورم الإضافة مخفي لحد ما الزرار يتضغط: الشاشة بتتفتح كل يوم عشان
+                 تسجّل ملاحظة، وإضافة فيديو جديد بتحصل مرة كل كذا يوم -->
+            <div id="vr-new-video-form" style="display:none; border:1.5px dashed var(--border); border-radius:8px; padding:14px; margin-bottom:14px">
+              <div class="row" style="gap:10px; flex-wrap:wrap">
+                <div class="field" style="min-width:150px; margin:0"><label>الكتاب</label>
+                  <select id="vr-video-book" class="compact-select" style="width:100%"></select></div>
+                <div class="field" style="flex:1; min-width:200px; margin:0"><label>اسم الفيديو / الحصة</label>
+                  <input type="text" id="vr-video-title" placeholder="مثال: الباب الأول — الدرس التالت" /></div>
+                <div class="field" style="width:110px; margin:0"><label>رقم (اختياري)</label>
+                  <input type="number" id="vr-video-number" min="1" step="1" /></div>
+              </div>
+              <div class="field" style="margin:10px 0 0"><label>اسم ملف المونتاج (اختياري)</label>
+                <input type="text" id="vr-video-file" dir="auto" placeholder="ch1_lesson3_final.prproj" /></div>
+              <p class="card-desc" style="margin:6px 0 10px">
+                ده الاسم اللي المونتير بيفتحه فعلًا على جهازه — ممكن يكون غير الاسم اللي الطلاب بيشوفوه.
+              </p>
+              <div class="row" style="gap:8px">
+                <button type="button" class="btn btn-primary btn-sm" id="vr-save-video-btn" style="width:auto">حفظ الفيديو</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="vr-cancel-video-btn" style="width:auto">إلغاء</button>
+              </div>
+            </div>
+
+            <div id="vr-videos-list"><div class="empty-state">بيتحمّل...</div></div>
+          </div>
+
+          <!-- ===== الكتب =====
+               قايمة مُدارة مش خانة نص: «مندليف» و«المندليف» كانوا هيبقوا كتابين -->
+          <div class="card">
+            <div class="row-between" style="gap:12px; flex-wrap:wrap; margin-bottom:6px">
+              <div>
+                <b>📚 الكتب</b>
+                <div class="card-desc" style="margin-top:4px">
+                  مندليف، مذكرة، شرح... زوّد كتاب جديد من هنا وهيظهر في قايمة إضافة الفيديو.
+                </div>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" id="vr-books-toggle" style="width:auto">عرض القايمة</button>
+            </div>
+            <div id="vr-books-panel" style="display:none">
+              <div class="row" style="gap:8px; margin-bottom:12px">
+                <input type="text" id="vr-new-book-name" class="compact-input" style="min-width:220px" placeholder="اسم الكتاب" />
+                <button type="button" class="btn btn-primary btn-sm" id="vr-add-book-btn" style="width:auto">إضافة</button>
+              </div>
+              <div id="vr-books-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== شاشة الفيديو الواحد ===== -->
+        <div id="vr-video-view" style="display:none">
+          <div class="card">
+            <div class="row-between" style="gap:12px; flex-wrap:wrap; margin:0">
+              <div>
+                <b id="vr-video-heading"></b>
+                <div class="card-desc" id="vr-video-sub" style="margin:4px 0 0"></div>
+              </div>
+              <div class="row" style="gap:8px">
+                <button type="button" class="btn btn-ghost btn-sm" id="vr-back-btn" style="width:auto">→ رجوع للقايمة</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="vr-video-export-btn" style="width:auto">📄 تصدير PDF</button>
+                <button type="button" class="btn btn-danger-ghost btn-sm" id="vr-video-delete-btn" style="width:auto">🗑️ حذف الفيديو</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" id="vr-note-form-card">
+            <div class="row-between" style="margin-bottom:10px">
+              <b id="vr-note-form-title">➕ سجّل غلطة</b>
+              <button type="button" class="btn btn-ghost btn-sm" id="vr-cancel-edit-btn" style="width:auto; display:none">إلغاء التعديل</button>
+            </div>
+
+            <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px">
+              <div class="field" style="width:96px; margin:0"><label>ساعة</label>
+                <input type="number" id="vr-tc-h" class="compact-input" min="0" max="23" step="1" value="0" /></div>
+              <div class="field" style="width:96px; margin:0"><label>دقيقة</label>
+                <input type="number" id="vr-tc-m" class="compact-input" min="0" max="59" step="1" value="0" /></div>
+              <div class="field" style="width:96px; margin:0"><label>ثانية</label>
+                <input type="number" id="vr-tc-s" class="compact-input" min="0" max="59" step="1" value="0" /></div>
+              <div class="card-desc" style="margin:0 4px 8px">التوقيت اللي الغلطة ظاهرة فيه في الفيديو</div>
+            </div>
+
+            <div class="row" style="gap:14px; align-items:flex-start; flex-wrap:wrap">
+              <div style="flex:0 0 280px; max-width:100%">
+                <label style="display:block; font-size:13px; margin-bottom:6px">صورة الشاشة</label>
+                <!-- الرفع بالضغط أو باللزق: لقطة الشاشة في الحافظة أصلًا وقت التسجيل -->
+                <div class="vr-drop" id="vr-shot-drop" tabindex="0">
+                  اضغط لاختيار صورة<br />أو الزق اللقطة (Ctrl+V)
+                </div>
+                <input type="file" id="vr-shot-input" accept="image/png,image/jpeg,image/webp" style="display:none" />
+                <button type="button" class="btn btn-ghost btn-sm" id="vr-clear-shot-btn" style="width:auto; margin-top:8px; display:none">شيل الصورة</button>
+              </div>
+              <div class="field" style="flex:1; min-width:260px; margin:0">
+                <label>التعليق</label>
+                <!-- dir="rtl" مش auto: التعليق عربي فيه مصطلحات إنجليزية، و auto بيقلب
+                     الجملة كلها لو بدأت بمصطلح إنجليزي -->
+                <textarea id="vr-note-comment" rows="6" dir="rtl"
+                          placeholder="اكتب الغلطة والمطلوب بالظبط — مثال: الشريحة مكتوب فيها MnO4 والصح MnO2، تتغيّر من نفس اللحظة لحد 00:12:40"></textarea>
+              </div>
+            </div>
+
+            <button type="button" class="btn btn-primary btn-sm" id="vr-save-note-btn" style="width:auto; margin-top:12px">حفظ الملاحظة</button>
+          </div>
+
+          <div class="card">
+            <div class="row-between" style="gap:12px; flex-wrap:wrap">
+              <b>الملاحظات</b>
+              <select id="vr-note-status-filter" class="compact-select" style="min-width:170px">
+                <option value="">الكل</option>
+                <option value="open">المفتوحة</option>
+                <option value="fixed">اللي اتصلّحت</option>
+                <option value="rejected">اللي اترفضت</option>
+              </select>
+            </div>
+            <div id="vr-notes-list"><div class="empty-state">بيتحمّل...</div></div>
+          </div>
+        </div>
+      </section>
+
       <section class="tab-panel" id="tab-tafra-students" style="display:none">
         <div class="page-header">
           <h1>طلاب منصة طفرة</h1>
@@ -4061,6 +4216,7 @@
       if (tab === 'performance') initPerformance();
       if (tab === 'templates') loadTemplates();
       if (tab === 'quizzes') initQuizzes();
+      if (tab === 'video-reviews') initVideoReviews();
       if (tab === 'settings') { loadSettings(); initAssistPanel(); }
       if (tab === 'ai') { loadSettings(); initAssistPanel(); initAiTab(); }
     }
@@ -11348,6 +11504,559 @@ ${reply.content}` : reply.content;
     document.getElementById('api-test-btn')?.addEventListener('click', testApiOnPhone);
     document.getElementById('api-test-phone')?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') testApiOnPhone();
+    });
+
+    // ---------- مراجعة الفيديوهات ----------
+    //
+    // التيم العلمي بيتفرّج على الفيديو ويسجّل كل غلطة بتوقيتها وصورتها وتعليق بالعربي،
+    // والمونتير بيفتح نفس الشاشة (أو الـPDF) ويعدّل على بريمير ويعلّم إنها اتصلّحت.
+    //
+    // **شاشتين:** القايمة (vr-list-view) وشاشة الفيديو الواحد (vr-video-view) — الانتقال
+    // بإظهار وإخفاء، زي تبويب الاختبارات.
+
+    let vrBooks = [];
+    let vrCurrentVideo = null;
+    // الملاحظة اللي بتتعدّل دلوقتي. الفورم واحد للتسجيل والتعديل — فورم تاني كان معناه
+    // نسختين من نفس الفحوصات، وواحدة منهم تتنسى لما نضيف حقل
+    let vrEditingNoteId = null;
+    // مسار الصورة بعد ما ترفع. الرفع بيحصل لحظة الاختيار مش مع الحفظ، عشان الموظف
+    // يشوف الصورة اللي اختارها فعلًا قبل ما يكتب
+    let vrShotPath = null;
+
+    const VR_STATUS = {
+      open: { label: 'مفتوحة', badge: 'badge-warning' },
+      fixed: { label: 'اتصلّحت', badge: 'badge-success' },
+      rejected: { label: 'مش غلطة', badge: 'badge-muted' },
+    };
+
+    // **مرآة لـ`formatTimecode` في `src/utils/videoReviewExport.js`** — الواجهة مابتعملش
+    // require، فلو غيّرت الصيغة هناك غيّرها هنا. الساعة بتظهر دايمًا حتى لو صفر عشان
+    // «12:30» ماتتقريش ١٢ ساعة
+    function vrTimecode(totalSeconds) {
+      const total = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const parts = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+      return parts.map((part) => String(part).padStart(2, '0')).join(':');
+    }
+
+    async function initVideoReviews() {
+      await loadVrBooks();
+      await loadVrVideos();
+    }
+
+    async function loadVrBooks() {
+      try {
+        const data = await api('/api/video-reviews/books');
+        vrBooks = data.books || [];
+      } catch (error) {
+        showToast(error.message);
+        return;
+      }
+
+      const filter = document.getElementById('vr-book-filter');
+      const previous = filter.value;
+      filter.innerHTML = '<option value="">كل الكتب</option>'
+        + vrBooks.map((book) => `<option value="${book.id}">${escapeHtml(book.name)}</option>`).join('');
+      filter.value = previous;
+
+      // قايمة فورم الإضافة بتعرض النشط بس — الكتاب المؤرشف بيفضل على فيديوهاته القديمة
+      const picker = document.getElementById('vr-video-book');
+      picker.innerHTML = vrBooks.filter((book) => book.is_active)
+        .map((book) => `<option value="${book.id}">${escapeHtml(book.name)}</option>`).join('');
+
+      renderVrBooks();
+    }
+
+    function renderVrBooks() {
+      const box = document.getElementById('vr-books-list');
+      if (!vrBooks.length) {
+        box.innerHTML = '<div class="empty-state">مفيش كتب لسه</div>';
+        return;
+      }
+      box.innerHTML = vrBooks.map((book) => `
+        <div class="row-between" style="padding:8px 0; border-bottom:1px solid var(--border); margin:0">
+          <div>
+            <b${book.is_active ? '' : ' style="opacity:0.6"'}>${escapeHtml(book.name)}</b>
+            <span class="card-desc" style="margin-right:8px">${book.videos_count} فيديو</span>
+            ${book.is_active ? '' : '<span class="badge badge-muted">مؤرشف</span>'}
+          </div>
+          <div class="row" style="gap:6px">
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                    data-vr-book-rename="${book.id}">تعديل الاسم</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                    data-vr-book-archive="${book.id}">${book.is_active ? 'أرشفة' : 'إرجاع'}</button>
+            ${book.videos_count === 0
+              ? `<button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" data-vr-book-delete="${book.id}">حذف</button>`
+              : ''}
+          </div>
+        </div>`).join('');
+    }
+
+    async function loadVrVideos() {
+      const box = document.getElementById('vr-videos-list');
+      const params = new URLSearchParams();
+      const bookId = document.getElementById('vr-book-filter').value;
+      const search = document.getElementById('vr-search').value.trim();
+      if (bookId) params.set('book_id', bookId);
+      if (search) params.set('q', search);
+      if (document.getElementById('vr-show-archived').checked) params.set('include_archived', '1');
+
+      try {
+        const data = await api(`/api/video-reviews/videos?${params.toString()}`);
+        const videos = data.videos || [];
+        if (!videos.length) {
+          box.innerHTML = '<div class="empty-state">مفيش فيديوهات — ضيف واحد من الزرار فوق</div>';
+          return;
+        }
+        box.innerHTML = videos.map((video) => `
+          <div class="vr-video-card${video.is_active ? '' : ' archived'}" data-vr-video="${video.id}">
+            <div style="flex:1; min-width:200px">
+              <div class="vr-video-title">${escapeHtml(video.book_name)} — ${escapeHtml(video.title)}</div>
+              <div class="vr-video-sub">
+                ${video.video_number ? `فيديو ${escapeHtml(video.video_number)} · ` : ''}
+                ${video.file_name ? `ملف: ${escapeHtml(video.file_name)} · ` : ''}
+                ${video.notes_count} ملاحظة
+                ${video.is_active ? '' : ' · مؤرشف'}
+              </div>
+            </div>
+            <div class="row" style="gap:6px">
+              ${video.open_count ? `<span class="badge badge-warning">${video.open_count} مفتوحة</span>` : ''}
+              ${video.fixed_count ? `<span class="badge badge-success">${video.fixed_count} اتصلّحت</span>` : ''}
+              ${video.rejected_count ? `<span class="badge badge-muted">${video.rejected_count} مرفوضة</span>` : ''}
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                      data-vr-archive-video="${video.id}">${video.is_active ? 'أرشفة' : 'إرجاع'}</button>
+              <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto"
+                      data-vr-delete-video="${video.id}">🗑️ حذف</button>
+            </div>
+          </div>`).join('');
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    // ---------- شاشة الفيديو الواحد ----------
+
+    async function openVrVideo(videoId) {
+      document.getElementById('vr-list-view').style.display = 'none';
+      document.getElementById('vr-video-view').style.display = 'block';
+      vrResetNoteForm();
+      await loadVrNotes(videoId);
+      // الشاشة بتتفتح من كارت ممكن يكون نازل تحت في قايمة طويلة — من غير ده الموظف
+      // بيضغط ويحس إن مفيش حاجة حصلت
+      document.getElementById('vr-video-view').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    async function loadVrNotes(videoId) {
+      const box = document.getElementById('vr-notes-list');
+      box.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      const status = document.getElementById('vr-note-status-filter').value;
+      try {
+        const data = await api(`/api/video-reviews/videos/${videoId}/notes${status ? `?status=${status}` : ''}`);
+        vrCurrentVideo = data.video;
+        document.getElementById('vr-video-heading').textContent =
+          `${data.video.book_name} — ${data.video.title}`;
+        document.getElementById('vr-video-sub').textContent = [
+          data.video.video_number ? `فيديو ${data.video.video_number}` : '',
+          data.video.file_name ? `ملف المونتاج: ${data.video.file_name}` : '',
+          data.video.is_active ? '' : 'مؤرشف',
+        ].filter(Boolean).join(' · ') || 'مفيش بيانات إضافية';
+        renderVrNotes(data.notes || []);
+      } catch (error) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function renderVrNotes(notes) {
+      const box = document.getElementById('vr-notes-list');
+      if (!notes.length) {
+        box.innerHTML = '<div class="empty-state">مفيش ملاحظات في الفلتر ده</div>';
+        return;
+      }
+      box.innerHTML = notes.map((note) => {
+        const status = VR_STATUS[note.status] || VR_STATUS.open;
+        const shot = note.screenshot_path
+          ? `<div class="vr-shot"><img src="${escapeHtml(attachmentUrl(note.screenshot_path))}"
+                 alt="صورة الغلطة" data-vr-zoom="${escapeHtml(attachmentUrl(note.screenshot_path))}" /></div>`
+          : '';
+        const resolution = note.resolution_note
+          ? `<div class="vr-resolution"><b>رد المونتاج${note.resolved_by_name ? ` (${escapeHtml(note.resolved_by_name)})` : ''}:</b> ${escapeHtml(note.resolution_note)}</div>`
+          : '';
+        return `<div class="vr-note status-${escapeHtml(note.status)}">
+          <div class="vr-note-head">
+            <span class="vr-timecode">${escapeHtml(note.timecode || vrTimecode(note.timecode_seconds))}</span>
+            <span class="badge ${status.badge}">${status.label}</span>
+            <span class="card-desc" style="margin:0">${escapeHtml(note.created_by_name || 'غير معروف')} · ${fmtDate(note.created_at)}</span>
+            <div class="row" style="gap:6px; margin-right:auto">
+              ${note.status === 'open'
+                ? `<button type="button" class="btn btn-ghost btn-sm" style="width:auto" data-vr-fix="${note.id}">✅ اتصلّحت</button>
+                   <button type="button" class="btn btn-ghost btn-sm" style="width:auto" data-vr-reject="${note.id}">✖️ مش غلطة</button>`
+                : `<button type="button" class="btn btn-ghost btn-sm" style="width:auto" data-vr-reopen="${note.id}">↩️ افتحها تاني</button>`}
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto" data-vr-edit="${note.id}">✏️</button>
+              <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" data-vr-delete="${note.id}">🗑️</button>
+            </div>
+          </div>
+          <div class="vr-note-body">
+            ${shot}
+            <div class="vr-comment">${escapeHtml(note.comment)}</div>
+          </div>
+          ${resolution}
+        </div>`;
+      }).join('');
+
+      // البيانات اللي التعديل بيقرا منها. الاحتفاظ بيها هنا بدل ما نجيب الملاحظة تاني
+      // من السيرفر عند كل ضغطة تعديل
+      box.dataset.notes = JSON.stringify(notes.map((note) => ({
+        id: note.id, comment: note.comment, timecode_seconds: note.timecode_seconds,
+        screenshot_path: note.screenshot_path,
+      })));
+    }
+
+    // ---------- فورم الملاحظة ----------
+
+    function vrResetNoteForm() {
+      vrEditingNoteId = null;
+      vrShotPath = null;
+      ['vr-tc-h', 'vr-tc-m', 'vr-tc-s'].forEach((id) => { document.getElementById(id).value = 0; });
+      document.getElementById('vr-note-comment').value = '';
+      document.getElementById('vr-shot-drop').innerHTML = 'اضغط لاختيار صورة<br />أو الزق اللقطة (Ctrl+V)';
+      document.getElementById('vr-clear-shot-btn').style.display = 'none';
+      document.getElementById('vr-note-form-title').textContent = '➕ سجّل غلطة';
+      document.getElementById('vr-save-note-btn').textContent = 'حفظ الملاحظة';
+      document.getElementById('vr-cancel-edit-btn').style.display = 'none';
+    }
+
+    function vrShowShot(path) {
+      vrShotPath = path;
+      document.getElementById('vr-shot-drop').innerHTML =
+        `<img src="${escapeHtml(attachmentUrl(path))}" alt="اللقطة المرفوعة" />`;
+      document.getElementById('vr-clear-shot-btn').style.display = '';
+    }
+
+    async function vrUploadShot(file) {
+      if (!file) return;
+      const drop = document.getElementById('vr-shot-drop');
+      drop.textContent = 'بيترفع...';
+      try {
+        const form = new FormData();
+        form.append('screenshot', file);
+        // **من غير Content-Type يدوي** — المتصفح بيحط boundary لوحده، وتحديده بإيدنا
+        // بيكسر الرفع. عشان كده fetch مباشر مش الدالة api()
+        const res = await fetch('/api/video-reviews/screenshot', { method: 'POST', body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'تعذر رفع الصورة');
+        vrShowShot(data.path);
+      } catch (error) {
+        showToast(error.message);
+        drop.innerHTML = 'اضغط لاختيار صورة<br />أو الزق اللقطة (Ctrl+V)';
+      }
+    }
+
+    async function saveVrNote() {
+      if (!vrCurrentVideo) return;
+      const comment = document.getElementById('vr-note-comment').value.trim();
+      if (!comment) return showToast('اكتب تعليق يشرح الغلطة');
+      const payload = {
+        hours: document.getElementById('vr-tc-h').value || 0,
+        minutes: document.getElementById('vr-tc-m').value || 0,
+        seconds: document.getElementById('vr-tc-s').value || 0,
+        comment,
+        screenshot_path: vrShotPath || '',
+      };
+      const button = document.getElementById('vr-save-note-btn');
+      button.disabled = true;
+      try {
+        if (vrEditingNoteId) {
+          await api(`/api/video-reviews/notes/${vrEditingNoteId}`, { method: 'PUT', body: JSON.stringify(payload) });
+        } else {
+          await api(`/api/video-reviews/videos/${vrCurrentVideo.id}/notes`, { method: 'POST', body: JSON.stringify(payload) });
+        }
+        showToast(vrEditingNoteId ? 'اتعدّلت' : 'اتسجّلت');
+        vrResetNoteForm();
+        await loadVrNotes(vrCurrentVideo.id);
+      } catch (error) {
+        showToast(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function startVrNoteEdit(noteId) {
+      const notes = JSON.parse(document.getElementById('vr-notes-list').dataset.notes || '[]');
+      const note = notes.find((item) => item.id === noteId);
+      if (!note) return;
+      vrEditingNoteId = noteId;
+      const total = Number(note.timecode_seconds) || 0;
+      document.getElementById('vr-tc-h').value = Math.floor(total / 3600);
+      document.getElementById('vr-tc-m').value = Math.floor((total % 3600) / 60);
+      document.getElementById('vr-tc-s').value = total % 60;
+      document.getElementById('vr-note-comment').value = note.comment || '';
+      if (note.screenshot_path) vrShowShot(note.screenshot_path); else { vrShotPath = null; }
+      document.getElementById('vr-note-form-title').textContent = '✏️ تعديل الملاحظة';
+      document.getElementById('vr-save-note-btn').textContent = 'حفظ التعديل';
+      document.getElementById('vr-cancel-edit-btn').style.display = '';
+      // الفورم فوق قايمة ممكن تكون طويلة — من غير ده الموظف بيضغط تعديل وشاشته ماتتغيّرش
+      document.getElementById('vr-note-form-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    async function setVrNoteStatus(noteId, status, resolutionNote) {
+      try {
+        await api(`/api/video-reviews/notes/${noteId}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ status, resolution_note: resolutionNote || '' }),
+        });
+        await loadVrNotes(vrCurrentVideo.id);
+      } catch (error) {
+        showToast(error.message);
+      }
+    }
+
+    // ---------- الربط ----------
+
+    document.getElementById('vr-book-filter')?.addEventListener('change', loadVrVideos);
+    document.getElementById('vr-show-archived')?.addEventListener('change', loadVrVideos);
+    // نفس نمط البحث في باقي الشاشات: مؤقّت بسيط مش دالة debounce عامة — مفيش واحدة
+    // في الملف ده، والاختراع بيضيف اسم عام تالت لنفس الحاجة
+    let vrSearchTimer = null;
+    document.getElementById('vr-search')?.addEventListener('input', () => {
+      clearTimeout(vrSearchTimer);
+      vrSearchTimer = setTimeout(loadVrVideos, 300);
+    });
+
+    document.getElementById('vr-books-toggle')?.addEventListener('click', (event) => {
+      const panel = document.getElementById('vr-books-panel');
+      const open = panel.style.display === 'none';
+      panel.style.display = open ? 'block' : 'none';
+      event.target.textContent = open ? 'إخفاء القايمة' : 'عرض القايمة';
+    });
+
+    document.getElementById('vr-add-book-btn')?.addEventListener('click', async () => {
+      const input = document.getElementById('vr-new-book-name');
+      const name = input.value.trim();
+      if (!name) return showToast('اكتب اسم الكتاب');
+      try {
+        await api('/api/video-reviews/books', { method: 'POST', body: JSON.stringify({ name }) });
+        input.value = '';
+        await loadVrBooks();
+        showToast('اتضاف');
+      } catch (error) { showToast(error.message); }
+    });
+
+    document.getElementById('vr-books-list')?.addEventListener('click', async (event) => {
+      const rename = event.target.closest('[data-vr-book-rename]');
+      const archive = event.target.closest('[data-vr-book-archive]');
+      const remove = event.target.closest('[data-vr-book-delete]');
+      try {
+        if (rename) {
+          const book = vrBooks.find((item) => item.id === Number(rename.dataset.vrBookRename));
+          const name = window.prompt('الاسم الجديد للكتاب:', book?.name || '');
+          if (name === null || !name.trim()) return;
+          await api(`/api/video-reviews/books/${book.id}`, { method: 'PUT', body: JSON.stringify({ name: name.trim() }) });
+        } else if (archive) {
+          const book = vrBooks.find((item) => item.id === Number(archive.dataset.vrBookArchive));
+          await api(`/api/video-reviews/books/${book.id}`, { method: 'PUT', body: JSON.stringify({ is_active: !book.is_active }) });
+        } else if (remove) {
+          if (!confirm('تمسح الكتاب ده؟')) return;
+          await api(`/api/video-reviews/books/${remove.dataset.vrBookDelete}`, { method: 'DELETE' });
+        } else {
+          return;
+        }
+        await loadVrBooks();
+        await loadVrVideos();
+      } catch (error) { showToast(error.message); }
+    });
+
+    document.getElementById('vr-new-video-btn')?.addEventListener('click', () => {
+      const form = document.getElementById('vr-new-video-form');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+    document.getElementById('vr-cancel-video-btn')?.addEventListener('click', () => {
+      document.getElementById('vr-new-video-form').style.display = 'none';
+    });
+
+    document.getElementById('vr-save-video-btn')?.addEventListener('click', async () => {
+      const payload = {
+        book_id: document.getElementById('vr-video-book').value,
+        title: document.getElementById('vr-video-title').value.trim(),
+        video_number: document.getElementById('vr-video-number').value,
+        file_name: document.getElementById('vr-video-file').value.trim(),
+      };
+      if (!payload.book_id) return showToast('ضيف كتاب الأول من قايمة الكتب');
+      if (!payload.title) return showToast('اكتب اسم الفيديو');
+      try {
+        await api('/api/video-reviews/videos', { method: 'POST', body: JSON.stringify(payload) });
+        document.getElementById('vr-video-title').value = '';
+        document.getElementById('vr-video-number').value = '';
+        document.getElementById('vr-video-file').value = '';
+        document.getElementById('vr-new-video-form').style.display = 'none';
+        await loadVrBooks();
+        await loadVrVideos();
+        showToast('اتضاف');
+      } catch (error) { showToast(error.message); }
+    });
+
+    // زراير الأرشفة والحذف **جوه الكارت** اللي الضغط عليه بيفتح الفيديو — فبيتفحصوا
+    // الأول، وإلا الضغط على "حذف" كان هيفتح الشاشة ويمسح في نفس الوقت
+    document.getElementById('vr-videos-list')?.addEventListener('click', async (event) => {
+      const archive = event.target.closest('[data-vr-archive-video]');
+      if (archive) {
+        const card = archive.closest('[data-vr-video]');
+        const isArchived = card.classList.contains('archived');
+        try {
+          await api(`/api/video-reviews/videos/${archive.dataset.vrArchiveVideo}`, {
+            method: 'PUT', body: JSON.stringify({ is_active: isArchived }),
+          });
+          await loadVrVideos();
+        } catch (error) { showToast(error.message); }
+        return;
+      }
+
+      const remove = event.target.closest('[data-vr-delete-video]');
+      if (remove) return deleteVrVideo(Number(remove.dataset.vrDeleteVideo));
+
+      const card = event.target.closest('[data-vr-video]');
+      if (card) openVrVideo(Number(card.dataset.vrVideo));
+    });
+
+    // الحذف بيمسح ملاحظات الفيديو وصورها معاه ومفيش رجوع. **خطوتين زي حذف الاختبار**:
+    // السيرفر بيرفض الأول ويقول كام ملاحظة هتضيع، والتأكيد بيمشّيه — عشان ضغطة غلط
+    // على كارت فيه شغل شهر ماتعملش الحذف على طول
+    async function deleteVrVideo(videoId) {
+      try {
+        await api(`/api/video-reviews/videos/${videoId}`, { method: 'DELETE', body: JSON.stringify({}) });
+        showToast('الفيديو اتحذف');
+      } catch (error) {
+        if (!error.data || !error.data.needs_confirmation) return showToast(error.message);
+        if (!confirm(`${error.message}\n\nتأكيد الحذف؟`)) return;
+        try {
+          await api(`/api/video-reviews/videos/${videoId}`, { method: 'DELETE', body: JSON.stringify({ confirm: true }) });
+          showToast('الفيديو وملاحظاته اتحذفوا');
+        } catch (secondError) { return showToast(secondError.message); }
+      }
+      // لو الحذف حصل والموظف كان جوه شاشة الفيديو ده، بنرجّعه للقايمة — الشاشة بقت
+      // بتعرض فيديو مش موجود
+      if (vrCurrentVideo && vrCurrentVideo.id === videoId) {
+        document.getElementById('vr-video-view').style.display = 'none';
+        document.getElementById('vr-list-view').style.display = 'block';
+        vrCurrentVideo = null;
+      }
+      await loadVrVideos();
+      await loadVrBooks();
+    }
+
+    document.getElementById('vr-back-btn')?.addEventListener('click', () => {
+      document.getElementById('vr-video-view').style.display = 'none';
+      document.getElementById('vr-list-view').style.display = 'block';
+      vrCurrentVideo = null;
+      loadVrVideos();
+    });
+
+    document.getElementById('vr-video-delete-btn')?.addEventListener('click', () => {
+      if (vrCurrentVideo) deleteVrVideo(vrCurrentVideo.id);
+    });
+
+    document.getElementById('vr-note-status-filter')?.addEventListener('change', () => {
+      if (vrCurrentVideo) loadVrNotes(vrCurrentVideo.id);
+    });
+
+    // ---------- رفع اللقطة ----------
+    document.getElementById('vr-shot-drop')?.addEventListener('click', () => {
+      document.getElementById('vr-shot-input').click();
+    });
+    document.getElementById('vr-shot-input')?.addEventListener('change', (event) => {
+      vrUploadShot(event.target.files[0]);
+      event.target.value = '';
+    });
+    document.getElementById('vr-clear-shot-btn')?.addEventListener('click', () => {
+      vrShotPath = null;
+      document.getElementById('vr-shot-drop').innerHTML = 'اضغط لاختيار صورة<br />أو الزق اللقطة (Ctrl+V)';
+      document.getElementById('vr-clear-shot-btn').style.display = 'none';
+    });
+    ['dragover', 'dragleave', 'drop'].forEach((type) => {
+      document.getElementById('vr-shot-drop')?.addEventListener(type, (event) => {
+        event.preventDefault();
+        document.getElementById('vr-shot-drop').classList.toggle('dragging', type === 'dragover');
+        if (type === 'drop') vrUploadShot(event.dataTransfer?.files?.[0]);
+      });
+    });
+
+    // اللزق بيشتغل على مستوى الصفحة كلها **بس والتبويب مفتوح**: الموظف بياخد اللقطة
+    // بـPrintScreen وبيرجع يلزقها من غير ما يضغط على المربع الأول
+    document.addEventListener('paste', (event) => {
+      const panel = document.getElementById('tab-video-reviews');
+      if (!panel || panel.style.display === 'none') return;
+      if (document.getElementById('vr-video-view').style.display === 'none') return;
+      const item = [...(event.clipboardData?.items || [])].find((entry) => entry.type.startsWith('image/'));
+      if (!item) return;
+      event.preventDefault();
+      vrUploadShot(item.getAsFile());
+    });
+
+    document.getElementById('vr-save-note-btn')?.addEventListener('click', saveVrNote);
+    document.getElementById('vr-cancel-edit-btn')?.addEventListener('click', vrResetNoteForm);
+
+    document.getElementById('vr-notes-list')?.addEventListener('click', async (event) => {
+      const zoom = event.target.closest('[data-vr-zoom]');
+      if (zoom) return vrOpenLightbox(zoom.dataset.vrZoom);
+
+      const fix = event.target.closest('[data-vr-fix]');
+      if (fix) {
+        const note = window.prompt('تعليق للتيم (اختياري) — اتغيّر إيه بالظبط؟', '');
+        // الإلغاء (null) بيوقف العملية، والفاضي بيعدّي: التعليق اختياري مع التصليح
+        // وإجباري مع الرفض بس
+        if (note === null) return;
+        return setVrNoteStatus(Number(fix.dataset.vrFix), 'fixed', note.trim());
+      }
+
+      const reject = event.target.closest('[data-vr-reject]');
+      if (reject) {
+        const note = window.prompt('ليه دي مش غلطة؟ (إجباري — التيم بيقرا السبب)', '');
+        if (note === null) return;
+        if (!note.trim()) return showToast('لازم تكتب السبب');
+        return setVrNoteStatus(Number(reject.dataset.vrReject), 'rejected', note.trim());
+      }
+
+      const reopen = event.target.closest('[data-vr-reopen]');
+      if (reopen) return setVrNoteStatus(Number(reopen.dataset.vrReopen), 'open', '');
+
+      const edit = event.target.closest('[data-vr-edit]');
+      if (edit) return startVrNoteEdit(Number(edit.dataset.vrEdit));
+
+      const remove = event.target.closest('[data-vr-delete]');
+      if (remove) {
+        if (!confirm('تمسح الملاحظة دي؟')) return;
+        try {
+          await api(`/api/video-reviews/notes/${remove.dataset.vrDelete}`, { method: 'DELETE' });
+          await loadVrNotes(vrCurrentVideo.id);
+        } catch (error) { showToast(error.message); }
+      }
+    });
+
+    function vrOpenLightbox(src) {
+      const overlay = document.createElement('div');
+      overlay.className = 'vr-lightbox';
+      overlay.innerHTML = `<img src="${escapeHtml(src)}" alt="صورة الغلطة" />`;
+      overlay.addEventListener('click', () => overlay.remove());
+      document.body.appendChild(overlay);
+    }
+
+    // ---------- التصدير ----------
+    // الرابط بيتفتح في تاب جديد: الرد ملف PDF بـContent-Disposition، والمتصفح بيحمّله
+    function vrExport(params) {
+      window.open(`/api/video-reviews/export?${params.toString()}`, '_blank');
+    }
+    document.getElementById('vr-export-btn')?.addEventListener('click', () => {
+      const params = new URLSearchParams();
+      const bookId = document.getElementById('vr-book-filter').value;
+      const status = document.getElementById('vr-list-status-filter').value;
+      if (bookId) params.set('book_id', bookId);
+      if (status) params.set('status', status);
+      vrExport(params);
+    });
+    document.getElementById('vr-video-export-btn')?.addEventListener('click', () => {
+      if (!vrCurrentVideo) return;
+      const params = new URLSearchParams({ video_id: String(vrCurrentVideo.id) });
+      const status = document.getElementById('vr-note-status-filter').value;
+      if (status) params.set('status', status);
+      vrExport(params);
     });
 
     // ---------- تشغيل أولي ----------

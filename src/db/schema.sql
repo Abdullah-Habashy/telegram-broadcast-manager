@@ -1482,3 +1482,80 @@ CREATE INDEX IF NOT EXISTS idx_quiz_appeals_open ON quiz_appeals (question_id) W
 -- القرار حقل منفصل، والحسم من غير قرار (اعتماد الورقة كلها) بيسيبه NULL
 ALTER TABLE quiz_appeals ADD COLUMN IF NOT EXISTS decision VARCHAR(20);
 ALTER TABLE quiz_appeals ADD COLUMN IF NOT EXISTS staff_note TEXT;
+
+-- ============================================================
+-- مراجعة الفيديوهات — أغلاط الفيديو المصوَّر قبل نزوله للطلاب
+-- ============================================================
+--
+-- **ليه القسم ده موجود:** التيم العلمي بيتفرّج على الفيديو المصوَّر ويلاقي أغلاط
+-- (معادلة مكتوبة غلط على الشريحة، كلمة مقولة بالعكس، صورة مقلوبة). قبل كده الكلام ده
+-- كان بيتبعت على واتساب في صورة «فيه غلطة في نص الفيديو تقريبًا» — والمونتير بيدوّر.
+-- التسجيل هنا بيدّي المونتير التلاتة اللي محتاجهم: **الملف، والتوقيت، وصورة الشاشة**.
+--
+-- تلات جداول: الكتاب (مندليف/مذكرة/شرح) ← الفيديو ← الملاحظة.
+
+-- قايمة الكتب. جدول مش ثابت في الكود عشان اسم كتاب رابع مايحتاجش نشر،
+-- و**مش قايمة نص حر** لأن «مندليف» و«المندليف» و«مندليف » بمسافة كانوا هيبقوا تلات كتب مختلفة
+CREATE TABLE IF NOT EXISTS video_books (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(120) NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    -- الأرشفة بدل الحذف: كتاب خلص تصويره بيختفي من قوايم الإضافة وملاحظاته تفضل
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- البذرة بتتحط **مرة واحدة**: الشرط بيمنع أي `npm run migrate` جاي إنه يرجّع كتاب
+-- الأدمن أرشفه أو يعيد اسم اتغيّر — نفس نمط بذرة `grants_support` في كورسات الدعم
+INSERT INTO video_books (name, sort_order)
+SELECT * FROM (VALUES ('مندليف', 1), ('مذكرة', 2), ('شرح', 3)) AS seed(name, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM video_books);
+
+-- الفيديو نفسه. **قايمة مُدارة مش خانة نص** بقرار صاحب المشروع: الملاحظات لازم
+-- تتجمّع على نفس الفيديو، والنص الحر بيخلي نفس الحصة تتكتب بخمس صيغ فيتفرّق تجميعها
+CREATE TABLE IF NOT EXISTS review_videos (
+    id SERIAL PRIMARY KEY,
+    -- RESTRICT مش CASCADE: حذف كتاب فيه فيديوهات كان هيمسح ملاحظات التيم كلها معاه.
+    -- الكنترولر بيرد برسالة عربية بدل خطأ القاعدة
+    book_id INTEGER NOT NULL REFERENCES video_books(id) ON DELETE RESTRICT,
+    title VARCHAR(255) NOT NULL,
+    -- رقم الحصة/الفيديو لو التيم بيرقّم. اختياري: مش كل السلاسل مرقّمة
+    video_number INTEGER,
+    -- اسم ملف المونتاج زي ما هو على جهاز المونتير — هو ده اللي بيفتحه على بريمير فعلًا،
+    -- والاسم المعروض للطلاب ممكن يكون حاجة تانية خالص
+    file_name VARCHAR(255),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (book_id, title)
+);
+CREATE INDEX IF NOT EXISTS idx_review_videos_book ON review_videos (book_id);
+
+-- الملاحظة = غلطة واحدة عند توقيت واحد.
+CREATE TABLE IF NOT EXISTS video_review_notes (
+    id SERIAL PRIMARY KEY,
+    video_id INTEGER NOT NULL REFERENCES review_videos(id) ON DELETE CASCADE,
+    -- **التوقيت بالثواني مش نص «01:23:45»**: الواجهة بتدخّله ساعة/دقيقة/ثانية والعرض
+    -- بيرجّعه لنفس الشكل، لكن التخزين رقم عشان الترتيب الزمني يبقى ترتيب حقيقي —
+    -- ترتيب النص بيحط «1:00:00» قبل «9:30» وده بيخلي المونتير يلف على الفيديو مرتين
+    timecode_seconds INTEGER NOT NULL CHECK (timecode_seconds >= 0),
+    -- **اختيارية عن قصد:** الغلطة الصوتية (كلمة مقولة غلط) مالهاش صورة تتاخد، ومنع
+    -- التسجيل من غير صورة كان هيخلي التيم يرفع صورة أي حاجة عشان يعدّي الشرط
+    screenshot_path TEXT,
+    -- نص عربي فيه مصطلحات إنجليزية جوه الجملة. `TEXT` بيحفظ البايتس زي ما هي —
+    -- اتجاه العرض بيتحدّد في القالب والـPDF (dir="rtl" + pre-wrap)، مش هنا
+    comment TEXT NOT NULL,
+    -- open = لسه محتاجة تعديل · fixed = المونتير عدّلها · rejected = بصّ ولقاها مش غلطة
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ,
+    resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    resolved_at TIMESTAMPTZ,
+    -- رد المونتير. **إجباري مع الرفض** (بيتفرض في الكنترولر زي رفض التظلم بالظبط):
+    -- «مش غلطة» من غير سبب بترجع تاني في صورة نفس الملاحظة من نفس الشخص
+    resolution_note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_video_notes_video ON video_review_notes (video_id, timecode_seconds);
+-- الفهرس الجزئي بيخدم عدّاد «المفتوح» على كارت كل فيديو — المفتوح قليل والمقفول بيتراكم
+CREATE INDEX IF NOT EXISTS idx_video_notes_open ON video_review_notes (video_id) WHERE status = 'open';
