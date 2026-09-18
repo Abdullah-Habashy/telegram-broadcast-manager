@@ -1319,21 +1319,59 @@ async function decideAppeal(req, res) {
     return res.status(400).json({ error: 'القرار لازم يكون قبول أو رفض' });
   }
   const note = String(req.body?.note || '').trim().slice(0, 1000) || null;
-  // **الرفض لازم معاه سبب.** القبول بيتفسّر لوحده (الدرجة اتعدّلت)، لكن الرفض من غير
+  // **الرفض لازم معاه سبب.** القبول بيتفسّر لوحده (الدرجة بتتعدّل)، لكن الرفض من غير
   // كلمة بيبان للطالب إن محدش بص أصلًا
   if (decision === 'rejected' && !note) {
     return res.status(400).json({ error: 'اكتب للطالب سبب الرفض' });
   }
 
-  const { rowCount } = await pool.query(
-    `UPDATE quiz_appeals
-     SET status = 'resolved', decision = $4, staff_note = $5,
-         resolved_at = NOW(), resolved_by = $3
-     WHERE attempt_id = $1 AND question_id = $2`,
-    [attemptId, questionId, req.session.userId, decision, note]);
+  // ---------- القبول بيدّي الدرجة كاملة ----------
+  //
+  // **كان بيسجّل القرار وبس ومايلمسش الدرجة.** الموظف يدوس «وافقت»، والطالب يقرا
+  // «تظلمك اتقبل» ودرجته زي ما هي — وده أسوأ من الرفض، لأن الرفض على الأقل صادق معاه.
+  // اتقاس على الإنتاج: ٢١ تظلم مقبول، ٦ منهم الطالب مأخدش فيهم ولا جزء من درجة.
+  //
+  // **و`graded_by = 'staff'` مهم مش تجميل:** إعادة التصحيح (الآلي والمحلي) بتستثني
+  // درجات الموظفين بس. من غيرها، إعادة تصحيح السؤال بعد كده بتكتب فوق القبول وتنزّل
+  // درجة الطالب تاني — وده حصل فعلًا في ورقتين يوم ١٧ سبتمبر.
+  const client = await pool.connect();
+  let score = null;
+  try {
+    await client.query('BEGIN');
+    const { rowCount } = await client.query(
+      `UPDATE quiz_appeals
+       SET status = 'resolved', decision = $4, staff_note = $5,
+           resolved_at = NOW(), resolved_by = $3
+       WHERE attempt_id = $1 AND question_id = $2`,
+      [attemptId, questionId, req.session.userId, decision, note]);
+    if (!rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'التظلم مش موجود' });
+    }
 
-  if (!rowCount) return res.status(404).json({ error: 'التظلم مش موجود' });
-  res.json({ ok: true, decision, note });
+    if (decision === 'accepted') {
+      await client.query(
+        `INSERT INTO quiz_answers (attempt_id, question_id, awarded_points, is_correct,
+                                   graded_by, graded_by_user, graded_at)
+         SELECT $1, q.id, q.points, TRUE, 'staff', $3, NOW()
+         FROM quiz_questions q WHERE q.id = $2
+         ON CONFLICT (attempt_id, question_id) DO UPDATE
+         SET awarded_points = EXCLUDED.awarded_points, is_correct = TRUE,
+             graded_by = 'staff', graded_by_user = EXCLUDED.graded_by_user, graded_at = NOW()`,
+        [attemptId, questionId, req.session.userId]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // بره المعاملة: بيقرا المجموع بعد ما الكتابة اتثبّتت، والرقم بيرجع للوحة عشان
+  // الموظف يشوف الدرجة الجديدة من غير ما يعيد تحميل
+  if (decision === 'accepted') score = await recalculateAttempt(attemptId);
+  res.json({ ok: true, decision, note, score });
 }
 
 async function regradeAttempt(req, res) {

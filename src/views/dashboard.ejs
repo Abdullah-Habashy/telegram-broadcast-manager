@@ -10792,7 +10792,8 @@ ${reply.content}` : reply.content;
               ${canDecideAppeals ? `
               <div class="row" style="gap:6px; margin-top:6px; flex-wrap:wrap">
                 <button type="button" class="btn btn-primary btn-sm" style="width:auto"
-                  onclick="decideAppeal(${attemptId}, ${a.question_id}, 'accepted')">✅ وافقت</button>
+                  onclick="decideAppeal(${attemptId}, ${a.question_id}, 'accepted')"
+                  title="بيدّي الطالب درجة السؤال كاملة، وبيقفل السؤال قدام أي إعادة تصحيح">✅ وافقت — الدرجة كاملة</button>
                 <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto"
                   onclick="decideAppeal(${attemptId}, ${a.question_id}, 'rejected')">✖️ رفضت</button>
               </div>` : '<div class="card-desc">حسم التظلم للتيم العلمي بس.</div>'}
@@ -10878,11 +10879,15 @@ ${reply.content}` : reply.content;
         return showToast('اكتب للطالب سبب الرفض');
       }
       try {
-        await api(`/api/quizzes/attempts/${attemptId}/appeals/${questionId}`, {
+        const result = await api(`/api/quizzes/attempts/${attemptId}/appeals/${questionId}`, {
           method: 'POST',
           body: JSON.stringify({ decision, note }),
         });
-        showToast(decision === 'accepted' ? 'اتحسم — وافقت' : 'اتحسم — رفضت');
+        // الدرجة الجديدة بترجع من السيرفر — عرضها بيخلي الموظف متأكد إن القبول عمل
+        // حاجة فعلًا، مش سجّل قرار وبس زي ما كان بيحصل
+        showToast(decision === 'accepted'
+          ? `اتقبل — الدرجة كاملة${result && result.score ? ` · الورقة بقت ${Math.round(result.score.score * 100) / 100}` : ''}`
+          : 'اتحسم — رفضت');
         await openQuizAttempt(attemptId);
         await loadQuizAttempts();
       } catch (error) { showToast(error.message); }
