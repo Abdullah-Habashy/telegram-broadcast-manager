@@ -1607,3 +1607,13 @@ ALTER TABLE video_review_notes ADD CONSTRAINT video_review_notes_severity_values
 -- اسمه `uploads` والصورة تطلع مكسورة. الشرط بيخلي الجملة تنفّذ مرة واحدة فعليًا
 UPDATE video_review_notes SET screenshot_path = LTRIM(screenshot_path, '/')
 WHERE screenshot_path LIKE '/%';
+
+-- ---------- لينك الفيديو اللي تمت مراجعته ----------
+--
+-- التيم بيراجع من نسخة منشورة (يوتيوب/درايف/المنصة)، والمونتير لازم يفتح **نفس النسخة**
+-- عشان التوقيت اللي متسجّل يطابق اللي قدامه. من غير اللينك الاتنين بيتفقوا على التوقيت
+-- وبيختلفوا على النسخة.
+--
+-- **بيتفحص إنه http/https في الكنترولر قبل ما يتحفظ** — العمود ده بيتعرض كـ`href`،
+-- و`javascript:` جواه بينفّذ كود في متصفح أي حد يضغطه
+ALTER TABLE review_videos ADD COLUMN IF NOT EXISTS video_url TEXT;

@@ -1034,10 +1034,15 @@
                 <div class="field" style="flex:1; min-width:200px; margin:0"><label>اسم الدرس</label>
                   <input type="text" id="vr-video-title" placeholder="مثال: الاتزان الكيميائي" /></div>
               </div>
-              <div class="field" style="margin:10px 0 0"><label>اسم ملف المونتاج (اختياري)</label>
-                <input type="text" id="vr-video-file" dir="auto" placeholder="ch1_lesson3_final.prproj" /></div>
+              <div class="row" style="gap:10px; flex-wrap:wrap; margin-top:10px">
+                <div class="field" style="flex:1; min-width:240px; margin:0"><label>لينك الفيديو اللي تمت مراجعته</label>
+                  <input type="url" id="vr-video-url" dir="ltr" placeholder="https://..." /></div>
+                <div class="field" style="flex:1; min-width:200px; margin:0"><label>اسم ملف المونتاج (اختياري)</label>
+                  <input type="text" id="vr-video-file" dir="auto" placeholder="ch1_lesson3_final.prproj" /></div>
+              </div>
               <p class="card-desc" style="margin:6px 0 10px">
-                ده الاسم اللي المونتير بيفتحه فعلًا على جهازه — ممكن يكون غير الاسم اللي الطلاب بيشوفوه.
+                اللينك هو النسخة اللي التيم راجع عليها — المونتير لازم يفتح نفس النسخة عشان التوقيت يطابق.
+                واسم الملف هو اللي بيفتحه على جهازه، وممكن يكون غير الاسم اللي الطلاب بيشوفوه.
               </p>
               <div class="row" style="gap:8px">
                 <button type="button" class="btn btn-primary btn-sm" id="vr-save-video-btn" style="width:auto">حفظ الفيديو</button>
@@ -1077,6 +1082,8 @@
               <div>
                 <b id="vr-video-heading"></b>
                 <div class="card-desc" id="vr-video-sub" style="margin:4px 0 0"></div>
+                <a id="vr-video-link" href="#" target="_blank" rel="noopener noreferrer"
+                   style="display:none; font-size:13px; margin-top:4px">▶️ افتح الفيديو اللي تمت مراجعته</a>
               </div>
               <div class="row" style="gap:8px">
                 <button type="button" class="btn btn-ghost btn-sm" id="vr-back-btn" style="width:auto">→ رجوع للقايمة</button>
@@ -11691,6 +11698,7 @@ ${reply.content}` : reply.content;
         box.dataset.videos = JSON.stringify(videos.map((video) => ({
           id: video.id, book_id: video.book_id, chapter: video.chapter,
           video_number: video.video_number, title: video.title, file_name: video.file_name,
+          video_url: video.video_url,
         })));
         box.innerHTML = videos.map((video) => `
           <div class="vr-video-card${video.is_active ? '' : ' archived'}" data-vr-video="${video.id}">
@@ -11712,6 +11720,11 @@ ${reply.content}` : reply.content;
               ${video.open_count ? `<span class="badge badge-warning">${video.open_count} مفتوحة</span>` : ''}
               ${video.fixed_count ? `<span class="badge badge-success">${video.fixed_count} اتصلّحت</span>` : ''}
               ${video.rejected_count ? `<span class="badge badge-muted">${video.rejected_count} مرفوضة</span>` : ''}
+              ${video.video_url
+                ? `<a class="btn btn-ghost btn-sm" style="width:auto; text-decoration:none"
+                      href="${escapeHtml(video.video_url)}" target="_blank" rel="noopener noreferrer"
+                      data-vr-open-link="1">▶️ الفيديو</a>`
+                : ''}
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
                       data-vr-edit-video="${video.id}">✏️ تعديل</button>
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
@@ -11757,6 +11770,11 @@ ${reply.content}` : reply.content;
           data.video.file_name ? `ملف المونتاج: ${data.video.file_name}` : '',
           data.video.is_active ? '' : 'مؤرشف',
         ].filter(Boolean).join(' · ') || 'مفيش بيانات إضافية';
+        // **`setAttribute('href')` بقيمة اتفحصت في السيرفر** (http/https بس) — العرض هنا
+        // بيثق في الفحص ده، فأي مسار تاني بيكتب في العمود لازم يعدّي على نفس الفحص
+        const link = document.getElementById('vr-video-link');
+        link.style.display = data.video.video_url ? 'inline-block' : 'none';
+        if (data.video.video_url) link.setAttribute('href', data.video.video_url);
         renderVrNotes(data.notes || []);
       } catch (error) {
         box.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
@@ -11992,6 +12010,7 @@ ${reply.content}` : reply.content;
       document.getElementById('vr-video-number').value = video.video_number || 1;
       document.getElementById('vr-video-title').value = video.title || '';
       document.getElementById('vr-video-file').value = video.file_name || '';
+      document.getElementById('vr-video-url').value = video.video_url || '';
       document.getElementById('vr-new-video-form').style.display = 'block';
       document.getElementById('vr-save-video-btn').textContent = 'حفظ التعديل';
       document.getElementById('vr-new-video-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -12001,6 +12020,7 @@ ${reply.content}` : reply.content;
       vrEditingVideoId = null;
       document.getElementById('vr-video-title').value = '';
       document.getElementById('vr-video-file').value = '';
+      document.getElementById('vr-video-url').value = '';
       document.getElementById('vr-new-video-form').style.display = 'none';
       document.getElementById('vr-save-video-btn').textContent = 'حفظ الفيديو';
     }
@@ -12012,6 +12032,7 @@ ${reply.content}` : reply.content;
         video_number: document.getElementById('vr-video-number').value,
         title: document.getElementById('vr-video-title').value.trim(),
         file_name: document.getElementById('vr-video-file').value.trim(),
+        video_url: document.getElementById('vr-video-url').value.trim(),
       };
       if (!payload.book_id) return showToast('ضيف كتاب الأول من قايمة الكتب');
       if (!payload.title) return showToast('اكتب اسم الدرس');
@@ -12039,6 +12060,9 @@ ${reply.content}` : reply.content;
     // زراير الأرشفة والحذف **جوه الكارت** اللي الضغط عليه بيفتح الفيديو — فبيتفحصوا
     // الأول، وإلا الضغط على "حذف" كان هيفتح الشاشة ويمسح في نفس الوقت
     document.getElementById('vr-videos-list')?.addEventListener('click', async (event) => {
+      // اللينك بيفتح تاب جديد — من غير الخروج دي كانت شاشة الفيديو بتتفتح ورا التاب كمان
+      if (event.target.closest('[data-vr-open-link]')) return;
+
       const archive = event.target.closest('[data-vr-archive-video]');
       if (archive) {
         const card = archive.closest('[data-vr-video]');

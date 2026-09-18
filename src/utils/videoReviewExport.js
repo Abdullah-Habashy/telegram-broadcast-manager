@@ -114,9 +114,14 @@ function buildHtml(videos, { title, generatedBy }) {
       video.video_number ? `الدرس ${video.video_number}` : null,
       video.title,
     ].filter(Boolean).join(' — ');
-    const fileHint = video.file_name
-      ? `<div class="file-hint">ملف المونتاج: <span class="ltr">${escapeHtml(video.file_name)}</span></div>`
-      : '';
+    // اللينك بيتطبع كنص كامل مش ككلمة «اضغط هنا» — الورقة دي بتتطبع، والمونتير بيقراها
+    // من الشاشة التانية. وفي عارض PDF بيفضل قابل للضغط عادي
+    const fileHint = [
+      video.file_name ? `ملف المونتاج: <span class="ltr">${escapeHtml(video.file_name)}</span>` : '',
+      video.video_url
+        ? `لينك الفيديو: <a class="ltr" href="${escapeHtml(video.video_url)}">${escapeHtml(video.video_url)}</a>`
+        : '',
+    ].filter(Boolean).map((line) => `<div class="file-hint">${line}</div>`).join('');
     const cards = video.notes.map((note) => noteCard(note, ++counter)).join('');
     return `<div class="video-block">
       <h2>${escapeHtml(heading)}</h2>
@@ -140,7 +145,8 @@ function buildHtml(videos, { title, generatedBy }) {
     h1 { font-size: 19px; margin: 0 0 4px; }
     .meta { color: #5b6178; font-size: 12px; margin-bottom: 14px; }
     h2 { font-size: 15px; margin: 18px 0 2px; color: #3648d1; }
-    .file-hint, .video-meta { color: #5b6178; font-size: 11px; margin-bottom: 8px; }
+    .file-hint, .video-meta { color: #5b6178; font-size: 11px; margin-bottom: 4px; }
+    .file-hint a { color: #3648d1; }
     .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
     .note { border: 1px solid #e2e5ee; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
             page-break-inside: avoid; break-inside: avoid; }

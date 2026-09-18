@@ -27,6 +27,27 @@ const SEVERITIES = ['must', 'preferred', 'minor'];
 const MAX_CHAPTER = 5;
 const MAX_LESSON = 15;
 
+// ---------- لينك الفيديو ----------
+//
+// ⚠️ **الفحص ده أمان مش تنسيق.** اللينك بيتعرض في اللوحة كـ`href`، و`javascript:...`
+// جواه بينفّذ كود في متصفح أي موظف يضغطه — و`escapeHtml` مابتمنعش ده لأن القيمة سليمة
+// كنص، المشكلة في البروتوكول. بنقبل http/https بس.
+//
+// بيرجّع: النص المتحقَّق، أو `null` للفاضي (شيل اللينك)، أو `undefined` للمرفوض
+function readVideoUrl(raw) {
+  const value = String(raw === undefined || raw === null ? '' : raw).trim();
+  if (!value) return null;
+  if (value.length > 2000) return undefined;
+  try {
+    const parsed = new URL(value);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return undefined;
+    return value;
+  } catch (error) {
+    // مش لينك كامل أصلًا (الموظف كتب "يوتيوب" أو نسي https://)
+    return undefined;
+  }
+}
+
 // بيرجّع رقم صالح، أو null لو الخانة فاضية، أو undefined لو القيمة غلط — التلات حالات
 // مختلفة: الفاضي مسموح في التعديل الجزئي، والغلط لازم يترفض برسالة
 function readNumberInRange(raw, max) {
@@ -132,7 +153,7 @@ async function listVideos(req, res) {
   const includeArchived = req.query.include_archived === '1';
   try {
     const { rows } = await pool.query(
-      `SELECT v.id, v.title, v.chapter, v.video_number, v.file_name, v.is_active, v.created_at,
+      `SELECT v.id, v.title, v.chapter, v.video_number, v.file_name, v.video_url, v.is_active, v.created_at,
               v.book_id, b.name AS book_name,
               COUNT(n.id)::int AS notes_count,
               COUNT(n.id) FILTER (WHERE n.status = 'open')::int AS open_count,
@@ -161,7 +182,11 @@ async function createVideo(req, res) {
   const title = String(req.body?.title || '').trim();
   const chapter = readNumberInRange(req.body?.chapter, MAX_CHAPTER);
   const lesson = readNumberInRange(req.body?.video_number, MAX_LESSON);
+  const videoUrl = readVideoUrl(req.body?.video_url);
   if (!bookId) return res.status(400).json({ error: 'اختار الكتاب' });
+  if (videoUrl === undefined) {
+    return res.status(400).json({ error: 'لينك الفيديو لازم يبدأ بـ http:// أو https://' });
+  }
   if (chapter === undefined) return res.status(400).json({ error: 'الباب لازم يكون من ١ لـ٥' });
   if (lesson === undefined) return res.status(400).json({ error: 'الدرس لازم يكون من ١ لـ١٥' });
   if (chapter === null) return res.status(400).json({ error: 'اختار الباب' });
@@ -183,10 +208,10 @@ async function createVideo(req, res) {
       }
     }
     const { rows } = await pool.query(
-      `INSERT INTO review_videos (book_id, title, chapter, video_number, file_name, created_by)
-       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
+      `INSERT INTO review_videos (book_id, title, chapter, video_number, file_name, video_url, created_by)
+       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7)
        RETURNING id`,
-      [bookId, title, chapter, lesson, String(req.body?.file_name || '').trim(), req.session.userId]
+      [bookId, title, chapter, lesson, String(req.body?.file_name || '').trim(), videoUrl, req.session.userId]
     );
     res.json({ id: rows[0].id });
   } catch (error) {
@@ -210,6 +235,12 @@ async function updateVideo(req, res) {
   if (chapter === undefined) return res.status(400).json({ error: 'الباب لازم يكون من ١ لـ٥' });
   if (lesson === undefined) return res.status(400).json({ error: 'الدرس لازم يكون من ١ لـ١٥' });
 
+  const urlSent = req.body?.video_url !== undefined;
+  const videoUrl = urlSent ? readVideoUrl(req.body.video_url) : null;
+  if (videoUrl === undefined) {
+    return res.status(400).json({ error: 'لينك الفيديو لازم يبدأ بـ http:// أو https://' });
+  }
+
   try {
     const { rows } = await pool.query(
       `UPDATE review_videos
@@ -220,7 +251,8 @@ async function updateVideo(req, res) {
               video_number = CASE WHEN $4 THEN $5::int ELSE video_number END,
               file_name = CASE WHEN $6 THEN NULLIF($7, '') ELSE file_name END,
               is_active = COALESCE($8, is_active),
-              chapter = CASE WHEN $9 THEN $10::int ELSE chapter END
+              chapter = CASE WHEN $9 THEN $10::int ELSE chapter END,
+              video_url = CASE WHEN $11 THEN $12::text ELSE video_url END
         WHERE id = $1
         RETURNING id`,
       [
@@ -230,6 +262,7 @@ async function updateVideo(req, res) {
         req.body?.file_name !== undefined, String(req.body?.file_name || '').trim(),
         req.body?.is_active === undefined ? null : Boolean(req.body.is_active),
         chapterSent, chapter,
+        urlSent, videoUrl,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'الفيديو مش موجود' });
@@ -279,7 +312,7 @@ async function listNotes(req, res) {
   const severity = SEVERITIES.includes(req.query.severity) ? req.query.severity : null;
   try {
     const video = await pool.query(
-      `SELECT v.id, v.title, v.chapter, v.video_number, v.file_name, v.is_active, v.book_id, b.name AS book_name
+      `SELECT v.id, v.title, v.chapter, v.video_number, v.file_name, v.video_url, v.is_active, v.book_id, b.name AS book_name
          FROM review_videos v JOIN video_books b ON b.id = v.book_id WHERE v.id = $1`,
       [videoId]
     );
@@ -459,7 +492,7 @@ async function exportNotes(req, res) {
       `SELECT n.id, n.video_id, n.timecode_seconds, n.screenshot_path, n.comment, n.status, n.severity,
               n.created_at, n.resolved_at, n.resolution_note,
               u.name AS created_by_name, r.name AS resolved_by_name,
-              v.title AS video_title, v.chapter, v.video_number, v.file_name, b.name AS book_name
+              v.title AS video_title, v.chapter, v.video_number, v.file_name, v.video_url, b.name AS book_name
          FROM video_review_notes n
          JOIN review_videos v ON v.id = n.video_id
          JOIN video_books b ON b.id = v.book_id
@@ -485,6 +518,7 @@ async function exportNotes(req, res) {
           chapter: row.chapter,
           video_number: row.video_number,
           file_name: row.file_name,
+          video_url: row.video_url,
           book_name: row.book_name,
           notes: [],
         });
