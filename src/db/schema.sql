@@ -1601,3 +1601,9 @@ ALTER TABLE video_review_notes ADD COLUMN IF NOT EXISTS severity VARCHAR(20) NOT
 ALTER TABLE video_review_notes DROP CONSTRAINT IF EXISTS video_review_notes_severity_values;
 ALTER TABLE video_review_notes ADD CONSTRAINT video_review_notes_severity_values
     CHECK (severity IN ('must', 'preferred', 'minor'));
+
+-- الصور اللي اترفعت قبل ما مسار الحفظ يتظبّط كانت بتتخزّن `/uploads/...`، والعرض بيزوّد
+-- شرطة تانية فيطلع `//uploads/...` — عنوان بروتوكول-نسبي، يعني المتصفح بيدوّر على دومين
+-- اسمه `uploads` والصورة تطلع مكسورة. الشرط بيخلي الجملة تنفّذ مرة واحدة فعليًا
+UPDATE video_review_notes SET screenshot_path = LTRIM(screenshot_path, '/')
+WHERE screenshot_path LIKE '/%';

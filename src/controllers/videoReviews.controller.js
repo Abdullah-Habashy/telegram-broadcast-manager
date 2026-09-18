@@ -436,8 +436,11 @@ async function deleteNote(req, res) {
 // زي أي مرفق تاني: على القرص، أو على التخزين السحابي لو مفعّل
 async function uploadScreenshot(req, res) {
   if (!req.file) return res.status(400).json({ error: 'مفيش صورة مرفوعة' });
+  // **بيترجع `uploads/x.png` من غير شرطة بادئة** — نفس عُرف مرفقات التذاكر، وهو اللي
+  // `attachmentUrl` بتتوقّعه. الشرطة البادئة (زي ما بيعمل رفع صور الاختبارات) كانت
+  // بتتحوّل لـ`//uploads/x.png` وقت العرض، والمتصفح بيقراه دومين خارجي
   const stored = await storeFile(req.file.path, `uploads/${req.file.filename}`);
-  res.json({ path: stored.startsWith('http') ? stored : `/${stored}` });
+  res.json({ path: stored });
 }
 
 // ---------- تصدير PDF ----------
