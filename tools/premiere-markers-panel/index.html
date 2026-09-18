@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<title>مراجعة الفيديوهات</title>
+<style>
+  /* ألوان قريبة من واجهة بريمير الغامقة — اللوحة بتقعد جنب اللوحات التانية */
+  body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background: #1e1e1e; color: #e6e6e6;
+         margin: 0; padding: 14px; font-size: 13px; direction: rtl; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  .hint { color: #9a9a9a; font-size: 11.5px; line-height: 1.7; margin: 0 0 12px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  button { font-family: inherit; font-size: 13px; padding: 8px 14px; border-radius: 5px;
+           border: 1px solid #4a4a4a; background: #3a3a3a; color: #e6e6e6; cursor: pointer; }
+  button:hover { background: #474747; }
+  button.primary { background: #2d6cdf; border-color: #2d6cdf; color: #fff; font-weight: 600; }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  textarea { width: 100%; min-height: 110px; background: #2a2a2a; color: #e6e6e6; direction: ltr;
+             border: 1px solid #4a4a4a; border-radius: 5px; padding: 8px; font-family: Consolas, monospace;
+             font-size: 11px; box-sizing: border-box; }
+  .file { display: block; margin-bottom: 10px; color: #c8c8c8; font-size: 12px; }
+  .out { margin-top: 12px; padding: 10px; border-radius: 5px; background: #2a2a2a; line-height: 1.8;
+         white-space: pre-wrap; font-size: 12px; }
+  .ok { border-right: 3px solid #3fa76a; }
+  .err { border-right: 3px solid #d1453b; }
+  .meta { color: #9a9a9a; font-size: 11.5px; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <h1>🎬 ماركرز مراجعة الفيديوهات</h1>
+  <p class="hint">
+    افتح السيكوينس الأول، بعدين هات ملف الماركرز اللي نزّلته من اللوحة ودوس «حط الماركرز».
+    الأحمر = لازم تتصلح · الأصفر = الأفضل تتصلح · الأبيض = سهلة وتعدي.
+  </p>
+
+  <input class="file" type="file" id="file" accept=".json,application/json" />
+
+  <p class="hint" style="margin:0 0 6px">أو الزق محتوى الملف هنا:</p>
+  <textarea id="paste" placeholder='{"format":"habashy-video-review-markers", ...}' dir="ltr"></textarea>
+
+  <div class="row" style="margin-top:10px">
+    <button class="primary" id="run">حط الماركرز</button>
+    <button id="clear">مسح</button>
+  </div>
+
+  <div id="out" class="out" style="display:none"></div>
+
+<script>
+/**
+ * الواجهة. بتقرا الملف، بتتحقق من صيغته، وبتبعت سطر واحد لـ`host.jsx` جوه بريمير.
+ *
+ * **مفيش أي مكتبة خارجية هنا** — ولا حتى CSInterface.js بتاعة أدوبي: اللي محتاجينه منها
+ * نداء واحد (`evalScript`) وهو متاح مباشرة على `window.__adobe_cep__`. إضافة ملف تالت
+ * معناها ملف مالوش صاحب في المستودع لازم يتحدّث مع كل إصدار.
+ */
+
+var LAST = null;
+
+function evalScript(script, callback) {
+  if (!window.__adobe_cep__) {
+    // بيحصل لو الصفحة اتفتحت في متصفح عادي بدل بريمير — رسالة أوضح من "undefined"
+    callback('ERR|اللوحة دي لازم تتفتح من جوه بريمير');
+    return;
+  }
+  window.__adobe_cep__.evalScript(script, callback);
+}
+
+function show(message, isError) {
+  var box = document.getElementById('out');
+  box.style.display = 'block';
+  box.className = 'out ' + (isError ? 'err' : 'ok');
+  box.textContent = message;
+}
+
+// الأحمر للازم، الأصفر للأفضل، الأبيض للسهلة — نفس ترتيب ألوان بريمير في host.jsx
+var COLOR = { must: 1, preferred: 4, minor: 5 };
+
+function timecode(totalSeconds) {
+  var total = Math.max(0, Math.floor(totalSeconds));
+  var parts = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+  return parts.map(function (part) { return String(part).length < 2 ? '0' + part : String(part); }).join(':');
+}
+
+function readPayload(text) {
+  var data = JSON.parse(text);
+  if (!data || data.format !== 'habashy-video-review-markers') {
+    throw new Error('الملف ده مش ملف ماركرز — نزّله من زرار «ماركرز بريمير» في اللوحة');
+  }
+  if (!data.markers || !data.markers.length) {
+    throw new Error('الملف مافيهوش أي ملاحظات');
+  }
+  return data;
+}
+
+/**
+ * بناء الحمولة: `id|seconds|color|name|comment` مفصولة بـ`;`.
+ *
+ * ⚠️ **`encodeURIComponent` على النصوص مش تزويق.** التعليق عربي وفيه علامات اقتباس
+ * وأسطر جديدة، والحمولة بتتحط جوه نص جافاسكريبت بيتنفّذ في بريمير — فبدونها التعليق
+ * بيكسر النداء أو يحقن كود. والترميز بيهرب `;` و`|` كمان، فالفواصل تفضل فواصل.
+ */
+function buildPayload(data) {
+  return data.markers.map(function (marker) {
+    var name = '[VR#' + marker.id + '] ' + timecode(marker.seconds);
+    var color = COLOR[marker.severity];
+    return [
+      marker.id,
+      Math.max(0, Number(marker.seconds) || 0),
+      color === undefined ? 5 : color,
+      encodeURIComponent(name),
+      encodeURIComponent(String(marker.comment || '')),
+    ].join('|');
+  }).join(';');
+}
+
+function load(text) {
+  try {
+    LAST = readPayload(text);
+    show('جاهز: ' + LAST.markers.length + ' ملاحظة — ' + (LAST.video && LAST.video.name ? LAST.video.name : '')
+      + (LAST.offset_seconds ? '\nإزاحة مطبَّقة: ' + LAST.offset_seconds + ' ثانية' : ''), false);
+  } catch (error) {
+    LAST = null;
+    show(error.message, true);
+  }
+}
+
+document.getElementById('file').addEventListener('change', function (event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    document.getElementById('paste').value = String(reader.result);
+    load(String(reader.result));
+  };
+  reader.readAsText(file, 'utf-8');
+});
+
+document.getElementById('paste').addEventListener('input', function (event) {
+  if (event.target.value.trim()) load(event.target.value);
+});
+
+document.getElementById('clear').addEventListener('click', function () {
+  document.getElementById('paste').value = '';
+  document.getElementById('file').value = '';
+  document.getElementById('out').style.display = 'none';
+  LAST = null;
+});
+
+document.getElementById('run').addEventListener('click', function () {
+  var text = document.getElementById('paste').value.trim();
+  if (!LAST && text) load(text);
+  if (!LAST) { show('هات ملف الماركرز الأول', true); return; }
+
+  var button = document.getElementById('run');
+  button.disabled = true;
+  show('بيشتغل...', false);
+
+  evalScript('vrAddMarkers("' + buildPayload(LAST) + '")', function (result) {
+    button.disabled = false;
+    var parts = String(result).split('|');
+    if (parts[0] !== 'OK') {
+      show(parts[1] || ('مشكلة: ' + result), true);
+      return;
+    }
+    var lines = ['✅ اتحطّ ' + parts[1] + ' ماركر على السيكوينس المفتوحة'];
+    // المتخطّى بيحصل لما اللوحة تتشغّل تاني على نفس السيكوينس — رسالة صريحة أحسن من
+    // رقم ناقص المونتير يفتكره عطل
+    if (Number(parts[2])) lines.push('↩️ ' + parts[2] + ' كانوا متحطوطين قبل كده (متخطّيين)');
+    if (Number(parts[3])) lines.push('⚠️ ' + parts[3] + ' مانفعوش — غالبًا توقيتهم بعد آخر السيكوينس');
+    show(lines.join('\n'), false);
+  });
+});
+</script>
+</body>
+</html>

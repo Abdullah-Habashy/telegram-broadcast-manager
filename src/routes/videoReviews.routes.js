@@ -65,6 +65,8 @@ router.delete('/notes/:noteId', controller.deleteNote);
 router.get('/videos', controller.listVideos);
 router.post('/videos', controller.createVideo);
 router.get('/videos/:id/notes', controller.listNotes);
+// ملف ماركرز للوحة بريمير (tools/premiere-markers-panel)
+router.get('/videos/:id/markers', controller.exportMarkers);
 router.post('/videos/:id/notes', controller.createNote);
 router.put('/videos/:id', controller.updateVideo);
 router.delete('/videos/:id', controller.deleteVideo);

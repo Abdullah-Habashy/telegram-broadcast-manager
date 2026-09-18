@@ -1088,6 +1088,14 @@
               <div class="row" style="gap:8px">
                 <button type="button" class="btn btn-ghost btn-sm" id="vr-back-btn" style="width:auto">→ رجوع للقايمة</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="vr-video-export-btn" style="width:auto">📄 تصدير PDF</button>
+                <%# ملف الماركرز + الإزاحة. **الإزاحة جنب الزرار مش في الإعدادات** لأنها
+                    بتختلف من فيديو لفيديو: بتعتمد على مقدمة السيكوينس وتايم كود بدايتها %>
+                <label class="row" style="gap:6px; margin:0; white-space:nowrap">
+                  <span class="card-desc" style="margin:0">إزاحة (ث)</span>
+                  <input type="number" id="vr-marker-offset" class="compact-input" style="width:82px" step="1" value="0"
+                         title="بيتزاد على كل توقيت قبل ما يتحط ماركر. سالب لو الفيديو المنشور فيه مقدمة زيادة." />
+                </label>
+                <button type="button" class="btn btn-ghost btn-sm" id="vr-markers-btn" style="width:auto">🎬 ماركرز بريمير</button>
                 <button type="button" class="btn btn-danger-ghost btn-sm" id="vr-video-delete-btn" style="width:auto">🗑️ حذف الفيديو</button>
               </div>
             </div>
@@ -12117,6 +12125,21 @@ ${reply.content}` : reply.content;
       document.getElementById('vr-list-view').style.display = 'block';
       vrCurrentVideo = null;
       loadVrVideos();
+    });
+
+    // ملف الماركرز: نفس فلاتر الشاشة + الإزاحة. اللوحة اللي جوه بريمير
+    // (tools/premiere-markers-panel) بتقرا الملف ده وبتحط ماركر عند كل غلطة
+    document.getElementById('vr-markers-btn')?.addEventListener('click', () => {
+      if (!vrCurrentVideo) return;
+      const params = new URLSearchParams({ video_id: String(vrCurrentVideo.id) });
+      const status = document.getElementById('vr-note-status-filter').value;
+      const severity = document.getElementById('vr-note-severity-filter').value;
+      const offset = document.getElementById('vr-marker-offset').value;
+      if (status) params.set('status', status);
+      if (severity) params.set('severity', severity);
+      if (offset) params.set('offset', offset);
+      params.delete('video_id');
+      window.open(`/api/video-reviews/videos/${vrCurrentVideo.id}/markers?${params.toString()}`, '_blank');
     });
 
     document.getElementById('vr-video-delete-btn')?.addEventListener('click', () => {

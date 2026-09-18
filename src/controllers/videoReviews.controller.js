@@ -465,6 +465,65 @@ async function deleteNote(req, res) {
   }
 }
 
+// ---------- ملف ماركرز بريمير ----------
+//
+// المونتير بيفتح لوحة `tools/premiere-markers-panel` جوه بريمير، بيدّيها الملف ده،
+// وبيدوس زرار واحد فيتحط ماركر ملوّن عند كل غلطة مكتوب فيه التعليق.
+//
+// ⚠️ **الإزاحة مش تفصيلة.** التوقيت المتسجّل هو مكان الغلطة في **الفيديو المنشور**، ولو
+// سيكوينس المونتاج فيها مقدمة زيادة أو بادئة بتايم كود مش صفر، الماركرز كلها هتقع مزاحة
+// بنفس الفرق. الخانة بتقبل موجب وسالب، والناتج مابينزلش تحت الصفر.
+async function exportMarkers(req, res) {
+  const videoId = Number(req.params.id);
+  const status = STATUSES.includes(req.query.status) ? req.query.status : null;
+  const severity = SEVERITIES.includes(req.query.severity) ? req.query.severity : null;
+  const rawOffset = Number(req.query.offset);
+  const offset = Number.isFinite(rawOffset) ? Math.round(rawOffset) : 0;
+  try {
+    const video = await pool.query(
+      `SELECT v.id, v.title, v.chapter, v.video_number, v.file_name, v.video_url, b.name AS book_name
+         FROM review_videos v JOIN video_books b ON b.id = v.book_id WHERE v.id = $1`,
+      [videoId]
+    );
+    if (!video.rows[0]) return res.status(404).json({ error: 'الفيديو مش موجود' });
+
+    const { rows } = await pool.query(
+      `SELECT n.id, n.timecode_seconds, n.severity, n.status, n.comment
+         FROM video_review_notes n
+        WHERE n.video_id = $1
+          AND ($2::text IS NULL OR n.status = $2)
+          AND ($3::text IS NULL OR n.severity = $3)
+        ORDER BY n.timecode_seconds, n.id`,
+      [videoId, status, severity]
+    );
+
+    const name = [video.rows[0].book_name, video.rows[0].chapter ? `باب ${video.rows[0].chapter}` : '',
+      video.rows[0].video_number ? `درس ${video.rows[0].video_number}` : '', video.rows[0].title]
+      .filter(Boolean).join(' — ');
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="video-markers-${videoId}.json"`);
+    res.send(JSON.stringify({
+      // رقم الصيغة: اللوحة بتفحصه وبترفض الملف اللي مش فاهماه بدل ما تحط ماركرز غلط
+      format: 'habashy-video-review-markers',
+      version: 1,
+      video: { id: video.rows[0].id, name, url: video.rows[0].video_url, file_name: video.rows[0].file_name },
+      offset_seconds: offset,
+      markers: rows.map((note) => ({
+        id: note.id,
+        // الإزاحة بتتحسب هنا مش في اللوحة: مصدر واحد للحساب، والملف بيبقى جاهز زي ما هو
+        seconds: Math.max(0, note.timecode_seconds + offset),
+        severity: note.severity,
+        status: note.status,
+        comment: note.comment,
+      })),
+    }, null, 1));
+  } catch (error) {
+    console.error('❌ Failed to export Premiere markers:', error.message);
+    res.status(500).json({ error: 'تعذر إنشاء ملف الماركرز' });
+  }
+}
+
 // صورة الشاشة. **نفس مجلد وحدود صور الأسئلة** — ومحتاجة تفضل متاحة للتصدير، فبتتخزّن
 // زي أي مرفق تاني: على القرص، أو على التخزين السحابي لو مفعّل
 async function uploadScreenshot(req, res) {
@@ -543,5 +602,5 @@ module.exports = {
   listBooks, createBook, updateBook, deleteBook,
   listVideos, createVideo, updateVideo, deleteVideo,
   listNotes, createNote, updateNote, setNoteStatus, deleteNote,
-  uploadScreenshot, exportNotes,
+  uploadScreenshot, exportNotes, exportMarkers,
 };
