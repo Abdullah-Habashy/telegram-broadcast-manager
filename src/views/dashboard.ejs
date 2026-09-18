@@ -988,8 +988,16 @@
             </div>
 
             <div class="row" style="gap:8px; margin-bottom:14px; flex-wrap:wrap">
-              <select id="vr-book-filter" class="compact-select" style="min-width:170px"></select>
-              <select id="vr-list-status-filter" class="compact-select" style="min-width:170px">
+              <select id="vr-book-filter" class="compact-select" style="min-width:150px"></select>
+              <select id="vr-chapter-filter" class="compact-select" style="min-width:140px">
+                <option value="">كل الأبواب</option>
+                <option value="1">الباب الأول</option>
+                <option value="2">الباب الثاني</option>
+                <option value="3">الباب الثالث</option>
+                <option value="4">الباب الرابع</option>
+                <option value="5">الباب الخامس</option>
+              </select>
+              <select id="vr-list-status-filter" class="compact-select" style="min-width:170px"
                 <option value="">كل الملاحظات (للتصدير)</option>
                 <option value="open">المفتوحة بس</option>
                 <option value="fixed">اللي اتصلّحت</option>
@@ -1005,14 +1013,26 @@
 
             <!-- فورم الإضافة مخفي لحد ما الزرار يتضغط: الشاشة بتتفتح كل يوم عشان
                  تسجّل ملاحظة، وإضافة فيديو جديد بتحصل مرة كل كذا يوم -->
+            <%# الترقيم كله قوايم مقفولة: الباب ١-٥ والدرس ١-١٥. أول صف اتسجّل على الإنتاج
+                كان اسمه «الباب الثاني - الدرس الثاني» مكتوب بالإيد — مايتفلترش ومايترتبش.
+                **الحدود مكرّرة في `schema.sql` وفي `videoReviews.controller.js`** — غيّرت
+                واحدة غيّر التلاتة، وإلا القايمة تعرض خيار القاعدة بترفضه %>
             <div id="vr-new-video-form" style="display:none; border:1.5px dashed var(--border); border-radius:8px; padding:14px; margin-bottom:14px">
               <div class="row" style="gap:10px; flex-wrap:wrap">
-                <div class="field" style="min-width:150px; margin:0"><label>الكتاب</label>
+                <div class="field" style="min-width:140px; margin:0"><label>الكتاب</label>
                   <select id="vr-video-book" class="compact-select" style="width:100%"></select></div>
-                <div class="field" style="flex:1; min-width:200px; margin:0"><label>اسم الفيديو / الحصة</label>
-                  <input type="text" id="vr-video-title" placeholder="مثال: الباب الأول — الدرس التالت" /></div>
-                <div class="field" style="width:110px; margin:0"><label>رقم (اختياري)</label>
-                  <input type="number" id="vr-video-number" min="1" step="1" /></div>
+                <div class="field" style="width:150px; margin:0"><label>الباب</label>
+                  <select id="vr-video-chapter" class="compact-select" style="width:100%">
+                    <option value="1">الباب الأول</option>
+                    <option value="2">الباب الثاني</option>
+                    <option value="3">الباب الثالث</option>
+                    <option value="4">الباب الرابع</option>
+                    <option value="5">الباب الخامس</option>
+                  </select></div>
+                <div class="field" style="width:120px; margin:0"><label>الدرس</label>
+                  <select id="vr-video-number" class="compact-select" style="width:100%"></select></div>
+                <div class="field" style="flex:1; min-width:200px; margin:0"><label>اسم الدرس</label>
+                  <input type="text" id="vr-video-title" placeholder="مثال: الاتزان الكيميائي" /></div>
               </div>
               <div class="field" style="margin:10px 0 0"><label>اسم ملف المونتاج (اختياري)</label>
                 <input type="text" id="vr-video-file" dir="auto" placeholder="ch1_lesson3_final.prproj" /></div>
@@ -1072,15 +1092,23 @@
               <button type="button" class="btn btn-ghost btn-sm" id="vr-cancel-edit-btn" style="width:auto; display:none">إلغاء التعديل</button>
             </div>
 
+            <%# التوقيت اختيار مش كتابة — الخيارات بتتولّد في الجافاسكريبت (٦٠ دقيقة
+                و٦٠ ثانية، وساعات ٠-٥): كتابتها في القالب ١٢٦ سطر بلا فايدة %>
             <div class="row" style="gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px">
-              <div class="field" style="width:96px; margin:0"><label>ساعة</label>
-                <input type="number" id="vr-tc-h" class="compact-input" min="0" max="23" step="1" value="0" /></div>
-              <div class="field" style="width:96px; margin:0"><label>دقيقة</label>
-                <input type="number" id="vr-tc-m" class="compact-input" min="0" max="59" step="1" value="0" /></div>
-              <div class="field" style="width:96px; margin:0"><label>ثانية</label>
-                <input type="number" id="vr-tc-s" class="compact-input" min="0" max="59" step="1" value="0" /></div>
-              <div class="card-desc" style="margin:0 4px 8px">التوقيت اللي الغلطة ظاهرة فيه في الفيديو</div>
+              <div class="field" style="width:104px; margin:0"><label>ساعة</label>
+                <select id="vr-tc-h" class="compact-select" style="width:100%"></select></div>
+              <div class="field" style="width:104px; margin:0"><label>دقيقة</label>
+                <select id="vr-tc-m" class="compact-select" style="width:100%"></select></div>
+              <div class="field" style="width:104px; margin:0"><label>ثانية</label>
+                <select id="vr-tc-s" class="compact-select" style="width:100%"></select></div>
+              <div class="field" style="min-width:190px; margin:0"><label>الأهمية</label>
+                <select id="vr-note-severity" class="compact-select" style="width:100%">
+                  <option value="must">🔴 لازم تتصلح</option>
+                  <option value="preferred">🟡 الأفضل تتصلح</option>
+                  <option value="minor">⚪ سهلة وتعدي</option>
+                </select></div>
             </div>
+            <p class="card-desc" style="margin:-4px 0 12px">التوقيت اللي الغلطة ظاهرة فيه في الفيديو، ودرجة أهميتها للمونتاج.</p>
 
             <div class="row" style="gap:14px; align-items:flex-start; flex-wrap:wrap">
               <div style="flex:0 0 280px; max-width:100%">
@@ -1107,6 +1135,12 @@
           <div class="card">
             <div class="row-between" style="gap:12px; flex-wrap:wrap">
               <b>الملاحظات</b>
+              <select id="vr-note-severity-filter" class="compact-select" style="min-width:170px">
+                <option value="">كل الأهميات</option>
+                <option value="must">🔴 لازم تتصلح</option>
+                <option value="preferred">🟡 الأفضل تتصلح</option>
+                <option value="minor">⚪ سهلة وتعدي</option>
+              </select>
               <select id="vr-note-status-filter" class="compact-select" style="min-width:170px">
                 <option value="">الكل</option>
                 <option value="open">المفتوحة</option>
@@ -11538,7 +11572,45 @@ ${reply.content}` : reply.content;
       return parts.map((part) => String(part).padStart(2, '0')).join(':');
     }
 
+    // الباب والدرس **قوايم مقفولة**: الباب ١-٥ (مكتوبة في القالب) والدرس ١-١٥ (بتتولّد
+    // هنا). **الحدود مكرّرة في `schema.sql` كـCHECK وفي الكنترولر** — التلاتة لازم يفضلوا
+    // متساويين، وإلا القايمة تعرض خيار القاعدة بترفضه
+    const VR_MAX_LESSON = 15;
+    // ساعات ٠-٥: أطول فيديو حصة مش فيلم. الدقايق والثواني ٠-٥٩ كاملة — التوقيت لازم
+    // يبقى بالثانية بالظبط عشان المونتير يقف على اللحظة الصح
+    const VR_MAX_HOUR = 5;
+    const VR_SEVERITY = {
+      must: { label: 'لازم تتصلح', icon: '🔴', badge: 'badge-danger' },
+      preferred: { label: 'الأفضل تتصلح', icon: '🟡', badge: 'badge-warning' },
+      minor: { label: 'سهلة وتعدي', icon: '⚪', badge: 'badge-muted' },
+    };
+    const VR_CHAPTER_NAMES = ['', 'الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس'];
+
+    function vrChapterLabel(chapter) {
+      return chapter ? `الباب ${VR_CHAPTER_NAMES[chapter] || chapter}` : '';
+    }
+
+    // الفيديو اللي بيتعدّل دلوقتي — نفس الفورم بيضيف ويعدّل
+    let vrEditingVideoId = null;
+
+    // القوايم بتتولّد مرة واحدة: إعادة بنائها مع كل فتح للتبويب بتصفّر اختيار الموظف
+    function fillVrSelect(id, count, label) {
+      const select = document.getElementById(id);
+      if (!select || select.options.length) return;
+      select.innerHTML = Array.from({ length: count }, (_, i) =>
+        `<option value="${i}">${label(i)}</option>`).join('');
+    }
+
     async function initVideoReviews() {
+      const lessons = document.getElementById('vr-video-number');
+      if (lessons && !lessons.options.length) {
+        lessons.innerHTML = Array.from({ length: VR_MAX_LESSON }, (_, i) =>
+          `<option value="${i + 1}">الدرس ${i + 1}</option>`).join('');
+      }
+      // التوقيت اختيار مش كتابة
+      fillVrSelect('vr-tc-h', VR_MAX_HOUR + 1, (i) => `${i} ساعة`);
+      fillVrSelect('vr-tc-m', 60, (i) => `${i} دقيقة`);
+      fillVrSelect('vr-tc-s', 60, (i) => `${i} ثانية`);
       await loadVrBooks();
       await loadVrVideos();
     }
@@ -11595,8 +11667,10 @@ ${reply.content}` : reply.content;
       const box = document.getElementById('vr-videos-list');
       const params = new URLSearchParams();
       const bookId = document.getElementById('vr-book-filter').value;
+      const chapter = document.getElementById('vr-chapter-filter').value;
       const search = document.getElementById('vr-search').value.trim();
       if (bookId) params.set('book_id', bookId);
+      if (chapter) params.set('chapter', chapter);
       if (search) params.set('q', search);
       if (document.getElementById('vr-show-archived').checked) params.set('include_archived', '1');
 
@@ -11607,12 +11681,22 @@ ${reply.content}` : reply.content;
           box.innerHTML = '<div class="empty-state">مفيش فيديوهات — ضيف واحد من الزرار فوق</div>';
           return;
         }
+        // البيانات اللي زرار التعديل بيقرا منها — بدل نداء تاني للسيرفر لكل ضغطة
+        box.dataset.videos = JSON.stringify(videos.map((video) => ({
+          id: video.id, book_id: video.book_id, chapter: video.chapter,
+          video_number: video.video_number, title: video.title, file_name: video.file_name,
+        })));
         box.innerHTML = videos.map((video) => `
           <div class="vr-video-card${video.is_active ? '' : ' archived'}" data-vr-video="${video.id}">
             <div style="flex:1; min-width:200px">
-              <div class="vr-video-title">${escapeHtml(video.book_name)} — ${escapeHtml(video.title)}</div>
+              <div class="vr-video-title">
+                ${escapeHtml(video.book_name)}
+                ${video.chapter ? `· ${escapeHtml(vrChapterLabel(video.chapter))}` : ''}
+                ${video.video_number ? `· الدرس ${escapeHtml(video.video_number)}` : ''}
+                — ${escapeHtml(video.title)}
+              </div>
               <div class="vr-video-sub">
-                ${video.video_number ? `فيديو ${escapeHtml(video.video_number)} · ` : ''}
+                ${video.chapter ? '' : '⚠️ من غير باب ودرس — افتح «تعديل» وحدّدهم · '}
                 ${video.file_name ? `ملف: ${escapeHtml(video.file_name)} · ` : ''}
                 ${video.notes_count} ملاحظة
                 ${video.is_active ? '' : ' · مؤرشف'}
@@ -11622,6 +11706,8 @@ ${reply.content}` : reply.content;
               ${video.open_count ? `<span class="badge badge-warning">${video.open_count} مفتوحة</span>` : ''}
               ${video.fixed_count ? `<span class="badge badge-success">${video.fixed_count} اتصلّحت</span>` : ''}
               ${video.rejected_count ? `<span class="badge badge-muted">${video.rejected_count} مرفوضة</span>` : ''}
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                      data-vr-edit-video="${video.id}">✏️ تعديل</button>
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
                       data-vr-archive-video="${video.id}">${video.is_active ? 'أرشفة' : 'إرجاع'}</button>
               <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto"
@@ -11648,14 +11734,20 @@ ${reply.content}` : reply.content;
     async function loadVrNotes(videoId) {
       const box = document.getElementById('vr-notes-list');
       box.innerHTML = '<div class="empty-state">بيتحمّل...</div>';
+      const params = new URLSearchParams();
       const status = document.getElementById('vr-note-status-filter').value;
+      const severity = document.getElementById('vr-note-severity-filter').value;
+      if (status) params.set('status', status);
+      if (severity) params.set('severity', severity);
       try {
-        const data = await api(`/api/video-reviews/videos/${videoId}/notes${status ? `?status=${status}` : ''}`);
+        const data = await api(`/api/video-reviews/videos/${videoId}/notes?${params.toString()}`);
         vrCurrentVideo = data.video;
-        document.getElementById('vr-video-heading').textContent =
-          `${data.video.book_name} — ${data.video.title}`;
+        document.getElementById('vr-video-heading').textContent = [
+          data.video.book_name,
+          vrChapterLabel(data.video.chapter),
+          data.video.video_number ? `الدرس ${data.video.video_number}` : '',
+        ].filter(Boolean).join(' · ') + ` — ${data.video.title}`;
         document.getElementById('vr-video-sub').textContent = [
-          data.video.video_number ? `فيديو ${data.video.video_number}` : '',
           data.video.file_name ? `ملف المونتاج: ${data.video.file_name}` : '',
           data.video.is_active ? '' : 'مؤرشف',
         ].filter(Boolean).join(' · ') || 'مفيش بيانات إضافية';
@@ -11673,6 +11765,10 @@ ${reply.content}` : reply.content;
       }
       box.innerHTML = notes.map((note) => {
         const status = VR_STATUS[note.status] || VR_STATUS.open;
+        const severity = VR_SEVERITY[note.severity] || VR_SEVERITY.must;
+        // **الصورة بحجمها جوه الصفحة مش مصغّرة.** المونتير بيقارن اللي في الصورة باللي
+        // على التايم لاين، والمصغّرة كانت بتخليه يفتح كل ملاحظة عشان يشوف. الضغط لسه
+        // بيكبّرها ملء الشاشة للتفاصيل الدقيقة
         const shot = note.screenshot_path
           ? `<div class="vr-shot"><img src="${escapeHtml(attachmentUrl(note.screenshot_path))}"
                  alt="صورة الغلطة" data-vr-zoom="${escapeHtml(attachmentUrl(note.screenshot_path))}" /></div>`
@@ -11683,6 +11779,7 @@ ${reply.content}` : reply.content;
         return `<div class="vr-note status-${escapeHtml(note.status)}">
           <div class="vr-note-head">
             <span class="vr-timecode">${escapeHtml(note.timecode || vrTimecode(note.timecode_seconds))}</span>
+            <span class="badge ${severity.badge}">${severity.icon} ${severity.label}</span>
             <span class="badge ${status.badge}">${status.label}</span>
             <span class="card-desc" style="margin:0">${escapeHtml(note.created_by_name || 'غير معروف')} · ${fmtDate(note.created_at)}</span>
             <div class="row" style="gap:6px; margin-right:auto">
@@ -11706,7 +11803,7 @@ ${reply.content}` : reply.content;
       // من السيرفر عند كل ضغطة تعديل
       box.dataset.notes = JSON.stringify(notes.map((note) => ({
         id: note.id, comment: note.comment, timecode_seconds: note.timecode_seconds,
-        screenshot_path: note.screenshot_path,
+        screenshot_path: note.screenshot_path, severity: note.severity,
       })));
     }
 
@@ -11716,6 +11813,7 @@ ${reply.content}` : reply.content;
       vrEditingNoteId = null;
       vrShotPath = null;
       ['vr-tc-h', 'vr-tc-m', 'vr-tc-s'].forEach((id) => { document.getElementById(id).value = 0; });
+      document.getElementById('vr-note-severity').value = 'must';
       document.getElementById('vr-note-comment').value = '';
       document.getElementById('vr-shot-drop').innerHTML = 'اضغط لاختيار صورة<br />أو الزق اللقطة (Ctrl+V)';
       document.getElementById('vr-clear-shot-btn').style.display = 'none';
@@ -11759,6 +11857,7 @@ ${reply.content}` : reply.content;
         minutes: document.getElementById('vr-tc-m').value || 0,
         seconds: document.getElementById('vr-tc-s').value || 0,
         comment,
+        severity: document.getElementById('vr-note-severity').value,
         screenshot_path: vrShotPath || '',
       };
       const button = document.getElementById('vr-save-note-btn');
@@ -11789,6 +11888,7 @@ ${reply.content}` : reply.content;
       document.getElementById('vr-tc-m').value = Math.floor((total % 3600) / 60);
       document.getElementById('vr-tc-s').value = total % 60;
       document.getElementById('vr-note-comment').value = note.comment || '';
+      document.getElementById('vr-note-severity').value = note.severity || 'must';
       if (note.screenshot_path) vrShowShot(note.screenshot_path); else { vrShotPath = null; }
       document.getElementById('vr-note-form-title').textContent = '✏️ تعديل الملاحظة';
       document.getElementById('vr-save-note-btn').textContent = 'حفظ التعديل';
@@ -11866,30 +11966,67 @@ ${reply.content}` : reply.content;
 
     document.getElementById('vr-new-video-btn')?.addEventListener('click', () => {
       const form = document.getElementById('vr-new-video-form');
-      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+      // لو الفورم كان مفتوح على تعديل، الزرار ده معناه "سيب ده وابدأ جديد" — من غير
+      // التصفير كان هيفضل بيعدّل على الفيديو القديم وهو مكتوب فيه بيانات جديدة
+      if (form.style.display !== 'none') return resetVrVideoForm();
+      resetVrVideoForm();
+      form.style.display = 'block';
     });
-    document.getElementById('vr-cancel-video-btn')?.addEventListener('click', () => {
+    document.getElementById('vr-cancel-video-btn')?.addEventListener('click', resetVrVideoForm);
+
+    // الفورم واحد للإضافة والتعديل. الصف اللي اتسجّل قبل ما الباب والدرس يبقوا قوايم
+    // (اسمه كان «الباب الثاني - الدرس الثاني» مكتوب بالإيد) بيتظبّط من هنا
+    function startVrVideoEdit(videoId) {
+      const videos = JSON.parse(document.getElementById('vr-videos-list').dataset.videos || '[]');
+      const video = videos.find((item) => item.id === videoId);
+      if (!video) return;
+      vrEditingVideoId = videoId;
+      document.getElementById('vr-video-book').value = video.book_id;
+      document.getElementById('vr-video-chapter').value = video.chapter || 1;
+      document.getElementById('vr-video-number').value = video.video_number || 1;
+      document.getElementById('vr-video-title').value = video.title || '';
+      document.getElementById('vr-video-file').value = video.file_name || '';
+      document.getElementById('vr-new-video-form').style.display = 'block';
+      document.getElementById('vr-save-video-btn').textContent = 'حفظ التعديل';
+      document.getElementById('vr-new-video-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function resetVrVideoForm() {
+      vrEditingVideoId = null;
+      document.getElementById('vr-video-title').value = '';
+      document.getElementById('vr-video-file').value = '';
       document.getElementById('vr-new-video-form').style.display = 'none';
-    });
+      document.getElementById('vr-save-video-btn').textContent = 'حفظ الفيديو';
+    }
 
     document.getElementById('vr-save-video-btn')?.addEventListener('click', async () => {
       const payload = {
         book_id: document.getElementById('vr-video-book').value,
-        title: document.getElementById('vr-video-title').value.trim(),
+        chapter: document.getElementById('vr-video-chapter').value,
         video_number: document.getElementById('vr-video-number').value,
+        title: document.getElementById('vr-video-title').value.trim(),
         file_name: document.getElementById('vr-video-file').value.trim(),
       };
       if (!payload.book_id) return showToast('ضيف كتاب الأول من قايمة الكتب');
-      if (!payload.title) return showToast('اكتب اسم الفيديو');
+      if (!payload.title) return showToast('اكتب اسم الدرس');
+      const editingId = vrEditingVideoId;
       try {
-        await api('/api/video-reviews/videos', { method: 'POST', body: JSON.stringify(payload) });
-        document.getElementById('vr-video-title').value = '';
-        document.getElementById('vr-video-number').value = '';
-        document.getElementById('vr-video-file').value = '';
-        document.getElementById('vr-new-video-form').style.display = 'none';
+        if (editingId) {
+          await api(`/api/video-reviews/videos/${editingId}`, { method: 'PUT', body: JSON.stringify(payload) });
+        } else {
+          try {
+            await api('/api/video-reviews/videos', { method: 'POST', body: JSON.stringify(payload) });
+          } catch (error) {
+            // نفس الباب والدرس موجود — تحذير مش رفض، لأن الحصة ممكن تكون متصوّرة جزئين
+            if (!error.data || !error.data.needs_confirmation) throw error;
+            if (!confirm(`${error.message}`)) return;
+            await api('/api/video-reviews/videos', { method: 'POST', body: JSON.stringify({ ...payload, confirm: true }) });
+          }
+        }
+        resetVrVideoForm();
         await loadVrBooks();
         await loadVrVideos();
-        showToast('اتضاف');
+        showToast(editingId ? 'اتعدّل' : 'اتضاف');
       } catch (error) { showToast(error.message); }
     });
 
@@ -11908,6 +12045,9 @@ ${reply.content}` : reply.content;
         } catch (error) { showToast(error.message); }
         return;
       }
+
+      const edit = event.target.closest('[data-vr-edit-video]');
+      if (edit) return startVrVideoEdit(Number(edit.dataset.vrEditVideo));
 
       const remove = event.target.closest('[data-vr-delete-video]');
       if (remove) return deleteVrVideo(Number(remove.dataset.vrDeleteVideo));
@@ -11953,8 +12093,10 @@ ${reply.content}` : reply.content;
       if (vrCurrentVideo) deleteVrVideo(vrCurrentVideo.id);
     });
 
-    document.getElementById('vr-note-status-filter')?.addEventListener('change', () => {
-      if (vrCurrentVideo) loadVrNotes(vrCurrentVideo.id);
+    ['vr-note-status-filter', 'vr-note-severity-filter'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('change', () => {
+        if (vrCurrentVideo) loadVrNotes(vrCurrentVideo.id);
+      });
     });
 
     // ---------- رفع اللقطة ----------
@@ -12055,7 +12197,9 @@ ${reply.content}` : reply.content;
       if (!vrCurrentVideo) return;
       const params = new URLSearchParams({ video_id: String(vrCurrentVideo.id) });
       const status = document.getElementById('vr-note-status-filter').value;
+      const severity = document.getElementById('vr-note-severity-filter').value;
       if (status) params.set('status', status);
+      if (severity) params.set('severity', severity);
       vrExport(params);
     });
 

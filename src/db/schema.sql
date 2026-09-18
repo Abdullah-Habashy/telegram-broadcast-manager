@@ -1559,3 +1559,45 @@ CREATE TABLE IF NOT EXISTS video_review_notes (
 CREATE INDEX IF NOT EXISTS idx_video_notes_video ON video_review_notes (video_id, timecode_seconds);
 -- الفهرس الجزئي بيخدم عدّاد «المفتوح» على كارت كل فيديو — المفتوح قليل والمقفول بيتراكم
 CREATE INDEX IF NOT EXISTS idx_video_notes_open ON video_review_notes (video_id) WHERE status = 'open';
+
+-- ---------- الباب ورقم الدرس: قوايم مقفولة مش كتابة ----------
+--
+-- أول صف اتسجّل على الإنتاج كان اسمه «الباب الثاني - الدرس الثاني» مكتوب بالإيد في خانة
+-- الاسم — يعني الترقيم كان بيتكتب نص، وبالتالي مايتفلترش ولا يترتب، وكل واحد هيكتبه بصيغة.
+-- الباب والدرس بقوا **أرقام من قايمة**: الباب ١-٥، والدرس ١-١٥، والكتابة الوحيدة الباقية
+-- هي اسم الدرس (`title`) واسم ملف المونتاج الاختياري.
+ALTER TABLE review_videos ADD COLUMN IF NOT EXISTS chapter SMALLINT;
+
+-- المدى متحطوط في القاعدة كمان مش في الكنترولر بس — الواجهة قايمة مقفولة، لكن أي
+-- استيراد أو سكربت جاي بعدين مش هيعدّي بباب سادس.
+-- **DROP قبل ADD** لأن `ADD CONSTRAINT IF NOT EXISTS` مش موجودة في بوستجرس، وده بيخلي
+-- الجملتين idempotent زي باقي الملف. مفيش فقد بيانات: القيد بيتشال ويترجع في نفس النداء
+ALTER TABLE review_videos DROP CONSTRAINT IF EXISTS review_videos_chapter_range;
+ALTER TABLE review_videos ADD CONSTRAINT review_videos_chapter_range
+    CHECK (chapter IS NULL OR chapter BETWEEN 1 AND 5);
+ALTER TABLE review_videos DROP CONSTRAINT IF EXISTS review_videos_lesson_range;
+ALTER TABLE review_videos ADD CONSTRAINT review_videos_lesson_range
+    CHECK (video_number IS NULL OR video_number BETWEEN 1 AND 15);
+
+-- **`UNIQUE (book_id, title)` اتشال.** كان منطقيًا وقت ما الاسم كان بيحمل الترقيم، ودلوقتي
+-- الاسم بقى اسم الدرس بس — و«مراجعة» أو «تمارين» بيتكرر بين الباب الأول والتاني عادي،
+-- فالقيد كان هيرفض الصف التاني بحجة إنه مكرر. منع التكرار الحقيقي بقى على (الكتاب، الباب،
+-- الدرس) وبيتعمل في الكنترولر بتأكيد — مش رفض قاطع، عشان الحصة المصوّرة على جزئين تعدّي
+ALTER TABLE review_videos DROP CONSTRAINT IF EXISTS review_videos_book_id_title_key;
+
+-- الترتيب الطبيعي للقايمة والتصدير: كتاب ← باب ← درس
+CREATE INDEX IF NOT EXISTS idx_review_videos_order ON review_videos (book_id, chapter, video_number);
+
+-- ---------- أهمية الغلطة ----------
+--
+-- **مش كل غلطة بتوقّف النزول.** حرف ناقص في شريحة غير الرقم غلط في معادلة. من غير
+-- التفرقة دي المونتير بيبص على ٤٠ ملاحظة ومايعرفش يبدأ منين، والتيم مابيعرفش يوصّل
+-- إن دي مستعجلة ودي لأ.
+--
+-- `must` لازم تتصلح · `preferred` الأفضل تتصلح · `minor` سهلة وتعدي.
+-- **الافتراضي `must`** عشان الصفوف القديمة والملاحظة اللي حد نساها: التصنيف الأعلى
+-- بيخلي حد يبص عليها، والأقل بيخليها تعدّي بالسكوت.
+ALTER TABLE video_review_notes ADD COLUMN IF NOT EXISTS severity VARCHAR(20) NOT NULL DEFAULT 'must';
+ALTER TABLE video_review_notes DROP CONSTRAINT IF EXISTS video_review_notes_severity_values;
+ALTER TABLE video_review_notes ADD CONSTRAINT video_review_notes_severity_values
+    CHECK (severity IN ('must', 'preferred', 'minor'));

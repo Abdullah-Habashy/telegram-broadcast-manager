@@ -14,6 +14,28 @@ const { buildVideoReviewPdf, formatTimecode, toSeconds } = require('../utils/vid
 
 const STATUSES = ['open', 'fixed', 'rejected'];
 
+// أهمية الغلطة عند المونتاج: لازم · الأفضل · سهلة وتعدي. **الافتراضي `must`** —
+// التصنيف الأعلى بيخلي حد يبص، والأقل بيخلي الملاحظة تعدّي بالسكوت
+const SEVERITIES = ['must', 'preferred', 'minor'];
+
+// ---------- الترقيم: قايمة مقفولة ----------
+//
+// الباب ١-٥ والدرس ١-١٥، **اختيار مش كتابة**. أول صف اتسجّل على الإنتاج كان اسمه
+// «الباب الثاني - الدرس الثاني» مكتوب في خانة الاسم — مايتفلترش ومايترتبش، وكل واحد
+// هيكتبه بصيغة. الحدود دي مكرّرة في `schema.sql` كـCHECK وفي قوايم `dashboard.ejs`:
+// **غيّرت هنا غيّر هناك** (التلاتة، وإلا القايمة تعرض خيار القاعدة بترفضه).
+const MAX_CHAPTER = 5;
+const MAX_LESSON = 15;
+
+// بيرجّع رقم صالح، أو null لو الخانة فاضية، أو undefined لو القيمة غلط — التلات حالات
+// مختلفة: الفاضي مسموح في التعديل الجزئي، والغلط لازم يترفض برسالة
+function readNumberInRange(raw, max) {
+  if (raw === '' || raw === undefined || raw === null) return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > max) return undefined;
+  return value;
+}
+
 // ملاحظة الموظف بتتعدّل من صاحبها أو من الأدمن. الأدمن مستثنى في كل حتة في المشروع
 function canEditNote(note, req) {
   return req.session.userRole === 'admin' || note.created_by === req.session.userId;
@@ -105,11 +127,12 @@ async function deleteBook(req, res) {
 // بتتفتح مع كل دخول للتبويب
 async function listVideos(req, res) {
   const bookId = Number(req.query.book_id) || null;
+  const chapter = Number(req.query.chapter) || null;
   const search = String(req.query.q || '').trim();
   const includeArchived = req.query.include_archived === '1';
   try {
     const { rows } = await pool.query(
-      `SELECT v.id, v.title, v.video_number, v.file_name, v.is_active, v.created_at,
+      `SELECT v.id, v.title, v.chapter, v.video_number, v.file_name, v.is_active, v.created_at,
               v.book_id, b.name AS book_name,
               COUNT(n.id)::int AS notes_count,
               COUNT(n.id) FILTER (WHERE n.status = 'open')::int AS open_count,
@@ -121,9 +144,10 @@ async function listVideos(req, res) {
         WHERE ($1::int IS NULL OR v.book_id = $1)
           AND ($2::boolean OR v.is_active)
           AND ($3 = '' OR v.title ILIKE '%' || $3 || '%' OR COALESCE(v.file_name, '') ILIKE '%' || $3 || '%')
+          AND ($4::int IS NULL OR v.chapter = $4)
         GROUP BY v.id, b.name
-        ORDER BY v.is_active DESC, b.name, v.video_number NULLS LAST, v.title`,
-      [bookId, includeArchived, search]
+        ORDER BY v.is_active DESC, b.name, v.chapter NULLS LAST, v.video_number NULLS LAST, v.title`,
+      [bookId, includeArchived, search, chapter]
     );
     res.json({ videos: rows });
   } catch (error) {
@@ -135,23 +159,37 @@ async function listVideos(req, res) {
 async function createVideo(req, res) {
   const bookId = Number(req.body?.book_id);
   const title = String(req.body?.title || '').trim();
+  const chapter = readNumberInRange(req.body?.chapter, MAX_CHAPTER);
+  const lesson = readNumberInRange(req.body?.video_number, MAX_LESSON);
   if (!bookId) return res.status(400).json({ error: 'اختار الكتاب' });
-  if (!title) return res.status(400).json({ error: 'اكتب اسم الفيديو' });
-  const videoNumber = req.body?.video_number === '' || req.body?.video_number === undefined || req.body?.video_number === null
-    ? null : Number(req.body.video_number);
-  if (videoNumber !== null && !Number.isFinite(videoNumber)) {
-    return res.status(400).json({ error: 'رقم الفيديو لازم يكون رقم' });
-  }
+  if (chapter === undefined) return res.status(400).json({ error: 'الباب لازم يكون من ١ لـ٥' });
+  if (lesson === undefined) return res.status(400).json({ error: 'الدرس لازم يكون من ١ لـ١٥' });
+  if (chapter === null) return res.status(400).json({ error: 'اختار الباب' });
+  if (lesson === null) return res.status(400).json({ error: 'اختار رقم الدرس' });
+  if (!title) return res.status(400).json({ error: 'اكتب اسم الدرس' });
   try {
+    // **التكرار تحذير مش رفض.** الحصة الواحدة ممكن تكون متصوّرة على جزئين، فمنعها قاطعًا
+    // كان هيوقّف شغل حقيقي — لكن إضافة نفس الباب والدرس بالغلط أكتر حصولًا، فبنسأل مرة
+    if (req.body?.confirm !== true) {
+      const twin = await pool.query(
+        'SELECT title FROM review_videos WHERE book_id = $1 AND chapter = $2 AND video_number = $3 LIMIT 1',
+        [bookId, chapter, lesson]
+      );
+      if (twin.rows[0]) {
+        return res.status(409).json({
+          error: `فيه فيديو بالفعل في الباب ${chapter} الدرس ${lesson} اسمه «${twin.rows[0].title}». تضيف واحد تاني؟`,
+          needs_confirmation: true,
+        });
+      }
+    }
     const { rows } = await pool.query(
-      `INSERT INTO review_videos (book_id, title, video_number, file_name, created_by)
-       VALUES ($1, $2, $3, NULLIF($4, ''), $5)
+      `INSERT INTO review_videos (book_id, title, chapter, video_number, file_name, created_by)
+       VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
        RETURNING id`,
-      [bookId, title, videoNumber, String(req.body?.file_name || '').trim(), req.session.userId]
+      [bookId, title, chapter, lesson, String(req.body?.file_name || '').trim(), req.session.userId]
     );
     res.json({ id: rows[0].id });
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ error: 'فيه فيديو بنفس الاسم تحت نفس الكتاب' });
     if (error.code === '23503') return res.status(400).json({ error: 'الكتاب المختار مش موجود' });
     console.error('❌ Failed to create a review video:', error.message);
     res.status(500).json({ error: 'تعذر إضافة الفيديو' });
@@ -161,36 +199,42 @@ async function createVideo(req, res) {
 async function updateVideo(req, res) {
   const id = Number(req.params.id);
   const title = req.body?.title === undefined ? null : String(req.body.title || '').trim();
-  if (title !== null && !title) return res.status(400).json({ error: 'اكتب اسم الفيديو' });
-  const rawNumber = req.body?.video_number;
-  const videoNumber = rawNumber === undefined ? undefined : (rawNumber === '' || rawNumber === null ? null : Number(rawNumber));
-  if (videoNumber !== undefined && videoNumber !== null && !Number.isFinite(videoNumber)) {
-    return res.status(400).json({ error: 'رقم الفيديو لازم يكون رقم' });
-  }
+  if (title !== null && !title) return res.status(400).json({ error: 'اكتب اسم الدرس' });
+
+  // التعديل جزئي: الحقل اللي مابيتبعتش مابيتلمسش. عشان كده كل رقم بيتقري مرتين — مرة
+  // "اتبعت ولا لأ" ومرة قيمته — بدل ما الفاضي يبان زي المش مبعوت
+  const chapterSent = req.body?.chapter !== undefined;
+  const lessonSent = req.body?.video_number !== undefined;
+  const chapter = chapterSent ? readNumberInRange(req.body.chapter, MAX_CHAPTER) : null;
+  const lesson = lessonSent ? readNumberInRange(req.body.video_number, MAX_LESSON) : null;
+  if (chapter === undefined) return res.status(400).json({ error: 'الباب لازم يكون من ١ لـ٥' });
+  if (lesson === undefined) return res.status(400).json({ error: 'الدرس لازم يكون من ١ لـ١٥' });
+
   try {
     const { rows } = await pool.query(
       `UPDATE review_videos
           SET title = COALESCE($2, title),
               book_id = COALESCE($3, book_id),
-              -- الرقم واسم الملف بيتشالوا بقيمة فاضية، فـCOALESCE مابينفعش معاهم:
+              -- الأرقام واسم الملف بيتشالوا بقيمة فاضية، فـCOALESCE مابينفعش معاهم:
               -- بنبعت علم منفصل يقول "الحقل ده اتبعت أصلًا ولا لأ"
-              video_number = CASE WHEN $4 THEN $5 ELSE video_number END,
+              video_number = CASE WHEN $4 THEN $5::int ELSE video_number END,
               file_name = CASE WHEN $6 THEN NULLIF($7, '') ELSE file_name END,
-              is_active = COALESCE($8, is_active)
+              is_active = COALESCE($8, is_active),
+              chapter = CASE WHEN $9 THEN $10::int ELSE chapter END
         WHERE id = $1
         RETURNING id`,
       [
         id, title,
         req.body?.book_id === undefined ? null : Number(req.body.book_id),
-        videoNumber !== undefined, videoNumber === undefined ? null : videoNumber,
+        lessonSent, lesson,
         req.body?.file_name !== undefined, String(req.body?.file_name || '').trim(),
         req.body?.is_active === undefined ? null : Boolean(req.body.is_active),
+        chapterSent, chapter,
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: 'الفيديو مش موجود' });
     res.json({ ok: true });
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ error: 'فيه فيديو بنفس الاسم تحت نفس الكتاب' });
     console.error('❌ Failed to update a review video:', error.message);
     res.status(500).json({ error: 'تعذر تعديل الفيديو' });
   }
@@ -222,7 +266,7 @@ async function deleteVideo(req, res) {
 // ---------- الملاحظات (الأغلاط) ----------
 
 const NOTE_SELECT = `
-  SELECT n.id, n.video_id, n.timecode_seconds, n.screenshot_path, n.comment, n.status,
+  SELECT n.id, n.video_id, n.timecode_seconds, n.screenshot_path, n.comment, n.status, n.severity,
          n.created_at, n.updated_at, n.resolved_at, n.resolution_note,
          n.created_by, u.name AS created_by_name, r.name AS resolved_by_name
     FROM video_review_notes n
@@ -232,9 +276,10 @@ const NOTE_SELECT = `
 async function listNotes(req, res) {
   const videoId = Number(req.params.id);
   const status = STATUSES.includes(req.query.status) ? req.query.status : null;
+  const severity = SEVERITIES.includes(req.query.severity) ? req.query.severity : null;
   try {
     const video = await pool.query(
-      `SELECT v.id, v.title, v.video_number, v.file_name, v.is_active, b.name AS book_name
+      `SELECT v.id, v.title, v.chapter, v.video_number, v.file_name, v.is_active, v.book_id, b.name AS book_name
          FROM review_videos v JOIN video_books b ON b.id = v.book_id WHERE v.id = $1`,
       [videoId]
     );
@@ -243,8 +288,9 @@ async function listNotes(req, res) {
     // الترتيب بالتوقيت مش بوقت التسجيل: المونتير بيمشي على الفيديو من أوله لآخره مرة واحدة
     const { rows } = await pool.query(
       `${NOTE_SELECT} WHERE n.video_id = $1 AND ($2::text IS NULL OR n.status = $2)
+          AND ($3::text IS NULL OR n.severity = $3)
         ORDER BY n.timecode_seconds, n.id`,
-      [videoId, status]
+      [videoId, status, severity]
     );
     res.json({
       video: video.rows[0],
@@ -273,14 +319,17 @@ async function createNote(req, res) {
   const videoId = Number(req.params.id);
   const comment = String(req.body?.comment || '').trim();
   const timecode = readTimecode(req.body);
+  // الأهمية الغلط بتترد بـ`must` مش برسالة خطأ: القايمة مقفولة في الواجهة، والقيمة
+  // الغريبة معناها طلب مش من الشاشة — والأعلى أأمن من رفض ملاحظة الموظف كتبها
+  const severity = SEVERITIES.includes(req.body?.severity) ? req.body.severity : 'must';
   if (timecode === null) return res.status(400).json({ error: 'حدّد توقيت الغلطة (ساعة/دقيقة/ثانية)' });
   if (!comment) return res.status(400).json({ error: 'اكتب تعليق يشرح الغلطة' });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO video_review_notes (video_id, timecode_seconds, screenshot_path, comment, created_by)
-       VALUES ($1, $2, NULLIF($3, ''), $4, $5)
+      `INSERT INTO video_review_notes (video_id, timecode_seconds, screenshot_path, comment, severity, created_by)
+       VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6)
        RETURNING id`,
-      [videoId, timecode, String(req.body?.screenshot_path || '').trim(), comment, req.session.userId]
+      [videoId, timecode, String(req.body?.screenshot_path || '').trim(), comment, severity, req.session.userId]
     );
     res.json({ id: rows[0].id });
   } catch (error) {
@@ -308,11 +357,13 @@ async function updateNote(req, res) {
           SET comment = COALESCE($2, comment),
               timecode_seconds = COALESCE($3, timecode_seconds),
               screenshot_path = CASE WHEN $4 THEN NULLIF($5, '') ELSE screenshot_path END,
+              severity = COALESCE($6, severity),
               updated_at = NOW()
         WHERE id = $1`,
       [
         id, comment, timecode === undefined ? null : timecode,
         req.body?.screenshot_path !== undefined, String(req.body?.screenshot_path || '').trim(),
+        SEVERITIES.includes(req.body?.severity) ? req.body.severity : null,
       ]
     );
     res.json({ ok: true });
@@ -397,14 +448,15 @@ async function exportNotes(req, res) {
   const videoId = Number(req.query.video_id) || null;
   const bookId = Number(req.query.book_id) || null;
   const status = STATUSES.includes(req.query.status) ? req.query.status : null;
+  const severity = SEVERITIES.includes(req.query.severity) ? req.query.severity : null;
   try {
     // **استعلام صريح مش معمول من `NOTE_SELECT`** — التصدير محتاج أعمدة الفيديو والكتاب
     // في نفس الصف، والتركيب على ثابت جاهز بيخلي أي تعديل عليه يكسر ده من غير ما يبان
     const { rows } = await pool.query(
-      `SELECT n.id, n.video_id, n.timecode_seconds, n.screenshot_path, n.comment, n.status,
+      `SELECT n.id, n.video_id, n.timecode_seconds, n.screenshot_path, n.comment, n.status, n.severity,
               n.created_at, n.resolved_at, n.resolution_note,
               u.name AS created_by_name, r.name AS resolved_by_name,
-              v.title AS video_title, v.video_number, v.file_name, b.name AS book_name
+              v.title AS video_title, v.chapter, v.video_number, v.file_name, b.name AS book_name
          FROM video_review_notes n
          JOIN review_videos v ON v.id = n.video_id
          JOIN video_books b ON b.id = v.book_id
@@ -413,8 +465,9 @@ async function exportNotes(req, res) {
         WHERE ($1::int IS NULL OR n.video_id = $1)
           AND ($2::int IS NULL OR v.book_id = $2)
           AND ($3::text IS NULL OR n.status = $3)
-        ORDER BY b.sort_order, b.name, v.video_number NULLS LAST, v.title, n.timecode_seconds`,
-      [videoId, bookId, status]
+          AND ($4::text IS NULL OR n.severity = $4)
+        ORDER BY b.sort_order, b.name, v.chapter NULLS LAST, v.video_number NULLS LAST, v.title, n.timecode_seconds`,
+      [videoId, bookId, status, severity]
     );
 
     // تجميع الملاحظات تحت فيديوهاتها بالترتيب اللي رجع من الاستعلام — الـPDF بيطبع
@@ -426,6 +479,7 @@ async function exportNotes(req, res) {
         videos.push({
           id: row.video_id,
           title: row.video_title,
+          chapter: row.chapter,
           video_number: row.video_number,
           file_name: row.file_name,
           book_name: row.book_name,

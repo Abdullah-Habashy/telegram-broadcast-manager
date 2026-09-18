@@ -1288,10 +1288,18 @@ th.perf-sorted { color: var(--primary); }
   direction: ltr; unicode-bidi: isolate; color: var(--primary); letter-spacing: 0.5px;
 }
 
-.vr-note-body { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
-.vr-shot { flex: 0 0 260px; max-width: 100%; }
+/* **عمود مش صف، والصورة بحجمها.** كانت مصغّرة ٢٦٠px جنب التعليق، والمونتير بيقارن
+   اللي فيها باللي على التايم لاين — فكان بيفتح كل ملاحظة عشان يشوف. دلوقتي التعليق فوق
+   والصورة تحته بعرض الكارت، والضغط لسه بيكبّرها ملء الشاشة للتفاصيل الدقيقة. */
+/* `column-reverse` مع ترتيب الـHTML (الصورة الأول) = التعليق فوق والصورة تحته: الموظف
+   بيقرا الغلطة الأول وبعدين يشوفها. نفس الترتيب في الـPDF */
+.vr-note-body { display: flex; flex-direction: column-reverse; gap: 12px; align-items: stretch; }
+.vr-shot { width: 100%; }
+/* **`max-width` مش `width`**: لقطة الشاشة الكاملة (1920) بتنزل لعرض الكارت فتبان كبيرة،
+   والقصاصة الصغيرة بتفضل بحجمها الطبيعي — `width: 100%` كان هيمطّها وتطلع مهببة */
 .vr-shot img {
-  width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  max-width: 100%; height: auto; max-height: 70vh;
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
   cursor: zoom-in; display: block;
 }
 
@@ -1301,7 +1309,7 @@ th.perf-sorted { color: var(--primary); }
    مع `rtl` الخوارزمية بتظبّط المقاطع الإنجليزية جوه الجملة العربية لوحدها.
    و`pre-wrap` عشان سطور التيم متتلزقش في بعض. */
 .vr-comment {
-  flex: 1; min-width: 240px; font-size: 13.5px; line-height: 1.9;
+  font-size: 14px; line-height: 1.9;
   white-space: pre-wrap; overflow-wrap: break-word; direction: rtl; text-align: right;
 }
 .vr-resolution {

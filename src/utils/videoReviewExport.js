@@ -46,6 +46,13 @@ const STATUS_LABELS = {
   rejected: 'مش غلطة',
 };
 
+// أهمية الغلطة عند المونتاج. الأيقونة مع النص مش بدله — الورقة ممكن تتطبع أبيض وأسود
+const SEVERITY_LABELS = {
+  must: '🔴 لازم تتصلح',
+  preferred: '🟡 الأفضل تتصلح',
+  minor: '⚪ سهلة وتعدي',
+};
+
 // ---------- الصور جوه الـPDF ----------
 //
 // **مسار الصورة نوعين** زي كل مرفقات المشروع (`utils/objectStorage.js`): رابط كامل لما
@@ -81,6 +88,7 @@ function noteCard(note, index) {
     <div class="note-head">
       <span class="badge">${index}</span>
       <span class="timecode">${escapeHtml(formatTimecode(note.timecode_seconds))}</span>
+      <span class="status sev-${escapeHtml(note.severity || 'must')}">${escapeHtml(SEVERITY_LABELS[note.severity] || SEVERITY_LABELS.must)}</span>
       <span class="status status-${escapeHtml(note.status)}">${escapeHtml(status)}</span>
       <span class="who">${escapeHtml(note.created_by_name || 'غير معروف')}</span>
     </div>
@@ -99,13 +107,19 @@ function buildHtml(videos, { title, generatedBy }) {
   let counter = 0;
 
   const body = videos.map((video) => {
-    const heading = [video.book_name, video.title].filter(Boolean).join(' — ');
+    // الترتيب في العنوان هو نفس ترتيب البحث عن الملف: الكتاب ← الباب ← الدرس ← الاسم
+    const heading = [
+      video.book_name,
+      video.chapter ? `الباب ${video.chapter}` : null,
+      video.video_number ? `الدرس ${video.video_number}` : null,
+      video.title,
+    ].filter(Boolean).join(' — ');
     const fileHint = video.file_name
       ? `<div class="file-hint">ملف المونتاج: <span class="ltr">${escapeHtml(video.file_name)}</span></div>`
       : '';
     const cards = video.notes.map((note) => noteCard(note, ++counter)).join('');
     return `<div class="video-block">
-      <h2>${escapeHtml(heading)}${video.video_number ? ` <span class="num">(فيديو ${escapeHtml(video.video_number)})</span>` : ''}</h2>
+      <h2>${escapeHtml(heading)}</h2>
       ${fileHint}
       <div class="video-meta">${video.notes.length} ملاحظة</div>
       ${cards || '<div class="empty">مفيش ملاحظات في الفلتر ده</div>'}
@@ -138,16 +152,19 @@ function buildHtml(videos, { title, generatedBy }) {
     .status { font-size: 11px; border-radius: 10px; padding: 2px 8px; background: #eaecfb; color: #3648d1; }
     .status-fixed { background: #e3f6ea; color: #1b7f43; }
     .status-rejected { background: #f3f3f5; color: #6b6f7d; }
+    .sev-must { background: #fbebea; color: #d1453b; }
+    .sev-preferred { background: #fbf1e0; color: #c17f14; }
+    .sev-minor { background: #f3f3f5; color: #6b6f7d; }
     .who { color: #5b6178; font-size: 11px; margin-right: auto; }
-    .note-body { display: flex; gap: 12px; align-items: flex-start; }
-    .shot { flex: 0 0 52%; }
+    .note-body { display: flex; flex-direction: column-reverse; gap: 10px; align-items: stretch; }
+    .shot { width: 100%; }
     /* السقف مهم: لقطة طولية (شاشة موبايل مثلًا) بعرض ٥٢٪ بتطلع أطول من الصفحة،
        و"page-break-inside: avoid" ساعتها بيسيب نص الصفحة فاضي قبلها */
-    .shot img { width: 100%; max-height: 150mm; object-fit: contain;
+    .shot img { max-width: 100%; height: auto; max-height: 150mm;
                 border: 1px solid #e2e5ee; border-radius: 6px; }
     .no-shot { border: 1px dashed #d6d9e4; border-radius: 6px; padding: 18px 10px; text-align: center;
                color: #8a8fa0; font-size: 11px; }
-    .comment { flex: 1; font-size: 12.5px; line-height: 1.8; }
+    .comment { font-size: 12.5px; line-height: 1.8; }
     .mixed { white-space: pre-wrap; word-wrap: break-word; }
     .resolution { margin-top: 8px; border-top: 1px dashed #e2e5ee; padding-top: 6px; font-size: 11.5px; color: #4a4f63; }
     .empty { color: #8a8fa0; font-size: 12px; }
