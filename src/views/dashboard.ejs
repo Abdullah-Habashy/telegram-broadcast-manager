@@ -9570,12 +9570,25 @@ ${reply.content}` : reply.content;
     }
 
     function renderQuizRow(quiz) {
+      // نفس شروط `reviewIfReady` في السيرفر بالظبط: الخانة مفتوحة، والتأجيل لحد القفل
+      // مش واقف قدامها. لو واحد منهم مش متحقق الطالب شايف درجته بس من غير ورقته
+      const answersVisible = quiz.show_answers_to_student !== false
+        && !(quiz.answers_after_close && quiz.is_open);
       const badges = [
         `<span class="badge badge-muted">${quiz.question_count} سؤال</span>`,
         `<span class="badge badge-muted">${quiz.submitted_count} سلّموا</span>`,
         quiz.in_progress_count ? `<span class="badge badge-warning">${quiz.in_progress_count} لسه بيحلّوا</span>` : '',
         quiz.needs_review_count ? `<span class="badge badge-danger">${quiz.needs_review_count} محتاجة مراجعتك</span>` : '',
         quiz.is_open ? '<span class="badge badge-success">مفتوح</span>' : '<span class="badge badge-muted">مقفول</span>',
+        // **الشارة للمفتوح بس.** بعد القفل `answers_after_close` مالهاش أي أثر، فعرض
+        // «مؤجّل للقفل» على اختبار مقفول بيقول للموظف عكس اللي بيحصل فعلًا
+        quiz.is_open
+          ? (answersVisible
+            ? '<span class="badge badge-success">👁️ التصحيح ظاهر</span>'
+            : (quiz.show_answers_to_student === false
+              ? '<span class="badge badge-muted">🙈 التصحيح مقفول</span>'
+              : '<span class="badge badge-muted">🙈 التصحيح مؤجّل للقفل</span>'))
+          : '',
         quiz.time_limit_minutes ? `<span class="badge badge-muted">⏱️ ${quiz.time_limit_minutes} دقيقة</span>` : '',
         // تكلفة التصحيح الآلي للاختبار كله. بتبان جنب باقي الأرقام عشان تبقى رقم
         // متابَع مع كل فتحة للصفحة، مش حاجة تتكشف في فاتورة آخر الشهر
@@ -9595,9 +9608,13 @@ ${reply.content}` : reply.content;
               <button type="button" class="btn btn-primary btn-sm" style="width:auto" onclick="openQuizResults(${quiz.id})">النتايج</button>
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="openQuizEditor(${quiz.id})">تعديل</button>
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto" onclick="toggleQuizOpen(${quiz.id})">${quiz.is_open ? 'اقفل' : 'افتح'}</button>
+              ${quiz.is_open ? `
+              <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
+                onclick="toggleQuizReveal(${quiz.id})"
+                title="${answersVisible ? 'الطالب شايف ورقته ويقدر يتظلم — اضغط تخفيهم لحد ما الاختبار يتقفل' : 'الطالب شايف درجته بس — اضغط عشان يشوف تصحيحه ويتظلم وهو لسه مفتوح'}">${answersVisible ? '🙈 اخفي الإجابات والتظلم' : '👁️ أظهر الإجابات والتظلم'}</button>` : `
               <button type="button" class="btn btn-ghost btn-sm" style="width:auto"
                 onclick="toggleQuizAppeals(${quiz.id})"
-                title="${quiz.allow_appeals === false ? 'التظلم مقفول — اضغط عشان تفتحه' : 'التظلم مفتوح — اضغط عشان تقفله'}">${quiz.allow_appeals === false ? '⚖️ افتح التظلم' : '⚖️ اقفل التظلم'}</button>
+                title="${quiz.allow_appeals === false ? 'التظلم مقفول — اضغط عشان تفتحه' : 'التظلم مفتوح — اضغط عشان تقفله'}">${quiz.allow_appeals === false ? '⚖️ افتح التظلم' : '⚖️ اقفل التظلم'}</button>`}
               <button type="button" class="btn btn-danger-ghost btn-sm" style="width:auto" onclick="deleteQuiz(${quiz.id})">حذف</button>
             </div>
           </div>
@@ -10522,9 +10539,58 @@ ${reply.content}` : reply.content;
       }
     }
 
-    // **بيبعت كل الحقول زي `toggleQuizOpen` بالظبط.** الحقل اللي مش في الطلب بياخد
-    // الافتراضي عند السيرفر مش قيمته الحالية — ده عطل حصل قبل كده مع «الطالب يشوف
-    // تصحيح ورقته» لما زرار القفل كان بيرجّعه لافتراضيه
+    // **كل حقول الاختبار بتتبعت في كل تحديث.** الحقل اللي مش في الطلب بياخد الافتراضي
+    // عند السيرفر مش قيمته الحالية — ده عطل حصل قبل كده لما زرار القفل كان بيرجّع «الطالب
+    // يشوف تصحيح ورقته» لافتراضيه. الدالة دي عشان الزرار الجاي مايكررش نفس الغلطة.
+    // **`slug` مش في القايمة عن قصد** — السيرفر بيعمله COALESCE فالرابط المختصر مايتمسحش
+    function quizUpdatePayload(quiz, changes) {
+      return {
+        title: quiz.title,
+        description: quiz.description,
+        time_limit_minutes: quiz.time_limit_minutes,
+        is_open: quiz.is_open,
+        show_score_to_student: quiz.show_score_to_student,
+        show_answers_to_student: quiz.show_answers_to_student,
+        target_bootcamp_id: quiz.target_bootcamp_id || null,
+        answers_after_close: quiz.answers_after_close,
+        shuffle_questions: quiz.shuffle_questions,
+        shuffle_options: quiz.shuffle_options,
+        max_attempts: quiz.max_attempts,
+        allow_appeals: quiz.allow_appeals !== false,
+        ...changes,
+      };
+    }
+
+    // **زرار واحد للتصحيح والتظلم، وبيبان على الاختبار المفتوح بس.** الطالب بيتظلّم من
+    // جوه ورقة التصحيح نفسها، فتظلم مفتوح وتصحيح مخفي مالوش معنى عنده — عشان كده الاتنين
+    // بيتقلبوا مع بعض. ولما الاختبار يتقفل الزرار ده بيختفي و⚖️ بيرجع مكانه، لأن التظلم
+    // بعد إعلان الدرجات قرار لوحده.
+    //
+    // **والإخفاء تأجيل مش منع** (`answers_after_close`): الطالب يفضل شايف درجته، وأول ما
+    // الاختبار يتقفل التصحيح يبان للكل مرة واحدة. المنع النهائي لسه في خانة المحرر.
+    async function toggleQuizReveal(id) {
+      const quiz = quizList.find((item) => item.id === id);
+      if (!quiz) return;
+      // الزرار مابيترسمش على اختبار مقفول، فشرط `is_open` اللي في `answersVisible`
+      // متحقق هنا دايمًا
+      const visible = quiz.show_answers_to_student !== false && !quiz.answers_after_close;
+      try {
+        await api(`/api/quizzes/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(quizUpdatePayload(quiz, {
+            // الإظهار بيفتح الخانتين مع بعض — واحدة مقفولة تكفي تخفي التصحيح
+            show_answers_to_student: true,
+            answers_after_close: visible,
+            allow_appeals: !visible,
+          })),
+        });
+        showToast(visible
+          ? 'التصحيح والتظلم اتخفوا — الطالب شايف درجته بس، والتصحيح هيبان لما الاختبار يتقفل'
+          : 'التصحيح والتظلم بانوا — الطالب بقى يشوف ورقته ويقدر يتظلم وهو لسه مفتوح');
+        loadQuizzes();
+      } catch (error) { showToast(error.message); }
+    }
+
     async function toggleQuizAppeals(id) {
       const quiz = quizList.find((item) => item.id === id);
       if (!quiz) return;
@@ -10532,20 +10598,7 @@ ${reply.content}` : reply.content;
       try {
         await api(`/api/quizzes/${id}`, {
           method: 'PUT',
-          body: JSON.stringify({
-            title: quiz.title,
-            description: quiz.description,
-            time_limit_minutes: quiz.time_limit_minutes,
-            is_open: quiz.is_open,
-            show_score_to_student: quiz.show_score_to_student,
-            show_answers_to_student: quiz.show_answers_to_student,
-            target_bootcamp_id: quiz.target_bootcamp_id || null,
-            answers_after_close: quiz.answers_after_close,
-            shuffle_questions: quiz.shuffle_questions,
-            shuffle_options: quiz.shuffle_options,
-            max_attempts: quiz.max_attempts,
-            allow_appeals: !closing,
-          }),
+          body: JSON.stringify(quizUpdatePayload(quiz, { allow_appeals: !closing })),
         });
         showToast(closing
           ? 'التظلم اتقفل — الزرار مابقاش بيظهر للطالب'
@@ -10560,24 +10613,7 @@ ${reply.content}` : reply.content;
       try {
         await api(`/api/quizzes/${id}`, {
           method: 'PUT',
-          body: JSON.stringify({
-            title: quiz.title,
-            description: quiz.description,
-            time_limit_minutes: quiz.time_limit_minutes,
-            show_score_to_student: quiz.show_score_to_student,
-            // من غير السطر ده القفل والفتح كان بيرجّع عرض التصحيح لافتراضيه — الحقل
-            // اللي مش في الطلب بياخد الافتراضي عند السيرفر مش قيمته الحالية
-            show_answers_to_student: quiz.show_answers_to_student,
-            target_bootcamp_id: quiz.target_bootcamp_id || null,
-            answers_after_close: quiz.answers_after_close,
-            shuffle_questions: quiz.shuffle_questions,
-            shuffle_options: quiz.shuffle_options,
-            max_attempts: quiz.max_attempts,
-            // نفس سبب `show_answers_to_student` فوق: من غير السطر ده قفل الاختبار
-            // كان هيرجّع التظلم مفتوح
-            allow_appeals: quiz.allow_appeals !== false,
-            is_open: !quiz.is_open,
-          }),
+          body: JSON.stringify(quizUpdatePayload(quiz, { is_open: !quiz.is_open })),
         });
         showToast(quiz.is_open ? 'الاختبار اتقفل — الرابط بقى مايفتحش' : 'الاختبار اتفتح');
         loadQuizzes();
