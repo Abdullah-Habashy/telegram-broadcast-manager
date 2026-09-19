@@ -1185,13 +1185,16 @@
         </div>
         <div class="card">
           <div class="row-between" style="margin-bottom:12px">
-            <b id="tafra-student-count">الطلاب</b>
+            <div class="row" style="gap:8px; align-items:center">
+              <b id="tafra-student-count">الطلاب</b>
+              <span id="tafra-messageable-count" class="badge badge-muted"></span>
+            </div>
             <span id="tafra-student-page-label" class="ticket-muted"></span>
           </div>
           <div class="row-between audience-actions">
             <div class="row">
               <button type="button" class="btn btn-ghost btn-sm" id="select-filtered-tafra-students-btn">تحديد نتائج هذه الصفحة فقط (اللي بدأوا محادثة مع البوت)</button>
-              <button type="button" class="btn btn-ghost btn-sm" id="select-all-tafra-students-btn">تحديد كل الصفحات (الفلتر الحالي)</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="select-all-tafra-students-btn">تحديد كل الصفحات (اللي بدأوا محادثة)</button>
               <span class="select-first-n-group">
                 <input type="number" id="select-first-n-tafra" class="compact-input" min="1" value="10" title="عدد النتائج">
                 <button type="button" class="btn btn-ghost btn-sm" id="select-first-n-tafra-btn">تحديد أول عدد</button>
@@ -4470,6 +4473,21 @@
         const result = await api('/api/tafra/students?' + tafraStudentQuery());
         tafraStudentsPages = result.meta.pages;
         document.getElementById('tafra-student-count').textContent = `الطلاب: ${result.meta.total}`;
+        // **الرقم التاني هو اللي زراير التحديد بتشتغل عليه.** تيليجرام مايسمحش للبوت يبدأ
+        // محادثة، فاللي ماكلّمش البوت مايتحددش ومابياخدش الحملة أصلًا — وقبل كده الفرق
+        // ده مكانش بيبان غير بعد الضغط، لما «المحدد» يطلع أقل من الإجمالي بلا سبب ظاهر.
+        // بيتفرّع على **وجود** الحقل مش على قيمته، فصفحة قديمة في المتصفح مع سيرفر جديد
+        // (أو العكس) بتمشي من غير ما ترمي
+        const messageableBadge = document.getElementById('tafra-messageable-count');
+        if (typeof result.meta.messageable === 'number') {
+          const blocked = result.meta.total - result.meta.messageable;
+          messageableBadge.textContent = `ممكن مراسلتهم: ${result.meta.messageable}`;
+          messageableBadge.title = blocked > 0
+            ? `${blocked} من المطابقين للفلتر ما بدأوش محادثة مع البوت، وتيليجرام مايسمحش للبوت يبدأ محادثة — فمش هيتحددوا ومش هتوصلهم الحملة`
+            : 'كل الطلاب المطابقين للفلتر بدأوا محادثة مع البوت';
+        } else {
+          messageableBadge.textContent = '';
+        }
         document.getElementById('tafra-student-page-label').textContent = `صفحة ${result.meta.page} من ${result.meta.pages}`;
         document.getElementById('tafra-students-prev').disabled = result.meta.page <= 1;
         document.getElementById('tafra-students-next').disabled = result.meta.page >= result.meta.pages;

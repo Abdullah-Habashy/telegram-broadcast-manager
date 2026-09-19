@@ -36,6 +36,15 @@ const MESSAGE_TIMELINE_JOIN_SQL = `
   ) last_received ON true
 `;
 
+// **«ينفع نراسله» = الطالب بعت للبوت مرة على الأقل.** تيليجرام مايسمحش للبوت يبدأ محادثة
+// مع حد، فالإرسال للي ماعملش كده بيرجع 403 مهما كان مربوط حسابه على المنصة. `last_contacted_at`
+// بيتسجّل من `/start` ومن أول رسالة عادية (`bot/handlers/start.js` و `message.js`).
+//
+// **الشرط ده موجود في تلات أماكن بنفس المعنى** — العدّاد والتحديد هنا، و`broadcastSender.js`
+// وقت الإرسال الفعلي. الثابت ده بيمسك الاتنين بتوع الصفحة مع بعض عشان الرقم اللي الموظف
+// بيشوفه يبقى هو اللي هيتحدد فعلًا.
+const MESSAGEABLE_SQL = 'c.id IS NOT NULL AND c.last_contacted_at IS NOT NULL';
+
 let syncRunning = false;
 let enrollmentSyncRunning = false;
 let examSyncRunning = false;
@@ -431,7 +440,8 @@ async function listStudents(req, res) {
     // استعلام العدّ بياخد where فقط، فلازم يستقبل whereParams بس (مش params الكاملة اللي فيها كمان
     // باراميترز خاصة بأعمدة العرض زي درجة الاختبار وتاريخ الاشتراك، مش موجودة في نص الاستعلام ده)
     const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS count
+      `SELECT COUNT(*)::int AS count,
+              COUNT(*) FILTER (WHERE ${MESSAGEABLE_SQL})::int AS messageable
        FROM tafra_students s
        LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
        LEFT JOIN tickets t ON t.contact_id = c.id
@@ -477,7 +487,15 @@ async function listStudents(req, res) {
       listParams
     );
     const total = countResult.rows[0].count;
-    res.json({ students: result.rows, meta: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+    // `messageable` بيتعرض جنب الإجمالي عشان الموظف يعرف قبل ما يدوس إن التحديد هيطلع
+    // أقل من الإجمالي، وليه — كان بيكتشف الفرق من رقم «المحدد» بعد الضغط
+    res.json({
+      students: result.rows,
+      meta: {
+        page, limit, total, messageable: countResult.rows[0].messageable,
+        pages: Math.max(1, Math.ceil(total / limit)),
+      },
+    });
   } catch (error) {
     console.error('Failed to list Tafra students:', error.message);
     res.status(500).json({ error: 'تعذر عرض طلاب منصة طفرة' });
@@ -1048,7 +1066,8 @@ async function getNewBotReachabilitySyncStatus(req, res) {
 
 // كل معرّفات جهات الاتصال (contact_id) للطلاب المطابقين لنفس فلاتر صفحة "طلاب المنصة" بالظبط،
 // بدون تقسيم صفحات — عشان زرار "تحديد كل الصفحات" يقدر يحدد كل الطلاب المطابقين مش بس صفحة واحدة.
-// بيرجّع بس اللي ممكن نراسلهم فعليًا (بدأوا محادثة مع البوت قبل كده) بنفس شرط canMessageStudent بالفرونت
+// بيرجّع بس اللي ممكن نراسلهم فعليًا (`MESSAGEABLE_SQL` — بدأوا محادثة مع البوت قبل كده)،
+// وهو نفس العدد اللي بيتعرض في «ممكن مراسلتهم» فوق الجدول
 async function listStudentContactIds(req, res) {
   const { where, whereParams } = buildTafraStudentFilters(req.query);
   try {
@@ -1057,7 +1076,7 @@ async function listStudentContactIds(req, res) {
        FROM tafra_students s
        LEFT JOIN contacts c ON c.chat_id = s.telegram_chat_id
        LEFT JOIN tickets t ON t.contact_id = c.id
-       ${where ? `${where} AND` : 'WHERE'} c.id IS NOT NULL AND c.last_contacted_at IS NOT NULL
+       ${where ? `${where} AND` : 'WHERE'} ${MESSAGEABLE_SQL}
        ORDER BY s.tafra_student_id DESC`,
       whereParams
     );
